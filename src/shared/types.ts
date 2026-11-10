@@ -1,0 +1,48 @@
+export type AgentKind = 'claude' | 'codex';
+export type PermissionMode = 'ask' | 'bypass';
+export type WorkspaceStatus = 'stopped' | 'idle' | 'working' | 'waiting_user';
+
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+export interface Repo {
+  id: string;
+  projectId: string;
+  name: string;
+  path: string;
+}
+
+export interface Workspace {
+  id: string;
+  projectId: string;
+  repoId: string;
+  name: string;
+  nameLocked: boolean;
+  summary: string;
+  branch: string;
+  baseBranch: string;
+  worktreePath: string;
+  agentKind: AgentKind;
+  permissionMode: PermissionMode;
+  status: WorkspaceStatus;
+  createdAt: number;
+}
+
+export interface TerminalInfo {
+  id: string;
+  workspaceId: string;
+  kind: 'agent' | 'shell';
+  title: string;
+}
+
+export interface CreateWorkspaceInput {
+  projectId: string;
+  repoId: string;
+  name?: string;
+  baseBranch: string;
+  agentKind: AgentKind;
+  permissionMode?: PermissionMode;
+}

@@ -45,7 +45,7 @@ const api: DureApi = {
     resize: (id, cols, rows) => send('terminals.resize', id, cols, rows),
     kill: (id) => call('terminals.kill', id),
     buffer: (id) => call('terminals.buffer', id),
-    onData: (cb) => subscribe<[string, string]>(IPC_EVENTS.terminalData, cb),
+    onData: (cb) => subscribe<[string, string, number]>(IPC_EVENTS.terminalData, cb),
     onExit: (cb) => subscribe<[string, number]>(IPC_EVENTS.terminalExit, cb),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),

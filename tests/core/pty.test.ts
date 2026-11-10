@@ -77,3 +77,19 @@ test('killAll 뒤 자식 프로세스가 남지 않는다', async () => {
   mgr.killAll();
   await until(() => pids.every((p) => !alive(p)), 2000);
 });
+
+test('data 이벤트의 끝 위치와 snapshot 의 끝 위치로 겹치는 출력을 가려낼 수 있다', async () => {
+  const ends: number[] = [];
+  let seen = '';
+  mgr.on('data', (_id, chunk: string, end: number) => { seen += chunk; ends.push(end); });
+  const t = mgr.spawn(base({ args: ['-c', 'echo one; sleep 0.3; echo two; sleep 5'] }));
+  await until(() => seen.includes('one'));
+  const snap = mgr.snapshot(t.id);
+  expect(snap.data).toContain('one');
+  expect(snap.end).toBe(snap.data.length);
+  await until(() => seen.includes('two'));
+  expect(ends).toEqual([...ends].sort((a, b) => a - b));
+  expect(ends[ends.length - 1]).toBe(seen.length);
+  expect(ends[ends.length - 1]).toBeGreaterThan(snap.end); // snapshot 뒤에 온 조각은 끝 위치가 더 크다
+  expect(mgr.snapshot('nope')).toEqual({ data: '', end: 0 });
+});

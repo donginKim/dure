@@ -29,8 +29,9 @@ export interface DureApi {
     write(id: string, data: string): void;
     resize(id: string, cols: number, rows: number): void;
     kill(id: string): Promise<void>;
-    buffer(id: string): Promise<string>;
-    onData(cb: (id: string, chunk: string) => void): () => void;
+    /** 최근 출력과 그 끝 위치. onData 의 end 가 이 값 이하인 조각은 이미 담겨 있다. */
+    buffer(id: string): Promise<{ data: string; end: number }>;
+    onData(cb: (id: string, chunk: string, end: number) => void): () => void;
     onExit(cb: (id: string, exitCode: number) => void): () => void;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;

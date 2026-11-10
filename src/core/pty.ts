@@ -20,11 +20,14 @@ interface Entry {
   info: TerminalInfo;
   proc: nodePty.IPty;
   buffer: string;
+  /** 지금까지 나온 출력의 총 글자 수 */
+  total: number;
 }
 
 /**
  * 터미널 프로세스를 띄우고 관리한다.
- * 이벤트: 'data' (id, chunk), 'exit' (id, exitCode)
+ * 이벤트: 'data' (id, chunk, end), 'exit' (id, exitCode)
+ * end 는 그 조각까지 포함한 총 글자 수다. snapshot 의 end 와 비교해 이미 받은 출력을 가려낸다.
  */
 export class PtyManager extends EventEmitter {
   private readonly entries = new Map<string, Entry>();
@@ -38,12 +41,13 @@ export class PtyManager extends EventEmitter {
       env: { TERM: 'xterm-256color', ...o.env },
     });
     const info: TerminalInfo = { id: crypto.randomUUID(), workspaceId: o.workspaceId, kind: o.kind, title: o.title };
-    const entry: Entry = { info, proc, buffer: '' };
+    const entry: Entry = { info, proc, buffer: '', total: 0 };
     this.entries.set(info.id, entry);
     proc.onData((chunk) => {
       entry.buffer += chunk;
       if (entry.buffer.length > BUFFER_LIMIT) entry.buffer = entry.buffer.slice(-BUFFER_LIMIT);
-      this.emit('data', info.id, chunk);
+      entry.total += chunk.length;
+      this.emit('data', info.id, chunk, entry.total);
     });
     proc.onExit(({ exitCode }) => {
       this.entries.delete(info.id);
@@ -80,6 +84,12 @@ export class PtyManager extends EventEmitter {
 
   buffer(id: string): string {
     return this.entries.get(id)?.buffer ?? '';
+  }
+
+  /** 최근 출력과 그 끝 위치. 화면을 다시 붙일 때 쓴다. */
+  snapshot(id: string): { data: string; end: number } {
+    const e = this.entries.get(id);
+    return e ? { data: e.buffer, end: e.total } : { data: '', end: 0 };
   }
 
   pid(id: string): number {

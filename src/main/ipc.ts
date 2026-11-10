@@ -70,7 +70,7 @@ export function registerIpc(core: Core): () => void {
     'terminals.write': (id: string, data: string) => core.pty.write(id, data),
     'terminals.resize': (id: string, cols: number, rows: number) => core.pty.resize(id, cols, rows),
     'terminals.kill': (id: string) => core.pty.kill(id),
-    'terminals.buffer': (id: string) => core.pty.buffer(id),
+    'terminals.buffer': (id: string) => core.pty.snapshot(id),
   };
 
   for (const channel of IPC_CHANNELS) {
@@ -88,7 +88,7 @@ export function registerIpc(core: Core): () => void {
     }
   }
 
-  const onData = (id: string, chunk: string): void => broadcast(IPC_EVENTS.terminalData, id, chunk);
+  const onData = (id: string, chunk: string, end: number): void => broadcast(IPC_EVENTS.terminalData, id, chunk, end);
   const onExit = (id: string, exitCode: number): void => {
     broadcast(IPC_EVENTS.terminalExit, id, exitCode);
     changed('terminals');

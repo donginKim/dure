@@ -1,0 +1,40 @@
+import { buildTree, reconcileSelection, STATUS_LABEL } from '../../src/renderer/tree';
+import type { Project, Workspace } from '@shared/types';
+
+const project = (id: string, createdAt: number): Project => ({ id, name: id, createdAt });
+const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
+  id, projectId, repoId: 'r', name: id, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
+  worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', status: 'stopped', createdAt,
+});
+
+test('buildTree 는 워크스페이스를 프로젝트 아래에 createdAt 순으로 묶는다', () => {
+  const tree = buildTree([project('p2', 20), project('p1', 10)], [ws('b', 'p1', 2), ws('a', 'p1', 1), ws('c', 'p2', 3)]);
+  expect(tree.map((n) => n.project.id)).toEqual(['p1', 'p2']);
+  expect(tree[0].workspaces.map((w) => w.id)).toEqual(['a', 'b']);
+  expect(tree[1].workspaces.map((w) => w.id)).toEqual(['c']);
+});
+
+test('워크스페이스가 없는 프로젝트도 노드로 나온다', () => {
+  expect(buildTree([project('p1', 1)], [])).toEqual([{ project: project('p1', 1), workspaces: [] }]);
+});
+
+test('reconcileSelection: 대상이 있으면 그대로 둔다', () => {
+  const tree = buildTree([project('p1', 1)], [ws('a', 'p1', 1)]);
+  expect(reconcileSelection({ type: 'workspace', id: 'a' }, tree)).toEqual({ type: 'workspace', id: 'a' });
+  expect(reconcileSelection({ type: 'project', id: 'p1' }, tree)).toEqual({ type: 'project', id: 'p1' });
+  expect(reconcileSelection(null, tree)).toBeNull();
+});
+
+test('reconcileSelection: 선택한 워크스페이스가 사라지면 그 프로젝트를 선택한다', () => {
+  const tree = buildTree([project('p1', 1)], []);
+  expect(reconcileSelection({ type: 'workspace', id: 'a', projectId: 'p1' }, tree)).toEqual({ type: 'project', id: 'p1' });
+});
+
+test('reconcileSelection: 프로젝트도 사라지면 null', () => {
+  expect(reconcileSelection({ type: 'workspace', id: 'a', projectId: 'p1' }, [])).toBeNull();
+  expect(reconcileSelection({ type: 'project', id: 'p1' }, [])).toBeNull();
+});
+
+test('상태 글자', () => {
+  expect(STATUS_LABEL).toEqual({ stopped: '꺼짐', idle: '쉬는 중', working: '작업 중', waiting_user: '사용자 기다림' });
+});

@@ -1,3 +1,61 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Project, Workspace } from '@shared/types';
+import { ProjectView } from './components/ProjectView';
+import { Sidebar } from './components/Sidebar';
+import { WorkspaceView } from './components/WorkspaceView';
+import { buildTree, reconcileSelection, type Selection } from './tree';
+
 export function App() {
-  return <h1>두레</h1>;
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [error, setError] = useState('');
+
+  const reload = useCallback(async () => {
+    try {
+      const ps = await window.dure.projects.list();
+      const ws = (await Promise.all(ps.map((p) => window.dure.workspaces.list(p.id)))).flat();
+      setProjects(ps);
+      setWorkspaces(ws);
+      setError('');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+    return window.dure.onChanged((topic) => {
+      if (topic === 'projects' || topic === 'workspaces') void reload();
+    });
+  }, [reload]);
+
+  const tree = useMemo(() => buildTree(projects, workspaces), [projects, workspaces]);
+  const current = useMemo(() => reconcileSelection(selection, tree), [selection, tree]);
+
+  const createProject = async (name: string): Promise<void> => {
+    const p = await window.dure.projects.create(name);
+    await reload();
+    setSelection({ type: 'project', id: p.id });
+  };
+
+  const node = current?.type === 'project' ? tree.find((n) => n.project.id === current.id) : undefined;
+  const workspace = current?.type === 'workspace' ? workspaces.find((w) => w.id === current.id) : undefined;
+
+  return (
+    <div className="app">
+      <Sidebar tree={tree} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <main className="main">
+        {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
+        {node && <ProjectView key={node.project.id} project={node.project} workspaces={node.workspaces} onSelect={setSelection} />}
+        {workspace && <WorkspaceView key={workspace.id} workspace={workspace} />}
+        {!node && !workspace && (
+          <div className="empty">
+            왼쪽에서 프로젝트나 워크스페이스를 고르세요.<br />
+            프로젝트를 고르면 프로젝트에, 워크스페이스를 고르면 그 에이전트에게 일을 시킵니다.
+          </div>
+        )}
+      </main>
+    </div>
+  );
 }

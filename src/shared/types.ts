@@ -36,6 +36,8 @@ export interface TerminalInfo {
   workspaceId: string;
   kind: 'agent' | 'shell';
   title: string;
+  /** 끝난 터미널에만 붙는다. 사용자가 탭을 닫을 때까지 목록에 남는다. */
+  exitCode?: number;
 }
 
 export interface CreateWorkspaceInput {

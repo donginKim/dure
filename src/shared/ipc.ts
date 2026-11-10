@@ -21,6 +21,8 @@ export interface DureApi {
     list(projectId: string): Promise<Workspace[]>;
     create(input: CreateWorkspaceInput): Promise<Workspace>;
     remove(id: string, options: { deleteWorktree: boolean }): Promise<void>;
+    /** 작업 폴더에 커밋하지 않은 변경이 몇 건인지 */
+    uncommitted(id: string): Promise<number>;
   };
   terminals: {
     list(workspaceId: string): Promise<TerminalInfo[]>;
@@ -41,7 +43,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.remove',
-  'workspaces.list', 'workspaces.create', 'workspaces.remove',
+  'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
 ] as const;

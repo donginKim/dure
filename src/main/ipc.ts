@@ -1,6 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
 import type { Core } from '@core/index';
-import { listBranches } from '@core/git';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import type { CreateWorkspaceInput } from '@shared/types';
@@ -51,7 +50,7 @@ export function registerIpc(core: Core): () => void {
     'repos.branches': (repoId: string) => {
       const repo = core.repos.get(repoId);
       if (!repo) throw new Error(`저장소가 없습니다: ${repoId}`);
-      return listBranches(repo.path);
+      return core.git.listBranches(repo.path);
     },
     'repos.remove': (id: string) => {
       try {
@@ -64,12 +63,13 @@ export function registerIpc(core: Core): () => void {
     'workspaces.list': (projectId: string) => core.workspaces.list(projectId),
     'workspaces.create': (input: CreateWorkspaceInput) => core.service.create(input),
     'workspaces.remove': (id: string, options: { deleteWorktree: boolean }) => core.service.remove(id, options),
-    'terminals.list': (workspaceId: string) => core.pty.list(workspaceId),
+    'workspaces.uncommitted': (id: string) => core.service.uncommittedCount(id),
+    'terminals.list': (workspaceId: string) => core.pty.listWithExited(workspaceId),
     'terminals.startAgent': (workspaceId: string, size: TerminalSize) => core.service.startAgent(workspaceId, size),
     'terminals.openShell': (workspaceId: string, size: TerminalSize) => core.service.openShell(workspaceId, size),
     'terminals.write': (id: string, data: string) => core.pty.write(id, data),
     'terminals.resize': (id: string, cols: number, rows: number) => core.pty.resize(id, cols, rows),
-    'terminals.kill': (id: string) => core.pty.kill(id),
+    'terminals.kill': (id: string) => { core.pty.kill(id); changed('terminals'); },
     'terminals.buffer': (id: string) => core.pty.snapshot(id),
   };
 

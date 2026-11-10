@@ -53,3 +53,37 @@ test('listBranches 는 로컬 브랜치 이름을 돌려준다', async () => {
   expect((await listBranches(repo)).sort()).toEqual(['develop', 'main']);
   expect(await currentBranch(repo)).toBe('main');
 });
+
+test('git 을 실행할 수 없으면 isGitRepo 는 false 가 아니라 GitError 를 던진다', async () => {
+  const { createGit } = await import('@core/git');
+  const repo = makeRepo();
+  const broken = createGit({ PATH: '/nonexistent' });
+  await expect(broken.isGitRepo(repo)).rejects.toBeInstanceOf(GitError);
+  await expect(broken.isGitRepo(repo)).rejects.toThrow('git 을 실행할 수 없습니다');
+});
+
+test('createGit 에 준 환경으로 git 이 실행된다', async () => {
+  const { createGit } = await import('@core/git');
+  const repo = makeRepo();
+  const git = createGit({ PATH: '/usr/bin:/bin', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'dure.test', GIT_CONFIG_VALUE_0: 'yes' });
+  expect(await git.isGitRepo(repo)).toBe(true);
+  expect(await git.raw(['-C', repo, 'config', 'dure.test'])).toBe('yes\n');
+});
+
+test('uncommittedCount 는 커밋하지 않은 변경 수를 센다', async () => {
+  const { uncommittedCount } = await import('@core/git');
+  const fs = await import('node:fs');
+  const repo = makeRepo();
+  expect(await uncommittedCount(repo)).toBe(0);
+  fs.writeFileSync(join(repo, 'new.txt'), 'x');
+  fs.writeFileSync(join(repo, 'README.md'), 'changed');
+  expect(await uncommittedCount(repo)).toBe(2);
+});
+
+test('deleteBranch 는 브랜치를 지운다', async () => {
+  const { deleteBranch } = await import('@core/git');
+  const repo = makeRepo();
+  gitOut(repo, 'branch', 'tmp');
+  await deleteBranch(repo, 'tmp');
+  expect(await branchExists(repo, 'tmp')).toBe(false);
+});

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
 import { buildAgentLaunch } from './agents/launch';
-import { addWorktree, listBranches, removeWorktree } from './git';
+import type { Git } from './git';
 import type { PtyManager } from './pty';
 import { slugify, uniqueSlug } from './slug';
 import type { ProjectStore, RepoStore, WorkspaceStore } from './stores';
@@ -33,6 +33,7 @@ export interface WorkspaceServiceDeps {
   repos: RepoStore;
   workspaces: WorkspaceStore;
   pty: PtyManager;
+  git: Git;
   mcpUrl: string;
   dataDir: string;
   worktreeRoot: string;
@@ -107,14 +108,24 @@ export class WorkspaceService extends EventEmitter {
     const typed = i.name?.trim();
     const name = typed || `${repo.name}-${this.d.workspaces.list(project.id).length + 1}`;
     const projectDir = join(this.d.worktreeRoot, slugify(project.name));
-    const branches = new Set(await listBranches(repo.path));
+    const branches = new Set(await this.d.git.listBranches(repo.path));
     const slug = uniqueSlug(slugify(name), (c) => branches.has(`dure/${c}`) || existsSync(join(projectDir, c)));
     const branch = `dure/${slug}`;
     const worktreePath = join(projectDir, slug);
 
     mkdirSync(projectDir, { recursive: true });
     // worktree 가 먼저다. 실패하면 행을 만들지 않아 반쪽짜리 워크스페이스가 남지 않는다.
-    await addWorktree({ repoPath: repo.path, worktreePath, branch, baseBranch: i.baseBranch });
+    // git 은 브랜치를 만든 뒤 체크아웃하므로, 도중에 실패하면 브랜치가 남는다. 그것도 치운다.
+    const undo = async (): Promise<void> => {
+      await this.d.git.removeWorktree({ repoPath: repo.path, worktreePath }).catch(() => undefined);
+      if (await this.d.git.branchExists(repo.path, branch)) await this.d.git.deleteBranch(repo.path, branch).catch(() => undefined);
+    };
+    try {
+      await this.d.git.addWorktree({ repoPath: repo.path, worktreePath, branch, baseBranch: i.baseBranch });
+    } catch (e) {
+      await undo();
+      throw e;
+    }
     try {
       const ws = this.d.workspaces.insert({
         id: crypto.randomUUID(), projectId: project.id, repoId: repo.id, name, nameLocked: Boolean(typed),
@@ -124,7 +135,7 @@ export class WorkspaceService extends EventEmitter {
       this.emit('changed', ws.id);
       return ws;
     } catch (e) {
-      await removeWorktree({ repoPath: repo.path, worktreePath }).catch(() => undefined);
+      await undo();
       throw e;
     }
   }
@@ -135,8 +146,9 @@ export class WorkspaceService extends EventEmitter {
     await this.killTerminals(id);
     if (o.deleteWorktree) {
       const repo = this.d.repos.get(ws.repoId);
-      if (repo) await removeWorktree({ repoPath: repo.path, worktreePath: ws.worktreePath });
+      if (repo) await this.d.git.removeWorktree({ repoPath: repo.path, worktreePath: ws.worktreePath });
     }
+    this.d.pty.forgetExited(id);
     this.d.workspaces.remove(id);
     rmSync(this.configDir(id), { recursive: true, force: true });
     this.emit('changed', id);
@@ -146,6 +158,7 @@ export class WorkspaceService extends EventEmitter {
     const ws = this.mustGet(id);
     const running = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (running) return running;
+    this.d.pty.forgetExited(id, 'agent'); // 지난 에이전트 탭 기록은 치운다
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
@@ -173,6 +186,12 @@ export class WorkspaceService extends EventEmitter {
     this.d.workspaces.update(id, { status: 'idle' });
     this.emit('changed', id);
     return terminal;
+  }
+
+  /** 작업 폴더에 커밋하지 않은 변경이 몇 건인지. 폴더가 없으면 0. */
+  async uncommittedCount(id: string): Promise<number> {
+    const ws = this.mustGet(id);
+    return existsSync(ws.worktreePath) ? this.d.git.uncommittedCount(ws.worktreePath) : 0;
   }
 
   async openShell(id: string, size: { cols: number; rows: number }): Promise<TerminalInfo> {

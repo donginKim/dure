@@ -36,6 +36,7 @@ const api: DureApi = {
     list: (projectId) => call('workspaces.list', projectId),
     create: (input) => call('workspaces.create', input),
     remove: (id, options) => call('workspaces.remove', id, options),
+    uncommitted: (id) => call('workspaces.uncommitted', id),
   },
   terminals: {
     list: (workspaceId) => call('terminals.list', workspaceId),

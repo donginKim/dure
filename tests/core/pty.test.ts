@@ -20,7 +20,7 @@ function alive(pid: number): boolean {
 
 let mgr: PtyManager;
 beforeEach(() => { mgr = new PtyManager(); });
-afterEach(() => { mgr.killAll(); });
+afterEach(async () => { await mgr.killAll(200); });
 
 test('spawn 한 프로세스의 출력이 data 이벤트로 온다', async () => {
   let out = '';
@@ -74,8 +74,8 @@ test('killAll 뒤 자식 프로세스가 남지 않는다', async () => {
   const b = mgr.spawn(base({ command: '/bin/sleep', args: ['1000'] }));
   const pids = [mgr.pid(a.id), mgr.pid(b.id)];
   expect(pids.every(alive)).toBe(true);
-  mgr.killAll();
-  await until(() => pids.every((p) => !alive(p)), 2000);
+  await mgr.killAll();
+  expect(pids.some(alive)).toBe(false);
 });
 
 test('data 이벤트의 끝 위치와 snapshot 의 끝 위치로 겹치는 출력을 가려낼 수 있다', async () => {
@@ -92,4 +92,32 @@ test('data 이벤트의 끝 위치와 snapshot 의 끝 위치로 겹치는 출�
   expect(ends[ends.length - 1]).toBe(seen.length);
   expect(ends[ends.length - 1]).toBeGreaterThan(snap.end); // snapshot 뒤에 온 조각은 끝 위치가 더 크다
   expect(mgr.snapshot('nope')).toEqual({ data: '', end: 0 });
+});
+
+test('killAll 은 SIGHUP 을 무시하는 프로세스도 끝낸 뒤에 돌아온다', async () => {
+  const t = mgr.spawn(base({ args: ['-c', 'trap "" HUP; echo ready; exec sleep 1000'] }));
+  await until(() => mgr.buffer(t.id).includes('ready'));
+  const pid = mgr.pid(t.id);
+  await mgr.killAll(300);
+  expect(alive(pid)).toBe(false);
+});
+
+test('끝난 터미널의 출력과 종료 코드는 닫을 때까지 남는다', async () => {
+  const t = mgr.spawn(base({ args: ['-c', 'echo BOOM; exit 2'] }));
+  await until(() => mgr.list('w1').length === 0);
+  expect(mgr.listWithExited('w1')).toEqual([{ ...t, exitCode: 2 }]);
+  expect(mgr.snapshot(t.id).data).toContain('BOOM');
+  mgr.kill(t.id); // 끝난 터미널에 대한 kill 은 기록을 지운다
+  expect(mgr.listWithExited('w1')).toEqual([]);
+  expect(mgr.snapshot(t.id)).toEqual({ data: '', end: 0 });
+});
+
+test('forgetExited 는 워크스페이스의 끝난 터미널 기록을 지운다', async () => {
+  mgr.spawn(base({ kind: 'agent', args: ['-c', 'exit 1'] }));
+  mgr.spawn(base({ kind: 'shell', args: ['-c', 'exit 1'] }));
+  await until(() => mgr.listWithExited('w1').filter((x) => x.exitCode !== undefined).length === 2);
+  mgr.forgetExited('w1', 'agent');
+  expect(mgr.listWithExited('w1').map((x) => x.kind)).toEqual(['shell']);
+  mgr.forgetExited('w1');
+  expect(mgr.listWithExited('w1')).toEqual([]);
 });

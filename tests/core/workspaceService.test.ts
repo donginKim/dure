@@ -81,6 +81,36 @@ test('없는 기준 브랜치면 실패하고 워크스페이스 목록이 비�
   expect(existsSync(join(worktreeRoot, '쇼핑몰', 'x'))).toBe(false);
 });
 
+test('체크아웃 도중 실패하면 방금 만든 브랜치도 남지 않는다', async () => {
+  // 필수 필터가 실패하는 저장소: git 은 브랜치를 만든 뒤 체크아웃에서 실패한다
+  const broken = makeRepo('필터 실패 repo');
+  writeFileSync(join(broken, '.gitattributes'), '*.dat filter=boom\n');
+  writeFileSync(join(broken, 'a.dat'), 'data');
+  gitOut(broken, 'add', '-A');
+  gitOut(broken, 'commit', '-q', '-m', 'add filtered file');
+  gitOut(broken, 'config', 'filter.boom.smudge', 'false');
+  gitOut(broken, 'config', 'filter.boom.required', 'true');
+  const repo = await core.addRepo(projectId, broken);
+  await expect(core.service.create({ projectId, repoId: repo.id, name: 'half', baseBranch: 'main', agentKind: 'claude' })).rejects.toThrow();
+  expect(gitOut(broken, 'branch', '--list', 'dure/*')).toBe('');
+  expect(core.workspaces.list(projectId)).toEqual([]);
+  expect(gitOut(broken, 'worktree', 'list').split('\n')).toHaveLength(1);
+});
+
+test('에이전트가 뜨자마자 죽어도 출력과 종료 코드가 남는다', async () => {
+  writeFileSync(join(fakeBin, 'claude'), '#!/bin/sh\necho "usage: bad flag"\nexit 2\n');
+  const ws = await create({ name: 'dies' });
+  const t = await core.service.startAgent(ws.id, SIZE);
+  await until(() => core.workspaces.get(ws.id)?.status === 'stopped');
+  const listed = core.pty.listWithExited(ws.id);
+  expect(listed).toEqual([{ ...t, exitCode: 2 }]);
+  expect(core.pty.snapshot(t.id).data).toContain('usage: bad flag');
+  // 다시 시작하면 지난 에이전트 탭 기록은 치운다
+  installFakeAgent('claude');
+  const again = await core.service.startAgent(ws.id, SIZE);
+  expect(core.pty.listWithExited(ws.id).map((x) => x.id)).toEqual([again.id]);
+});
+
 test('create 뒤 저장소 작업 트리에 변경이 없다', async () => {
   const ws = await create({ name: 'clean' });
   expect(gitOut(repoPath, 'status', '--porcelain')).toBe('');

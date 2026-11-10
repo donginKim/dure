@@ -21,7 +21,7 @@ export function WorkspaceView({ workspace }: { workspace: Workspace }) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [removing, setRemoving] = useState(false);
+  const [removing, setRemoving] = useState<{ uncommitted: number } | null>(null);
   const area = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -32,9 +32,17 @@ export function WorkspaceView({ workspace }: { workspace: Workspace }) {
     setActiveId((cur) => (cur && list.some((t) => t.id === cur) ? cur : (list[0]?.id ?? null)));
   }, [workspace.id]);
 
+  const askRemove = async (): Promise<void> => {
+    // 에이전트는 커밋을 하지 않으므로 작업물은 늘 커밋 전 상태다. 지우기 전에 몇 건인지 알려준다.
+    const uncommitted = await window.dure.workspaces.uncommitted(workspace.id).catch(() => 0);
+    setRemoving({ uncommitted });
+  };
+
   useEffect(() => {
-    void load();
-    return window.dure.onChanged((topic) => { if (topic === 'terminals') void load(); });
+    load().catch((e: Error) => setError(e.message));
+    return window.dure.onChanged((topic) => {
+      if (topic === 'terminals') load().catch((e: Error) => setError(e.message));
+    });
   }, [load]);
 
   // 글자 크기 기준으로 대략의 칸 수를 구한다. 터미널이 붙으면 정확한 값으로 다시 맞춘다.
@@ -59,7 +67,8 @@ export function WorkspaceView({ workspace }: { workspace: Workspace }) {
     }
   };
 
-  const hasAgent = terminals.some((t) => t.kind === 'agent');
+  // 끝난 터미널(exitCode 가 있음)은 탭으로 남아 마지막 출력을 보여준다. 살아 있는 에이전트만 "있다"로 친다.
+  const hasAgent = terminals.some((t) => t.kind === 'agent' && t.exitCode === undefined);
   const active = terminals.find((t) => t.id === activeId);
 
   return (
@@ -73,13 +82,14 @@ export function WorkspaceView({ workspace }: { workspace: Workspace }) {
         <span className="tag">{STATUS_LABEL[workspace.status]}</span>
         <span className="spacer" />
         {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
-        <button className="btn ghost danger" onClick={() => setRemoving(true)}>지우기</button>
+        <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
       <div className="tabs">
         {terminals.map((t) => (
           <div key={t.id} className={`tab${t.id === activeId ? ' active' : ''}`} onClick={() => setActiveId(t.id)}>
             {t.title}
-            <span className="close" title="터미널 끄기" onClick={(e) => { e.stopPropagation(); void window.dure.terminals.kill(t.id); }}>×</span>
+            {t.exitCode !== undefined && <span className="tag">종료됨 (코드 {t.exitCode})</span>}
+            <span className="close" title={t.exitCode === undefined ? '터미널 끄기' : '탭 닫기'} onClick={(e) => { e.stopPropagation(); void window.dure.terminals.kill(t.id); }}>×</span>
           </div>
         ))}
         <button className="btn ghost" title="셸 터미널 열기" onClick={() => void open('shell')}>+</button>
@@ -102,8 +112,12 @@ export function WorkspaceView({ workspace }: { workspace: Workspace }) {
           title="워크스페이스 지우기"
           message={`"${workspace.name}" 워크스페이스를 두레에서 지웁니다. 실행 중인 터미널은 꺼집니다. 브랜치 ${workspace.branch} 는 남습니다.`}
           confirmLabel="지우기"
-          checkbox={{ label: '작업 폴더(worktree)도 삭제' }}
-          onClose={() => setRemoving(false)}
+          checkbox={{
+            label: removing.uncommitted > 0
+              ? `작업 폴더(worktree)도 삭제 — 커밋하지 않은 변경 ${removing.uncommitted}건이 함께 지워집니다`
+              : '작업 폴더(worktree)도 삭제',
+          }}
+          onClose={() => setRemoving(null)}
           onConfirm={async (deleteWorktree) => { await window.dure.workspaces.remove(workspace.id, { deleteWorktree }); }}
         />
       )}

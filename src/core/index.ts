@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Repo } from '@shared/types';
 import { openDatabase } from './db';
-import { isGitRepo } from './git';
+import { createGit, type Git } from './git';
 import { startMcpServer } from './mcp/server';
 import { workspaceTools } from './mcp/tools/workspace';
 import { PtyManager } from './pty';
@@ -15,6 +15,7 @@ export interface Core {
   workspaces: WorkspaceStore;
   service: WorkspaceService;
   pty: PtyManager;
+  git: Git;
   mcpUrl: string;
   addRepo(projectId: string, path: string): Promise<Repo>;
   dispose(): Promise<void>;
@@ -45,24 +46,25 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   }
 
   const pty = new PtyManager();
+  const git = createGit(o.baseEnv);
   const mcp = await startMcpServer({ workspaces, projects }, [workspaceTools]);
   const service = new WorkspaceService({
-    projects, repos, workspaces, pty, mcpUrl: mcp.url, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
+    projects, repos, workspaces, pty, git, mcpUrl: mcp.url, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, pty, mcpUrl: mcp.url,
+    projects, repos, workspaces, service, pty, git, mcpUrl: mcp.url,
     async addRepo(projectId, path) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
-      if (!(await isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);
+      if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);
       return repos.add(projectId, path);
     },
     async dispose() {
       if (disposed) return;
       disposed = true;
       service.detach();
-      pty.killAll();
+      await pty.killAll();
       await mcp.close();
       db.close();
     },

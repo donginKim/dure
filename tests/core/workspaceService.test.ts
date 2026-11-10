@@ -236,3 +236,15 @@ test('createCore: dispose 뒤 MCP 포트가 닫힌다', async () => {
   await expect(fetch(url, { method: 'POST' })).rejects.toThrow();
   await boot(); // afterEach 의 dispose 용
 });
+
+test('repoStatus: 정상 저장소는 ok 와 현재 브랜치, 사라진 폴더와 git 아닌 폴더는 이유를 돌려준다', async () => {
+  expect(await core.repoStatus(repoId)).toEqual({ ok: true, branch: 'main' });
+  const gone = makeRepo('사라질 repo');
+  const goneId = (await core.addRepo(projectId, gone)).id;
+  rmSync(gone, { recursive: true, force: true });
+  expect(await core.repoStatus(goneId)).toEqual({ ok: false, reason: '폴더를 찾을 수 없습니다.' });
+  const plain = makeRepo('git 지울 repo');
+  const plainId = (await core.addRepo(projectId, plain)).id;
+  rmSync(join(plain, '.git'), { recursive: true, force: true });
+  expect(await core.repoStatus(plainId)).toEqual({ ok: false, reason: 'git 저장소가 아닙니다.' });
+});

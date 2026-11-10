@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import type { Repo } from '@shared/types';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, selection, onSelect, onCreateProject }: {
-  tree: TreeNode[]; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
+export function Sidebar({ tree, repos, selection, onSelect, onCreateProject }: {
+  tree: TreeNode[]; repos: Repo[]; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
+  const repoName = (id: string): string => repos.find((r) => r.id === id)?.name ?? '';
 
   const create = async (): Promise<void> => {
     if (!name.trim()) return;
@@ -33,18 +35,18 @@ export function Sidebar({ tree, selection, onSelect, onCreateProject }: {
             >
               {project.name}
             </div>
-            {workspaces.length === 0 && <div className="tree-empty">워크스페이스 없음</div>}
+            {workspaces.length === 0 && <div className="tree-empty">워크스페이스 없음 · 프로젝트를 눌러 만드세요</div>}
             {workspaces.map((w) => (
               <div
                 key={w.id}
                 className={`tree-ws${selection?.type === 'workspace' && selection.id === w.id ? ' selected' : ''}`}
-                title={`${STATUS_LABEL[w.status]} · ${w.branch}`}
+                title={`저장소 ${repoName(w.repoId)} · ${w.branch} · ${STATUS_LABEL[w.status]}`}
                 onClick={() => onSelect({ type: 'workspace', id: w.id, projectId: project.id })}
               >
                 <span className={`dot ${w.status}`} />
                 <div style={{ minWidth: 0 }}>
                   <div className="ws-name">{w.name}</div>
-                  <div className="ws-meta">{w.summary || STATUS_LABEL[w.status]}</div>
+                  <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
                 </div>
               </div>
             ))}

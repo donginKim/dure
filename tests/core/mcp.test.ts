@@ -19,8 +19,9 @@ async function setup() {
   });
   const front = add('프론트', 'tok-front', 'claude');
   const back = add('백엔드', 'tok-back', 'codex');
-  const server = await startMcpServer({ workspaces, projects }, [workspaceTools]);
-  return { server, project, front, back };
+  const other = repos.add(project.id, '/tmp/shop-api');
+  const server = await startMcpServer({ workspaces, projects, repos }, [workspaceTools]);
+  return { server, project, front, back, repo, other };
 }
 
 async function connect(url: string, token: string) {
@@ -77,7 +78,24 @@ test('서버는 127.0.0.1 에만 묶이고 url 이 그 포트를 가리킨다', 
 });
 
 test('close 뒤에는 접속이 거부된다', async () => {
-  const extra = await startMcpServer({ workspaces: undefined as never, projects: undefined as never }, []);
+  const extra = await startMcpServer({ workspaces: undefined as never, projects: undefined as never, repos: undefined as never }, []);
   await extra.close();
   await expect(fetch(extra.url, { method: 'POST' })).rejects.toThrow();
+});
+
+test('project_overview 는 프로젝트의 모든 저장소와 워크스페이스를 알려준다', async () => {
+  const client = await connect(ctx.server.url, 'tok-front');
+  const res = await client.callTool({ name: 'project_overview', arguments: {} });
+  await client.close();
+  const out = JSON.parse((res.content as { type: string; text: string }[])[0].text);
+  expect(out.project).toEqual({ id: ctx.project.id, name: '쇼핑몰' });
+  // 워크스페이스가 없는 저장소도 나와야 한다: 에이전트가 같은 프로젝트의 다른 저장소를 알 수 있어야 한다
+  expect(out.repos).toEqual([
+    { name: 'shop', path: '/tmp/shop', workspaceCount: 2 },
+    { name: 'shop-api', path: '/tmp/shop-api', workspaceCount: 0 },
+  ]);
+  expect(out.workspaces).toEqual([
+    { name: '프론트', repo: 'shop', branch: 'dure/프론트', path: '/tmp/wt/프론트', agent: 'claude', status: 'stopped', isMe: true },
+    { name: '백엔드', repo: 'shop', branch: 'dure/백엔드', path: '/tmp/wt/백엔드', agent: 'codex', status: 'stopped', isMe: false },
+  ]);
 });

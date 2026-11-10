@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Project, Workspace } from '@shared/types';
-import type { ProjectStore, WorkspaceStore } from '../stores';
+import type { ProjectStore, RepoStore, WorkspaceStore } from '../stores';
 
 /** 요청을 보낸 에이전트가 속한 워크스페이스와 프로젝트. 토큰으로 정해진다. */
 export interface McpContext {
@@ -14,6 +14,7 @@ export interface McpContext {
 export interface McpDeps {
   workspaces: WorkspaceStore;
   projects: ProjectStore;
+  repos: RepoStore;
 }
 
 /** 도구 묶음 하나. 뒤 단계는 묶음 파일을 더해 도구를 늘린다. */

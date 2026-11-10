@@ -15,6 +15,9 @@ export interface Repo {
   path: string;
 }
 
+/** 등록된 저장소가 지금도 쓸 수 있는 상태인지. 화면이 등록 결과를 보여주는 데 쓴다. */
+export type RepoStatus = { ok: true; branch: string } | { ok: false; reason: string };
+
 export interface Workspace {
   id: string;
   projectId: string;

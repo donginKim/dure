@@ -52,6 +52,7 @@ export function registerIpc(core: Core): () => void {
       if (!repo) throw new Error(`저장소가 없습니다: ${repoId}`);
       return core.git.listBranches(repo.path);
     },
+    'repos.status': (repoId: string) => core.repoStatus(repoId),
     'repos.remove': (id: string) => {
       try {
         core.repos.remove(id);

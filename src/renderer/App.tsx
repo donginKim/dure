@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Project, Workspace } from '@shared/types';
+import type { Project, Repo, Workspace } from '@shared/types';
 import { ProjectView } from './components/ProjectView';
 import { Sidebar } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
@@ -8,15 +8,20 @@ import { buildTree, reconcileSelection, type Selection } from './tree';
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [repos, setRepos] = useState<Repo[]>([]);
   const [selection, setSelection] = useState<Selection>(null);
   const [error, setError] = useState('');
 
   const reload = useCallback(async () => {
     try {
       const ps = await window.dure.projects.list();
-      const ws = (await Promise.all(ps.map((p) => window.dure.workspaces.list(p.id)))).flat();
+      const [ws, rs] = await Promise.all([
+        Promise.all(ps.map((p) => window.dure.workspaces.list(p.id))),
+        Promise.all(ps.map((p) => window.dure.repos.list(p.id))),
+      ]);
       setProjects(ps);
-      setWorkspaces(ws);
+      setWorkspaces(ws.flat());
+      setRepos(rs.flat());
       setError('');
     } catch (e) {
       setError((e as Error).message);
@@ -26,7 +31,7 @@ export function App() {
   useEffect(() => {
     void reload();
     return window.dure.onChanged((topic) => {
-      if (topic === 'projects' || topic === 'workspaces') void reload();
+      if (topic !== 'terminals') void reload();
     });
   }, [reload]);
 
@@ -44,11 +49,27 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <Sidebar tree={tree} repos={repos} selection={current} onSelect={setSelection} onCreateProject={createProject} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
-        {node && <ProjectView key={node.project.id} project={node.project} workspaces={node.workspaces} onSelect={setSelection} />}
-        {workspace && <WorkspaceView key={workspace.id} workspace={workspace} />}
+        {node && (
+          <ProjectView
+            key={node.project.id}
+            project={node.project}
+            repos={repos.filter((r) => r.projectId === node.project.id)}
+            workspaces={node.workspaces}
+            onSelect={setSelection}
+          />
+        )}
+        {workspace && (
+          <WorkspaceView
+            key={workspace.id}
+            workspace={workspace}
+            project={projects.find((p) => p.id === workspace.projectId)}
+            repo={repos.find((r) => r.id === workspace.repoId)}
+            onSelect={setSelection}
+          />
+        )}
         {!node && !workspace && (
           <div className="empty">
             왼쪽에서 프로젝트나 워크스페이스를 고르세요.<br />

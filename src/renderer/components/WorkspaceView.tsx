@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ERROR_PREFIX } from '@shared/ipc';
-import type { TerminalInfo, Workspace } from '@shared/types';
-import { STATUS_LABEL } from '../tree';
+import type { Project, Repo, TerminalInfo, Workspace } from '@shared/types';
+import { STATUS_LABEL, type Selection } from '../tree';
 import { ConfirmDialog } from './dialogs';
 import { TerminalPane } from './TerminalPane';
 
@@ -17,7 +17,9 @@ export function describeError(message: string): string {
   return message;
 }
 
-export function WorkspaceView({ workspace }: { workspace: Workspace }) {
+export function WorkspaceView({ workspace, project, repo, onSelect }: {
+  workspace: Workspace; project?: Project; repo?: Repo; onSelect: (s: Selection) => void;
+}) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -73,6 +75,14 @@ export function WorkspaceView({ workspace }: { workspace: Workspace }) {
 
   return (
     <div className="ws-view">
+      <div className="crumbs">
+        {project && <button className="crumb" title="프로젝트 화면으로" onClick={() => onSelect({ type: 'project', id: project.id })}>{project.name}</button>}
+        <span className="sep">›</span>
+        <span title={repo?.path}>저장소 {repo?.name ?? '(알 수 없음)'}</span>
+        <span className="sep">›</span>
+        <span>{workspace.name}</span>
+        <span className="where" title="이 워크스페이스의 작업 폴더">{workspace.worktreePath}</span>
+      </div>
       <div className="ws-head">
         <span className={`dot ${workspace.status}`} />
         <span className="title">{workspace.name}</span>

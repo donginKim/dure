@@ -19,10 +19,10 @@ export function Dialog({ title, children, onClose }: { title: string; children: 
 
 export const BYPASS_WARNING = '에이전트가 묻지 않고 모든 명령을 실행합니다. 믿는 저장소에서만 켜세요.';
 
-export function NewWorkspaceDialog({ projectId, repos, onClose, onCreated }: {
-  projectId: string; repos: Repo[]; onClose: () => void; onCreated: (ws: Workspace) => void;
+export function NewWorkspaceDialog({ projectId, repos, initialRepoId, onClose, onCreated }: {
+  projectId: string; repos: Repo[]; initialRepoId?: string; onClose: () => void; onCreated: (ws: Workspace) => void;
 }) {
-  const [repoId, setRepoId] = useState(repos[0]?.id ?? '');
+  const [repoId, setRepoId] = useState(initialRepoId ?? repos[0]?.id ?? '');
   const [branches, setBranches] = useState<string[]>([]);
   const [baseBranch, setBaseBranch] = useState('');
   const [agentKind, setAgentKind] = useState<AgentKind>('claude');
@@ -62,6 +62,7 @@ export function NewWorkspaceDialog({ projectId, repos, onClose, onCreated }: {
         <select value={repoId} onChange={(e) => setRepoId(e.target.value)}>
           {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
+        <span className="hint">워크스페이스 하나는 저장소 하나에서 일합니다. 다른 저장소는 워크스페이스를 따로 만드세요.</span>
       </div>
       <div className="field">
         <label>기준 브랜치</label>

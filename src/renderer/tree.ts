@@ -18,6 +18,13 @@ export const STATUS_LABEL: Record<WorkspaceStatus, string> = {
   waiting_user: '사용자 기다림',
 };
 
+/** 저장소 id → 그 저장소로 만든 워크스페이스 수 */
+export function countByRepo(workspaces: Workspace[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const w of workspaces) counts[w.repoId] = (counts[w.repoId] ?? 0) + 1;
+  return counts;
+}
+
 const byCreated = <T extends { createdAt: number }>(a: T, b: T): number => a.createdAt - b.createdAt;
 
 export function buildTree(projects: Project[], workspaces: Workspace[]): TreeNode[] {

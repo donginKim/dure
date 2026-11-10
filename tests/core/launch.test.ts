@@ -76,4 +76,6 @@ test('지침 문구에 커밋·push·배포 금지와 두레 hook 신뢰 선언�
   expect(text).toContain('프론트');
   expect(text).toContain('쇼핑몰');
   expect(text).toContain('dure');
+  // 에이전트가 같은 프로젝트의 다른 저장소를 스스로 찾아 헤매지 않게 한다
+  expect(text).toContain('`project_overview`');
 });

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Repo } from '@shared/types';
+import { existsSync } from 'node:fs';
+import type { Repo, RepoStatus } from '@shared/types';
 import { openDatabase } from './db';
 import { createGit, type Git } from './git';
 import { startMcpServer } from './mcp/server';
@@ -18,6 +19,7 @@ export interface Core {
   git: Git;
   mcpUrl: string;
   addRepo(projectId: string, path: string): Promise<Repo>;
+  repoStatus(repoId: string): Promise<RepoStatus>;
   dispose(): Promise<void>;
 }
 
@@ -47,7 +49,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   const pty = new PtyManager();
   const git = createGit(o.baseEnv);
-  const mcp = await startMcpServer({ workspaces, projects }, [workspaceTools]);
+  const mcp = await startMcpServer({ workspaces, projects, repos }, [workspaceTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, git, mcpUrl: mcp.url, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });
@@ -59,6 +61,13 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);
       return repos.add(projectId, path);
+    },
+    async repoStatus(repoId) {
+      const repo = repos.get(repoId);
+      if (!repo) throw new Error(`저장소가 없습니다: ${repoId}`);
+      if (!existsSync(repo.path)) return { ok: false, reason: '폴더를 찾을 수 없습니다.' };
+      if (!(await git.isGitRepo(repo.path))) return { ok: false, reason: 'git 저장소가 아닙니다.' };
+      return { ok: true, branch: await git.currentBranch(repo.path) };
     },
     async dispose() {
       if (disposed) return;

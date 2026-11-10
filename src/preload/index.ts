@@ -30,6 +30,7 @@ const api: DureApi = {
     pickFolder: () => call('repos.pickFolder'),
     add: (projectId, path) => call('repos.add', projectId, path),
     branches: (repoId) => call('repos.branches', repoId),
+    status: (repoId) => call('repos.status', repoId),
     remove: (id) => call('repos.remove', id),
   },
   workspaces: {

@@ -6,6 +6,8 @@ import { resolveShellEnv } from '@core/shellEnv';
 import { registerIpc } from './ipc';
 
 app.setName('dure');
+// 개발·검증용: 다른 데이터 폴더를 쓰면 브라우저 프로필도 그쪽으로 옮겨, 띄워 둔 앱과 섞이지 않게 한다.
+if (process.env.DURE_DATA_DIR) app.setPath('userData', process.env.DURE_DATA_DIR);
 
 let core: Core | undefined;
 let unregisterIpc: (() => void) | undefined;
@@ -33,8 +35,9 @@ async function start(): Promise<void> {
   await app.whenReady();
   try {
     core = await createCore({
-      dataDir: app.getPath('userData'),
-      worktreeRoot: join(homedir(), 'dure', 'worktrees'),
+      // 개발·검증용으로 다른 폴더를 쓸 수 있게 한다. 평소에는 설정하지 않는다.
+      dataDir: process.env.DURE_DATA_DIR || app.getPath('userData'),
+      worktreeRoot: process.env.DURE_WORKTREE_ROOT || join(homedir(), 'dure', 'worktrees'),
       baseEnv: await resolveShellEnv(),
     });
   } catch (e) {

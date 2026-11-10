@@ -1,4 +1,4 @@
-import type { CreateWorkspaceInput, Project, Repo, TerminalInfo, Workspace } from './types';
+import type { CreateWorkspaceInput, Project, Repo, RepoStatus, TerminalInfo, Workspace } from './types';
 
 export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals';
 export interface TerminalSize { cols: number; rows: number }
@@ -15,6 +15,8 @@ export interface DureApi {
     pickFolder(): Promise<string | null>;
     add(projectId: string, path: string): Promise<Repo>;
     branches(repoId: string): Promise<string[]>;
+    /** 등록된 저장소가 지금도 유효한지와 현재 브랜치 */
+    status(repoId: string): Promise<RepoStatus>;
     remove(id: string): Promise<void>;
   };
   workspaces: {
@@ -42,7 +44,7 @@ export interface DureApi {
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove',
-  'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.remove',
+  'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',

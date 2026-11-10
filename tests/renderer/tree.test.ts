@@ -38,3 +38,12 @@ test('reconcileSelection: 프로젝트도 사라지면 null', () => {
 test('상태 글자', () => {
   expect(STATUS_LABEL).toEqual({ stopped: '꺼짐', idle: '쉬는 중', working: '작업 중', waiting_user: '사용자 기다림' });
 });
+
+test('countByRepo 는 저장소별 워크스페이스 수를 센다', async () => {
+  const { countByRepo } = await import('../../src/renderer/tree');
+  const a = { ...ws('a', 'p1', 1), repoId: 'r1' };
+  const b = { ...ws('b', 'p1', 2), repoId: 'r1' };
+  const c = { ...ws('c', 'p1', 3), repoId: 'r2' };
+  expect(countByRepo([a, b, c])).toEqual({ r1: 2, r2: 1 });
+  expect(countByRepo([])).toEqual({});
+});

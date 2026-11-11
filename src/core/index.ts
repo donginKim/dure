@@ -8,6 +8,8 @@ import { handleHook } from './hooks';
 import { createGit, type Git } from './git';
 import { MessageService } from './messages';
 import { startMcpServer } from './mcp/server';
+import { artifactTools } from './mcp/tools/artifact';
+import { messageTools } from './mcp/tools/message';
 import { todoTools } from './mcp/tools/todo';
 import { workspaceTools } from './mcp/tools/workspace';
 import { PtyManager } from './pty';
@@ -63,7 +65,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   let onStatus: (workspaceId: string) => void = () => undefined;
   let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
   const mcp = await startMcpServer({
-    workspaces, projects, repos, todos,
+    workspaces, projects, repos, todos, messages,
+    // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
+    get delivery() { return delivery; },
     onHook: (workspace, event, payload) => {
       const out = handleHook({
         workspaces, todos,
@@ -76,7 +80,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       noteHook(workspace.id, event, out !== '');
       return out;
     },
-  }, [workspaceTools, todoTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });

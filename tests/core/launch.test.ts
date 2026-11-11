@@ -139,3 +139,11 @@ test('첫 프롬프트는 두 에이전트 모두 마지막 인자로 붙는다'
     expect(l.args.slice(0, -1)).toEqual(without.args);
   }
 });
+
+test('지침에 대화 사용 문단이 있다', () => {
+  const text = baseInstructions({ name: 'w' } as Workspace, { name: 'p' } as Project);
+  expect(text).toContain('message_send 로 알려라');
+  expect(text).toContain('artifact_publish 로 올리고');
+  expect(text).toContain('인사나 확인만 하는 답은 보내지 마라');
+  expect(text).toContain('다른 워크스페이스의 파일을 직접 고치지 마라');
+});

@@ -73,6 +73,20 @@ export class DeliveryService {
     return 'waiting-unknown';
   }
 
+  /**
+   * 지금 이 워크스페이스에 새 메시지가 오면 어떻게 전달될지. 전달할 것이 없어도 답한다.
+   * 보내는 쪽 에이전트에게 알려주는 데 쓴다.
+   */
+  stateFor(workspaceId: string): DeliveryState {
+    const ws = this.d.workspaces.get(workspaceId);
+    if (!ws) return 'none';
+    if (ws.status === 'stopped') return 'starting';
+    if (ws.agentKind === 'codex') return 'waiting-codex';
+    if (ws.status === 'working') return 'next-hook';
+    if (ws.status === 'idle' && this.d.actions.isConfirmedIdle(workspaceId)) return 'waking';
+    return 'waiting-unknown';
+  }
+
   /** 새 메시지가 왔을 때, 멈춤이 풀렸을 때, 사용자가 "지금 알리기" 를 눌렀을 때 부른다. */
   async kick(workspaceId: string): Promise<DeliveryState> {
     const state = this.state(workspaceId);

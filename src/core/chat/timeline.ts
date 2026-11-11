@@ -10,12 +10,15 @@ export class Timeline {
   private steps = new Map<string, ChatStep>();
   /** 도구 호출을 이어 붙일 묶음. 글이나 프롬프트가 나오면 끝난다. */
   private open: Extract<ChatItem, { kind: 'steps' }> | null = null;
+  /** 항목이 바뀔 때마다 오른다 */
+  version = 0;
 
   push(pieces: Piece[]): void {
     for (const p of pieces) {
       const key = `${p.type}:${p.id}`;
       if (this.seen.has(key)) continue;
       this.seen.add(key);
+      this.version++;
       this.apply(p);
     }
   }
@@ -82,10 +85,15 @@ export class Timeline {
     return this.list;
   }
 
+  step(id: string): ChatStep | undefined {
+    return this.steps.get(id);
+  }
+
   reset(): void {
     this.list = [];
     this.seen.clear();
     this.steps.clear();
     this.open = null;
+    this.version++;
   }
 }

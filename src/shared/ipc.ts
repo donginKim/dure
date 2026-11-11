@@ -1,9 +1,9 @@
 import type {
-  Artifact, CommitResult, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  Artifact, ChatView, CommitResult, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
   TodoAssignee, TodoPatch, Workspace,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -83,6 +83,14 @@ export interface DureApi {
     /** git 이 낸 글을 돌려준다 */
     push(workspaceId: string): Promise<string>;
   };
+  /** 채팅 보기. 에이전트는 터미널에서 돌고, 여기서 보내는 것은 그 터미널에 써 넣는 것이다 */
+  chat: {
+    get(workspaceId: string): Promise<ChatView>;
+    /** 단계 하나의 입력·출력 원문 */
+    step(workspaceId: string, stepId: string): Promise<{ input: string; output: string | null } | null>;
+    send(workspaceId: string, text: string): Promise<void>;
+    answerPermission(workspaceId: string, answer: 'allow' | 'deny'): Promise<void>;
+  };
   artifacts: {
     list(projectId: string): Promise<Artifact[]>;
     get(id: string): Promise<Artifact | null>;
@@ -102,6 +110,7 @@ export const IPC_CHANNELS = [
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
   'commit.state', 'commit.run', 'commit.push',
+  'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission',
 ] as const;
 export type IpcChannel = (typeof IPC_CHANNELS)[number];
 

@@ -109,6 +109,10 @@ export function registerIpc(core: Core): () => void {
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
     'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
+    'chat.get': (workspaceId: string) => ({ ...core.chat.snapshot(workspaceId), canSend: core.service.canSendInput(workspaceId) }),
+    'chat.step': (workspaceId: string, stepId: string) => core.chat.step(workspaceId, stepId),
+    'chat.send': (workspaceId: string, text: string) => core.service.sendUserInput(workspaceId, text),
+    'chat.answerPermission': (workspaceId: string, answer: 'allow' | 'deny') => core.service.answerPermission(workspaceId, answer),
     'artifacts.list': (projectId: string) => core.messages.artifacts(projectId),
     'artifacts.get': (id: string) => core.messages.artifact(id) ?? null,
   };
@@ -135,7 +139,8 @@ export function registerIpc(core: Core): () => void {
   };
   // 상태가 바뀌면 '알리기' 가능 여부도 바뀌므로 todos 도 함께 알린다.
   // 상태가 바뀌면 전달 방식도 바뀌므로 messages 도 함께 알린다.
-  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); };
+  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
+  const onChatChanged = (): void => changed('chat');
   const onMessagesChanged = (): void => changed('messages');
   const onCommitChanged = (): void => changed('commit');
   const onTodosChanged = (): void => changed('todos');
@@ -146,6 +151,7 @@ export function registerIpc(core: Core): () => void {
   core.todos.on('delivered', onTodosChanged);
   core.messages.on('changed', onMessagesChanged);
   core.commit.on('changed', onCommitChanged);
+  core.chat.on('changed', onChatChanged);
 
   return () => {
     core.pty.off('data', onData);
@@ -155,6 +161,7 @@ export function registerIpc(core: Core): () => void {
     core.todos.off('delivered', onTodosChanged);
     core.messages.off('changed', onMessagesChanged);
     core.commit.off('changed', onCommitChanged);
+    core.chat.off('changed', onChatChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));
       else ipcMain.removeHandler(ipcName(channel));

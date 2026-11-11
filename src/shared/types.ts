@@ -202,6 +202,11 @@ export interface ChatPermission {
   tool: string;
   summary: string;
   input: string;
+  /**
+   * 채팅에서 "허용"/"거부" 로 답해도 되는가. 무엇을 묻는 창인지 알고, 사용자가 터미널에서 그 창을 건드리지 않았을 때만 참.
+   * (답은 터미널에 Enter 나 Esc 를 써 넣는 것이라, 창의 모양을 모르면 엉뚱한 선택지가 눌린다.)
+   */
+  canAnswer: boolean;
 }
 
 export interface ChatSnapshot {
@@ -209,9 +214,15 @@ export interface ChatSnapshot {
   available: boolean;
   /** 쓸 수 없으면 이유 */
   reason: string | null;
+  /** 대화 항목. 단계의 입력·출력 원문은 비어 있다 (펼칠 때 따로 가져온다) */
   items: ChatItem[];
+  /** 너무 길어 보내지 않은 앞쪽 항목 수 */
+  hidden: number;
   /** 지금 차례가 시작된 시각 (작업 중일 때) */
   workingSince: number | null;
   /** 승인을 기다리는 도구 호출 */
   pendingPermission: ChatPermission | null;
 }
+
+/** 채팅 화면이 받는 것: 대화와, 지금 입력창으로 보낼 수 있는지 */
+export type ChatView = ChatSnapshot & { canSend: boolean };

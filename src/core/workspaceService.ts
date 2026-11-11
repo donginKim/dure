@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
 import { buildAgentLaunch } from './agents/launch';
+import type { ChatService } from './chat/chatService';
 import type { DeliveryService } from './delivery';
 import type { Git } from './git';
 import type { MessageService } from './messages';
@@ -78,6 +79,13 @@ export class WorkspaceService extends EventEmitter {
   /** 마지막으로 hook 을 받은 시각 */
   private readonly lastActivity = new Map<string, number>();
 
+  private chat?: ChatService;
+
+  /** 대화 서비스를 이어 준다: 승인 창 상태를 묻고, 중단·종료·삭제를 알린다. */
+  attachChat(chat: ChatService): void {
+    this.chat = chat;
+  }
+
   /** 전달 엔진은 이 서비스를 쓰므로 만든 뒤에 이어 준다. */
   attachDelivery(delivery: DeliveryService): void {
     this.delivery = delivery;
@@ -109,7 +117,9 @@ export class WorkspaceService extends EventEmitter {
    */
   noteTerminalInput(terminalId: string): void {
     const workspaceId = this.agentTerminals.get(terminalId);
-    if (workspaceId) this.confirmedIdle.delete(workspaceId);
+    if (!workspaceId) return;
+    this.confirmedIdle.delete(workspaceId);
+    this.chat?.noteTerminalInput(workspaceId);
   }
 
   private readonly onTerminalExit = (terminalId: string): void => {
@@ -121,6 +131,7 @@ export class WorkspaceService extends EventEmitter {
     this.lastActivity.delete(workspaceId);
     // 첫 프롬프트를 받기 전에 끝났다면 건넨 메시지를 되돌린다.
     this.delivery?.agentExited(workspaceId);
+    this.chat?.agentExited(workspaceId);
     if (this.d.workspaces.get(workspaceId)) {
       this.d.workspaces.update(workspaceId, { status: 'stopped' });
       this.emit('changed', workspaceId);
@@ -206,6 +217,7 @@ export class WorkspaceService extends EventEmitter {
     } finally {
       this.removing.delete(id);
       this.delivery?.forget(id);
+      this.chat?.forget(id);
     }
   }
 
@@ -352,6 +364,71 @@ export class WorkspaceService extends EventEmitter {
     this.d.pty.write(terminal.id, '\x1b');
     this.confirmedIdle.delete(id);
     this.d.workspaces.update(id, { status: 'idle' });
+    this.chat?.interrupted(id);
+    this.emit('changed', id);
+  }
+
+  /**
+   * 대화 기록에서 "사용자가 중단함" 을 읽었다. 터미널에서 직접 Esc 를 눌렀거나 승인을 거부한 경우다.
+   * 그때는 hook 이 오지 않아(실험 12c, 15e) 상태가 '작업 중'/'승인 대기' 에 머문다. 쉬는 중으로 되돌린다.
+   * 쉬는 중으로 확인된 것은 아니다: 두레가 스스로 글을 써 넣는 근거로는 쓰지 않는다.
+   */
+  noteInterrupted(id: string): void {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || (ws.status !== 'working' && ws.status !== 'waiting_user')) return;
+    this.confirmedIdle.delete(id);
+    this.d.workspaces.update(id, { status: 'idle' });
+    this.emit('changed', id);
+  }
+
+  /**
+   * 채팅 입력창의 글을 지금 에이전트에게 보낼 수 있는가.
+   * 쉬는 중이거나 작업 중인 Claude Code 에서만 된다. 작업 중에 보낸 글은 다음 차례에 읽힌다 (실험 15d).
+   * 시작 중(폴더 신뢰 창)이나 승인 대기 중에는 선택 창이 떠 있어 글이 그 창에 들어간다.
+   */
+  canSendInput(id: string): boolean {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || ws.agentKind !== 'claude' || this.removing.has(id)) return false;
+    if (ws.status !== 'idle' && ws.status !== 'working') return false;
+    return this.d.pty.list(id).some((t) => t.kind === 'agent');
+  }
+
+  /** 사용자가 채팅 입력창에서 보낸 글을 에이전트의 터미널에 써 넣는다. */
+  async sendUserInput(id: string, text: string): Promise<void> {
+    // eslint-disable-next-line no-control-regex
+    const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
+    if (!message) throw new Error('보낼 글을 입력하세요.');
+    const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
+    if (!this.canSendInput(id) || !terminal) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
+    // 사용자의 입력이다: 두레가 넣은 프롬프트로 치지 않고, 쉬는 중 확인을 지운다.
+    this.confirmedIdle.delete(id);
+    this.synthetic.delete(id);
+    this.d.pty.write(terminal.id, message.includes('\n') ? `\x1b[200~${message}\x1b[201~` : message);
+    await new Promise((r) => setTimeout(r, 400));
+    const ws = this.d.workspaces.get(id);
+    // 그 사이에 선택 창이 떴다면 Enter 를 보내지 않는다. 글은 입력칸에 남는다.
+    if (!ws || (ws.status !== 'idle' && ws.status !== 'working') || !this.d.pty.list(id).some((t) => t.id === terminal.id)) {
+      throw new Error('보내는 도중에 에이전트의 상태가 바뀌었습니다. 터미널을 확인하세요.');
+    }
+    this.d.pty.write(terminal.id, '\r');
+  }
+
+  /**
+   * 채팅의 승인 카드에서 고른 답을 승인 창에 써 넣는다.
+   * hook 으로 승인 창임이 확인됐고, 사용자가 터미널에서 그 창을 건드리지 않았을 때만 한다 (실험 15e: 커서는 "1. Yes" 에 있다).
+   */
+  answerPermission(id: string, answer: 'allow' | 'deny'): void {
+    const ws = this.d.workspaces.get(id);
+    const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
+    if (!ws || !terminal || ws.agentKind !== 'claude' || ws.status !== 'waiting_user' || !this.chat?.hasPendingPermission(id)) {
+      throw new Error('승인을 기다리는 중이 아닙니다.');
+    }
+    if (answer !== 'allow' && answer !== 'deny') throw new Error('알 수 없는 답입니다.');
+    this.chat.permissionAnswered(id);
+    this.confirmedIdle.delete(id);
+    this.d.pty.write(terminal.id, answer === 'allow' ? '\r' : '\x1b');
+    // 거부하면 hook 이 오지 않는다. 허용하면 곧 PostToolUse 가 온다.
+    this.d.workspaces.update(id, { status: answer === 'allow' ? 'working' : 'idle' });
     this.emit('changed', id);
   }
 

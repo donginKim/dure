@@ -6,17 +6,30 @@ export interface AgentLaunch {
   args: string[];
   env: Record<string, string>;
   /** 실행 전에 써 둘 파일. 전부 configDir 아래다. 사용자 저장소에는 아무것도 쓰지 않는다. */
-  files: { path: string; content: string }[];
+  files: { path: string; content: string; mode?: number }[];
 }
 
 export interface AgentLaunchInput {
   kind: AgentKind;
   permissionMode: PermissionMode;
   mcpUrl: string;
+  /** hook 스크립트가 부르는 주소 (뒤에 /<이벤트> 가 붙는다) */
+  hookUrl: string;
   token: string;
   configDir: string;
   instructions: string;
 }
+
+const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification'] as const;
+
+// 셸에서 한 낱말로 읽히게 작은따옴표로 감싼다. 경로에 공백이 있다.
+const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
+
+// 두레에 상태를 알리고, 두레가 돌려준 글을 그대로 내보낸다. 실패해도 에이전트를 막지 않는다.
+const hookScript = (hookUrl: string, token: string): string => `#!/bin/sh
+curl -s -m 5 -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @- "${hookUrl}/$1" 2>/dev/null
+exit 0
+`;
 
 // TOML 기본 문자열은 JSON 문자열과 같은 이스케이프를 쓴다.
 const toml = (s: string): string => JSON.stringify(s);
@@ -29,21 +42,31 @@ const toml = (s: string): string => JSON.stringify(s);
 export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
   if (i.kind === 'claude') {
     const mcpConfig = join(i.configDir, 'mcp.json');
+    const settings = join(i.configDir, 'settings.json');
+    const hook = join(i.configDir, 'hook.sh');
+    const hooks = Object.fromEntries(HOOK_EVENTS.map((ev) => [
+      ev, [{ matcher: '', hooks: [{ type: 'command', command: `${shq(hook)} ${ev}` }] }],
+    ]));
     return {
       command: 'claude',
       args: [
         '--mcp-config', mcpConfig,
         '--allowedTools', 'mcp__dure',
+        '--settings', settings,
         '--append-system-prompt', i.instructions,
         ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', 'acceptEdits']),
       ],
       env: {},
-      files: [{
-        path: mcpConfig,
-        content: JSON.stringify({
-          mcpServers: { dure: { type: 'http', url: i.mcpUrl, headers: { Authorization: `Bearer ${i.token}` } } },
-        }),
-      }],
+      files: [
+        {
+          path: mcpConfig,
+          content: JSON.stringify({
+            mcpServers: { dure: { type: 'http', url: i.mcpUrl, headers: { Authorization: `Bearer ${i.token}` } } },
+          }),
+        },
+        { path: settings, content: JSON.stringify({ hooks }) },
+        { path: hook, content: hookScript(i.hookUrl, i.token), mode: 0o700 },
+      ],
     };
   }
   return {

@@ -24,7 +24,7 @@
 | 5 | 프로세스를 죽이지 않고 하던 일만 멈출 수 있는가 | ✅ `\x1b`(Esc). 약 2초 안에 입력 대기로 돌아오고 다음 지시를 받는다 | ⏳ | 같음 |
 | 6 | 권한 모드 `ask` | ✅ `--permission-mode acceptEdits`: 파일 생성은 묻지 않고, `curl` 은 승인 창이 뜬다 | ⏳ 후보: `--sandbox workspace-write --ask-for-approval on-request` | 같음 |
 | 6b | 권한 모드 `bypass` | ✅ `--dangerously-skip-permissions`: `curl` 이 묻지 않고 실행된다 | ⏳ 후보: `--dangerously-bypass-approvals-and-sandbox` | `spikes/06-claude-bypass.mjs` |
-| 7 | 상태를 화면 해석 없이 알 수 있는가 | ✅ hook 신호: `SessionStart`(뜸), `UserPromptSubmit`(작업 시작), `PreToolUse`/`PostToolUse`(작업 중), `Stop`(쉬는 중), `Notification`(승인 창에서 사용자 기다림). ❌ Esc 로 중단했을 때와 모델 오류로 끝났을 때는 `Stop` 이 오지 않는다 | ⏳ | `spikes/02-09-claude.mjs` |
+| 7 | 상태를 화면 해석 없이 알 수 있는가 | ✅ hook 신호: `SessionStart`(뜸), `UserPromptSubmit`(작업 시작), `PreToolUse`/`PostToolUse`(작업 중), `Stop`(쉬는 중), `Notification`(승인 창에서 사용자 기다림. 본문의 `notification_type` 이 `permission_prompt`, `message` 는 `Claude needs your permission`. 실험 10 `spikes/10-notification.mjs`). ❌ Esc 로 중단했을 때와 모델 오류로 끝났을 때는 `Stop` 이 오지 않는다 | ⏳ | `spikes/02-09-claude.mjs` |
 | 8 | 샌드박스 안에서 서버를 띄우고 localhost 를 호출할 수 있는가 | 해당 없음 (샌드박스 없음, 승인 창으로 다룸) | ❌ `:workspace` 프로필에서 localhost 와 외부 모두 접속 실패. `-c sandbox_workspace_write.network_access=true` 로도 안 풀림. 작업 폴더 쓰기는 됨, 밖은 막힘 | `codex sandbox -P :workspace` |
 | 9 | `PATH` 앞에 끼운 `git` 이 에이전트의 명령 실행에 쓰이는가 | ✅ 에이전트가 실행한 `git status` 가 대리 실행 파일을 탔다 | ✅ 샌드박스 안 `git status` 가 대리 실행 파일을 탔다 (모델 없이 확인). ⏳ 실제 에이전트 실행에서는 미확인 | 같음 |
 

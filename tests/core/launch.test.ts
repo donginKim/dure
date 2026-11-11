@@ -3,6 +3,7 @@ import { baseInstructions } from '@core/agents/instructions';
 import type { Project, Workspace } from '@shared/types';
 
 const common = {
+  hookUrl: 'http://127.0.0.1:5555/hook',
   mcpUrl: 'http://127.0.0.1:5555/mcp', token: 'TOKEN-abc123', configDir: '/data/workspaces/w1',
   instructions: '지침 "따옴표" 와\n줄바꿈',
 };
@@ -10,13 +11,13 @@ const common = {
 test('claude ask: mcp 설정 파일이 configDir 아래에 있고 URL 과 Bearer 토큰을 담는다', () => {
   const l = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'ask' });
   expect(l.command).toBe('claude');
-  expect(l.files).toHaveLength(1);
-  expect(l.files[0].path).toBe('/data/workspaces/w1/mcp.json');
+  expect(l.files.map((f) => f.path)).toEqual(['/data/workspaces/w1/mcp.json', '/data/workspaces/w1/settings.json', '/data/workspaces/w1/hook.sh']);
   expect(JSON.parse(l.files[0].content)).toEqual({
     mcpServers: { dure: { type: 'http', url: common.mcpUrl, headers: { Authorization: 'Bearer TOKEN-abc123' } } },
   });
   expect(l.args).toEqual([
     '--mcp-config', '/data/workspaces/w1/mcp.json', '--allowedTools', 'mcp__dure',
+    '--settings', '/data/workspaces/w1/settings.json',
     '--append-system-prompt', common.instructions, '--permission-mode', 'acceptEdits',
   ]);
   expect(l.env).toEqual({});
@@ -25,8 +26,8 @@ test('claude ask: mcp 설정 파일이 configDir 아래에 있고 URL 과 Bearer
 test('claude bypass 와 ask 는 권한 인자만 다르다', () => {
   const ask = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'ask' });
   const bypass = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'bypass' });
-  expect(bypass.args.slice(0, 6)).toEqual(ask.args.slice(0, 6));
-  expect(bypass.args.slice(6)).toEqual(['--dangerously-skip-permissions']);
+  expect(bypass.args.slice(0, 8)).toEqual(ask.args.slice(0, 8));
+  expect(bypass.args.slice(8)).toEqual(['--dangerously-skip-permissions']);
   expect(bypass.files).toEqual(ask.files);
 });
 
@@ -78,4 +79,39 @@ test('지침 문구에 커밋·push·배포 금지와 두레 hook 신뢰 선언�
   expect(text).toContain('dure');
   // 에이전트가 같은 프로젝트의 다른 저장소를 스스로 찾아 헤매지 않게 한다
   expect(text).toContain('`project_overview`');
+});
+
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification'];
+
+test('claude: settings.json 이 여섯 이벤트에 hook.sh 를 걸고 인자에 --settings 가 있다', () => {
+  const l = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'ask' });
+  const settings = JSON.parse(l.files.find((f) => f.path.endsWith('settings.json'))!.content);
+  expect(Object.keys(settings.hooks).sort()).toEqual([...EVENTS].sort());
+  for (const ev of EVENTS) {
+    expect(settings.hooks[ev]).toEqual([{ matcher: '', hooks: [{ type: 'command', command: `'/data/workspaces/w1/hook.sh' ${ev}` }] }]);
+  }
+  expect(l.args).toContain('--settings');
+});
+
+test('claude: hook.sh 는 0o700 이고 토큰과 hookUrl 을 담으며 항상 exit 0 으로 끝난다', () => {
+  const l = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'ask' });
+  const hook = l.files.find((f) => f.path.endsWith('hook.sh'))!;
+  expect(hook.mode).toBe(0o700);
+  expect(hook.content.startsWith('#!/bin/sh\n')).toBe(true);
+  expect(hook.content).toContain('Authorization: Bearer TOKEN-abc123');
+  expect(hook.content).toContain('"http://127.0.0.1:5555/hook/$1"');
+  expect(hook.content.trimEnd().endsWith('exit 0')).toBe(true);
+  for (const f of l.files.filter((x) => x !== hook)) expect(f.mode ?? 0o600).toBe(0o600);
+});
+
+test('claude: 공백과 작은따옴표가 든 configDir 도 hook 명령에서 안전하게 감싸진다', () => {
+  const l = buildAgentLaunch({ ...common, configDir: "/data/App Support/it's", kind: 'claude', permissionMode: 'ask' });
+  const settings = JSON.parse(l.files.find((f) => f.path.endsWith('settings.json'))!.content);
+  expect(settings.hooks.Stop[0].hooks[0].command).toBe(`'/data/App Support/it'\\''s/hook.sh' Stop`);
+});
+
+test('codex: 실행 정보는 hook 과 무관하다', () => {
+  const l = buildAgentLaunch({ ...common, kind: 'codex', permissionMode: 'ask' });
+  expect(l.files).toEqual([]);
+  expect(l.args.join(' ')).not.toContain('hook');
 });

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { accessSync, constants, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
@@ -37,6 +37,7 @@ export interface WorkspaceServiceDeps {
   todos: TodoService;
   git: Git;
   mcpUrl: string;
+  hookUrl: string;
   dataDir: string;
   worktreeRoot: string;
   baseEnv: Record<string, string>;
@@ -169,6 +170,7 @@ export class WorkspaceService extends EventEmitter {
       kind: ws.agentKind,
       permissionMode: ws.permissionMode,
       mcpUrl: this.d.mcpUrl,
+      hookUrl: this.d.hookUrl,
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),
       instructions: baseInstructions(ws, project),
@@ -178,7 +180,9 @@ export class WorkspaceService extends EventEmitter {
 
     for (const f of launch.files) {
       mkdirSync(dirname(f.path), { recursive: true });
-      writeFileSync(f.path, f.content, { mode: 0o600 }); // 토큰이 들어 있다
+      const mode = f.mode ?? 0o600; // 토큰이 들어 있다
+      writeFileSync(f.path, f.content, { mode });
+      chmodSync(f.path, mode); // 이미 있던 파일은 writeFileSync 가 권한을 바꾸지 않는다
     }
     const terminal = this.d.pty.spawn({
       workspaceId: id, kind: 'agent', title: AGENT_NAMES[ws.agentKind],

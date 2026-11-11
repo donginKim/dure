@@ -20,8 +20,10 @@ async function setup() {
   const front = add('프론트', 'tok-front', 'claude');
   const back = add('백엔드', 'tok-back', 'codex');
   const other = repos.add(project.id, '/tmp/shop-api');
-  const server = await startMcpServer({ workspaces, projects, repos }, [workspaceTools]);
-  return { server, project, front, back, repo, other };
+  const hookCalls: { ws: string; event: string; payload: unknown }[] = [];
+  const onHook = (w: { name: string }, event: string, payload: unknown): string => { hookCalls.push({ ws: w.name, event, payload }); return event === 'Stop' ? '{"decision":"block","reason":"r"}' : ''; };
+  const server = await startMcpServer({ workspaces, projects, repos, todos: undefined as never, onHook }, [workspaceTools]);
+  return { server, project, front, back, repo, other, hookCalls };
 }
 
 async function connect(url: string, token: string) {
@@ -78,7 +80,7 @@ test('서버는 127.0.0.1 에만 묶이고 url 이 그 포트를 가리킨다', 
 });
 
 test('close 뒤에는 접속이 거부된다', async () => {
-  const extra = await startMcpServer({ workspaces: undefined as never, projects: undefined as never, repos: undefined as never }, []);
+  const extra = await startMcpServer({ workspaces: undefined as never, projects: undefined as never, repos: undefined as never, todos: undefined as never, onHook: () => '' }, []);
   await extra.close();
   await expect(fetch(extra.url, { method: 'POST' })).rejects.toThrow();
 });
@@ -98,4 +100,29 @@ test('project_overview 는 프로젝트의 모든 저장소와 워크스페이�
     { name: '프론트', repo: 'shop', branch: 'dure/프론트', path: '/tmp/wt/프론트', agent: 'claude', status: 'stopped', isMe: true },
     { name: '백엔드', repo: 'shop', branch: 'dure/백엔드', path: '/tmp/wt/백엔드', agent: 'codex', status: 'stopped', isMe: false },
   ]);
+});
+
+const hookUrl = (event: string) => ctx.server.url.replace('/mcp', `/hook/${event}`);
+
+test('POST /hook/Stop 은 토큰이 맞으면 200 과 onHook 의 반환값을 돌려준다', async () => {
+  const res = await fetch(hookUrl('Stop'), { method: 'POST', headers: { Authorization: 'Bearer tok-back' }, body: JSON.stringify({ a: 1 }) });
+  expect(res.status).toBe(200);
+  expect(await res.text()).toBe('{"decision":"block","reason":"r"}');
+  expect(ctx.hookCalls).toEqual([{ ws: '백엔드', event: 'Stop', payload: { a: 1 } }]);
+});
+
+test('POST /hook/Stop 은 토큰이 없으면 401', async () => {
+  expect((await fetch(hookUrl('Stop'), { method: 'POST', body: '{}' })).status).toBe(401);
+  expect(ctx.hookCalls).toEqual([]);
+});
+
+test('hook 본문이 JSON 이 아니어도 200 이다', async () => {
+  const res = await fetch(hookUrl('PreToolUse'), { method: 'POST', headers: { Authorization: 'Bearer tok-front' }, body: 'not json' });
+  expect(res.status).toBe(200);
+  expect(await res.text()).toBe('');
+  expect(ctx.hookCalls[0]).toEqual({ ws: '프론트', event: 'PreToolUse', payload: 'not json' });
+});
+
+test('서버는 hook 주소를 알려준다', () => {
+  expect(ctx.server.hookUrl).toBe(`http://127.0.0.1:${ctx.server.port}/hook`);
 });

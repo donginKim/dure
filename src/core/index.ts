@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { openDatabase } from './db';
+import { handleHook } from './hooks';
 import { createGit, type Git } from './git';
 import { startMcpServer } from './mcp/server';
 import { workspaceTools } from './mcp/tools/workspace';
@@ -52,10 +53,17 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const todos = new TodoService(db);
   const pty = new PtyManager();
   const git = createGit(o.baseEnv);
-  const mcp = await startMcpServer({ workspaces, projects, repos }, [workspaceTools]);
+  // hook 으로 상태가 바뀌면 서비스의 'changed' 로 내보낸다. 서비스는 MCP 주소가 정해진 뒤에 만들어지므로 나중에 잇는다.
+  let onStatus: (workspaceId: string) => void = () => undefined;
+  const mcp = await startMcpServer({
+    workspaces, projects, repos, todos,
+    onHook: (workspace, event, payload) => handleHook({ workspaces, todos, onStatus: (id) => onStatus(id) }, workspace, event, payload),
+  }, [workspaceTools]);
   const service = new WorkspaceService({
-    projects, repos, workspaces, pty, todos, git, mcpUrl: mcp.url, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
+    projects, repos, workspaces, pty, todos, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });
+
+  onStatus = (id) => service.emit('changed', id);
 
   let disposed = false;
   return {

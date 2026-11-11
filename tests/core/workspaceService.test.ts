@@ -257,3 +257,39 @@ test('워크스페이스를 지우면 서비스가 그 TODO 를 정리한다', a
   expect(core.todos.listProject(projectId)).toEqual([]);
   expect(core.todos.pendingCount(ws.id)).toBe(0);
 });
+
+// hook 스크립트는 같은 프로세스의 서버를 부른다. 동기 실행은 서버를 멈추므로 비동기로 실행한다.
+async function runHook(hook: string, event: string): Promise<string> {
+  const { execFile } = await import('node:child_process');
+  return new Promise((resolve, reject) => {
+    const child = execFile(hook, [event], { encoding: 'utf8' }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+    child.stdin?.end('{}');
+  });
+}
+
+test('hook.sh 를 직접 실행하면 코어가 상태를 바꾸고, 미전달 변경을 돌려준다', async () => {
+  const ws = await create({ name: 'hooked' });
+  await core.service.startAgent(ws.id, SIZE);
+  const hook = join(dataDir, 'workspaces', ws.id, 'hook.sh');
+  expect(statSync(hook).mode & 0o777).toBe(0o700);
+  const changed: string[] = [];
+  core.service.on('changed', (id) => changed.push(id));
+  expect(await runHook(hook, 'PreToolUse')).toBe('');
+  expect(core.workspaces.get(ws.id)?.status).toBe('working');
+  expect(changed).toEqual([ws.id]); // 화면이 상태 변화를 알 수 있어야 한다
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  const out = JSON.parse(await runHook(hook, 'Stop'));
+  expect(out.decision).toBe('block');
+  expect(out.reason).toContain('추가됨: "A"');
+  expect(await runHook(hook, 'Stop')).toBe('');
+  expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+});
+
+test('두레가 꺼진 뒤 hook.sh 를 실행해도 종료 코드 0 이고 출력이 없다', async () => {
+  const ws = await create({ name: 'orphan-hook' });
+  await core.service.startAgent(ws.id, SIZE);
+  const hook = join(dataDir, 'workspaces', ws.id, 'hook.sh');
+  await core.dispose();
+  expect(await runHook(hook, 'Stop')).toBe('');
+  await boot(); // afterEach 의 dispose 용
+});

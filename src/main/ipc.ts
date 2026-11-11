@@ -22,6 +22,12 @@ function tagged(e: unknown): Error {
 export function registerIpc(core: Core): () => void {
   const changed = (topic: ChangeTopic): void => broadcast(IPC_EVENTS.changed, topic);
 
+  // 완료된 프로젝트는 기록만 본다.
+  const assertOpen = (projectId: string): undefined => {
+    if (core.service.isProjectClosed(projectId)) throw new Error('완료된 프로젝트입니다. 다시 열어야 바꿀 수 있습니다.');
+    return undefined;
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handlers: Record<IpcChannel, (...args: any[]) => unknown> = {
     'projects.list': () => core.projects.list(),
@@ -39,6 +45,11 @@ export function registerIpc(core: Core): () => void {
     'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
     'cleanup.list': (projectId: string) => core.cleanup.list(projectId),
     'cleanup.restore': (id: string) => core.cleanup.restore(id),
+    'cleanup.export': async (id: string) => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], title: '꺼낼 폴더 선택' });
+      return res.canceled || res.filePaths.length === 0 ? null : core.cleanup.exportTo(id, res.filePaths[0]!);
+    },
     'cleanup.plan': (projectId: string) => core.completionPlan(projectId),
     'cleanup.complete': async (projectId: string, choice: CompletionChoice) => {
       try { return await core.completeProject(projectId, choice); } finally { changed('projects'); changed('cleanup'); }
@@ -89,7 +100,7 @@ export function registerIpc(core: Core): () => void {
     'terminals.buffer': (id: string) => core.pty.snapshot(id),
     // 화면에서 온 TODO 변경은 모두 사용자의 변경이다.
     'todos.list': (projectId: string) => core.todos.listProject(projectId),
-    'todos.add': (i: { projectId: string; workspaceId: string | null; title: string; assignee?: TodoAssignee }) => core.todos.add(i, 'user'),
+    'todos.add': (i: { projectId: string; workspaceId: string | null; title: string; assignee?: TodoAssignee }) => { assertOpen(i.projectId); return core.todos.add(i, 'user'); },
     'todos.update': (id: string, patch: TodoPatch) => core.todos.update(id, patch, { actor: 'user' }),
     'todos.remove': (id: string) => core.todos.remove(id, { actor: 'user' }),
     'todos.move': (id: string, direction: 'up' | 'down') => core.todos.move(id, direction),
@@ -101,7 +112,7 @@ export function registerIpc(core: Core): () => void {
     'messages.list': (threadId: string) => core.messages.messages(threadId),
     // 화면에서 보낸 메시지는 사용자가 보낸 것이다.
     'messages.send': (i: { projectId: string; toWorkspaceId: string; body: string; threadId?: string }) =>
-      core.messages.send({ projectId: i.projectId, from: { kind: 'user' }, toWorkspaceId: i.toWorkspaceId, body: i.body, threadId: i.threadId }),
+      assertOpen(i.projectId) ?? core.messages.send({ projectId: i.projectId, from: { kind: 'user' }, toWorkspaceId: i.toWorkspaceId, body: i.body, threadId: i.threadId }),
     'messages.pauseThread': (threadId: string, paused: boolean) => core.messages.pauseThread(threadId, paused),
     'messages.flow': (projectId: string) => core.messages.flow(projectId),
     'messages.pauseProject': (projectId: string, paused: boolean) => {

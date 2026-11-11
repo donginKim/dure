@@ -30,6 +30,8 @@ export interface DureApi {
     list(projectId: string): Promise<CleanupItem[]>;
     /** 옮겨 둔 것을 작업 폴더의 원래 자리로 되돌린다 */
     restore(id: string): Promise<void>;
+    /** 옮겨 둔 것을 고른 폴더로 꺼낸다 (되돌릴 작업 폴더가 없을 때). 폴더를 고르는 창을 띄운다. 꺼낸 경로, 취소하면 null */
+    export(id: string): Promise<string | null>;
     /** 완료 처리하기 전에 보여줄 것 */
     plan(projectId: string): Promise<CompletionPlan>;
     /** 고른 것을 지우고 프로젝트를 완료로 옮긴다 */
@@ -138,7 +140,7 @@ export interface DureApi {
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
-  'cleanup.list', 'cleanup.restore', 'cleanup.plan', 'cleanup.complete',
+  'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
   'workspaces.stopAgent', 'workspaces.setEngine',

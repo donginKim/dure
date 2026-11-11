@@ -29,6 +29,7 @@ const api: DureApi = {
   cleanup: {
     list: (projectId) => call('cleanup.list', projectId),
     restore: (id) => call('cleanup.restore', id),
+    export: (id) => call('cleanup.export', id),
     plan: (projectId) => call('cleanup.plan', projectId),
     complete: (projectId, choice) => call('cleanup.complete', projectId, choice),
   },

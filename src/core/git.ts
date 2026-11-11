@@ -18,6 +18,8 @@ export interface Git {
   branchExists(repoPath: string, branch: string): Promise<boolean>;
   deleteBranch(repoPath: string, branch: string): Promise<void>;
   uncommittedCount(path: string): Promise<number>;
+  /** git 이 무시하는 파일·폴더 수 (.env, 빌드 결과 등) */
+  ignoredCount(path: string): Promise<number>;
   /** 작업 폴더에서 바뀐 파일 (스테이징 여부와 무관, 추적 안 된 파일 포함) */
   changedFiles(path: string): Promise<ChangedFile[]>;
   /** 고른 파일만 커밋한다. 사용자의 git 설정(hook, 서명)을 그대로 따른다 */
@@ -120,6 +122,10 @@ export function createGit(env?: Record<string, string>): Git {
 
     async uncommittedCount(path) {
       return (await raw(['-C', path, 'status', '--porcelain'])).split('\n').filter(Boolean).length;
+    },
+
+    async ignoredCount(path) {
+      return (await raw(['-C', path, 'status', '--porcelain', '--ignored'])).split('\n').filter((l) => l.startsWith('!! ')).length;
     },
 
     async changedFiles(path) {

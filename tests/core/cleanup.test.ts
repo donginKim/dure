@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCore, type Core } from '@core/index';
 import type { Workspace } from '@shared/types';
@@ -23,6 +23,12 @@ const stored = (): string[] => {
   const dir = join(dataDir, 'cleanup', projectId);
   return existsSync(dir) ? readdirSync(dir) : [];
 };
+
+/** 화면이 하듯이: 목록을 읽고, 그때의 변경 수를 함께 보내 완료 처리한다. */
+async function completeWith(choice: { removeWorktrees: string[]; removeItems: string[] }, id = projectId) {
+  const plan = await core.completionPlan(id);
+  return core.completeProject(id, { ...choice, seen: Object.fromEntries(plan.workspaces.map((w) => [w.id, w.uncommitted])) });
+}
 
 beforeEach(async () => {
   dataDir = join(tempDir(), 'dure data');
@@ -151,7 +157,7 @@ describe('프로젝트 완료 처리', () => {
     write('new.ts', 'export {}');
     await core.service.startAgent(ws.id, SIZE);
     const plan = await core.completionPlan(projectId);
-    expect(plan.workspaces).toMatchObject([{ id: ws.id, name: '프론트', exists: true, uncommitted: 1, unpushed: null, agentRunning: true }]);
+    expect(plan.workspaces).toMatchObject([{ id: ws.id, name: '프론트', exists: true, uncommitted: 1, ignored: 0, unpushed: null, agentRunning: true }]);
     expect(plan.items.map((i) => i.path)).toEqual(['debug.log']);
     await expect(core.completionPlan('없는-id')).rejects.toThrow('프로젝트가 없습니다');
   });
@@ -161,7 +167,7 @@ describe('프로젝트 완료 처리', () => {
     const { moved } = await core.cleanup.stash(ws.id, ['a.log', 'b.log'], '정리');
     core.todos.add({ projectId, workspaceId: ws.id, title: '로그인 화면' }, 'user');
     await core.service.startAgent(ws.id, SIZE);
-    const done = await core.completeProject(projectId, { removeWorktrees: [ws.id], removeItems: [moved[0]!.id] });
+    const done = await completeWith({ removeWorktrees: [ws.id], removeItems: [moved[0]!.id] });
     expect(done.status).toBe('done');
     expect(done.completedAt).toBeGreaterThan(Date.now() - 5000);
     expect(existsSync(ws.worktreePath)).toBe(false);
@@ -179,7 +185,7 @@ describe('프로젝트 완료 처리', () => {
   test('아무것도 고르지 않으면 지우지 않고 완료로만 옮긴다', async () => {
     write('a.log');
     await core.cleanup.stash(ws.id, ['a.log'], '정리');
-    await core.completeProject(projectId, { removeWorktrees: [], removeItems: [] });
+    await completeWith({ removeWorktrees: [], removeItems: [] });
     expect(core.projects.get(projectId)?.status).toBe('done');
     expect(existsSync(ws.worktreePath)).toBe(true);
     expect(core.cleanup.list(projectId).length).toBe(1);
@@ -191,14 +197,14 @@ describe('프로젝트 완료 처리', () => {
     const ows = await core.service.create({ projectId: other.id, repoId: otherRepo.id, name: '남의 것', baseBranch: 'main', agentKind: 'claude', engine: 'terminal' });
     writeFileSync(join(ows.worktreePath, 'o.log'), 'x');
     const o = await core.cleanup.stash(ows.id, ['o.log'], '정리');
-    await core.completeProject(projectId, { removeWorktrees: [ows.id], removeItems: [o.moved[0]!.id] });
+    await completeWith({ removeWorktrees: [ows.id], removeItems: [o.moved[0]!.id] });
     expect(existsSync(ows.worktreePath)).toBe(true);
     expect(core.cleanup.list(other.id).length).toBe(1);
     expect(core.projects.get(other.id)?.status).toBe('active');
   });
 
   test('완료된 프로젝트에서는 워크스페이스를 만들거나 에이전트를 시작할 수 없다. 다시 열면 된다', async () => {
-    await core.completeProject(projectId, { removeWorktrees: [], removeItems: [] });
+    await completeWith({ removeWorktrees: [], removeItems: [] });
     const repo = core.repos.list(projectId)[0]!;
     await expect(core.service.create({ projectId, repoId: repo.id, name: '새것', baseBranch: 'main', agentKind: 'claude' })).rejects.toThrow('완료된 프로젝트입니다');
     await expect(core.service.startAgent(ws.id, SIZE)).rejects.toThrow('완료된 프로젝트입니다');
@@ -208,8 +214,8 @@ describe('프로젝트 완료 처리', () => {
   });
 
   test('이미 완료된 프로젝트를 다시 완료 처리해도 아무것도 지우지 않는다', async () => {
-    await core.completeProject(projectId, { removeWorktrees: [], removeItems: [] });
-    await core.completeProject(projectId, { removeWorktrees: [ws.id], removeItems: [] });
+    await completeWith({ removeWorktrees: [], removeItems: [] });
+    await completeWith({ removeWorktrees: [ws.id], removeItems: [] });
     expect(existsSync(ws.worktreePath)).toBe(true);
   });
 
@@ -226,9 +232,214 @@ describe('프로젝트 완료 처리', () => {
 test('다시 켜도 프로젝트의 완료 상태와 정리 대기 목록이 남는다', async () => {
   write('a.log');
   await core.cleanup.stash(ws.id, ['a.log'], '정리');
-  await core.completeProject(projectId, { removeWorktrees: [], removeItems: [] });
+  await completeWith({ removeWorktrees: [], removeItems: [] });
   await core.dispose();
   core = await createCore({ dataDir, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: `${fakeBin}:/usr/bin:/bin`, SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir() });
   expect(core.projects.get(projectId)).toMatchObject({ status: 'done' });
   expect(core.cleanup.list(projectId).map((i) => i.path)).toEqual(['a.log']);
+});
+
+// ---- 리뷰에서 나온 경우들: 의도하지 않은 것이 옮겨지거나 지워지면 안 된다 ----
+
+describe('옮기면 안 되는 것을 우회해서 옮기려는 경우', () => {
+  const status = (): string => gitOut(ws.worktreePath, 'status', '--porcelain');
+
+  test('대소문자만 바꾼 이름으로는 추적하는 파일과 폴더를 옮길 수 없다', async () => {
+    write('src/app.ts', 'export {}');
+    gitOut(ws.worktreePath, 'add', '-A');
+    gitOut(ws.worktreePath, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'src');
+    const r = await core.cleanup.stash(ws.id, ['readme.md', 'README.MD', 'SRC', 'Src/App.ts'], '정리');
+    expect(r.moved).toEqual([]);
+    expect(r.skipped.length).toBe(4);
+    expect(status()).toBe('');
+    expect(existsSync(inWs('README.md'))).toBe(true);
+    expect(existsSync(inWs('src/app.ts'))).toBe(true);
+  });
+
+  test('대소문자만 바꾼 이름으로는 추적하지 않는 파일도 옮기지 않는다 (정확한 이름을 다시 달라고 한다)', async () => {
+    write('Debug.log');
+    const r = await core.cleanup.stash(ws.id, ['debug.LOG'], '정리');
+    // 대소문자를 가리는 파일 시스템에서는 "없는 파일", 가리지 않는 곳에서는 "대소문자가 다르다"
+    expect(r.moved).toEqual([]);
+    expect(existsSync(inWs('Debug.log'))).toBe(true);
+    expect((await core.cleanup.stash(ws.id, ['Debug.log'], '정리')).moved.length).toBe(1);
+  });
+
+  test('.GIT 처럼 표기를 바꿔도 git 의 내부 파일은 옮길 수 없다', async () => {
+    const r = await core.cleanup.stash(ws.id, ['.GIT', '.Git', '.git/', 'sub/../.git'], '정리');
+    expect(r.moved).toEqual([]);
+    expect(existsSync(inWs('.git'))).toBe(true);
+    expect(gitOut(ws.worktreePath, 'rev-parse', '--is-inside-work-tree')).toBe('true');
+  });
+
+  test('중첩 저장소 안의 파일, 그 .git, 중첩 저장소를 품은 폴더는 옮길 수 없다', async () => {
+    const nested = inWs('vendor/nested');
+    mkdirSync(nested, { recursive: true });
+    gitOut(nested, 'init', '-q', '-b', 'main');
+    writeFileSync(join(nested, 'lib.ts'), 'x');
+    gitOut(nested, 'add', '-A');
+    gitOut(nested, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'lib');
+    writeFileSync(join(nested, 'untracked.log'), 'x');
+    const r = await core.cleanup.stash(ws.id, ['vendor/nested/lib.ts', 'vendor/nested/.git', 'vendor/nested/untracked.log', 'vendor/nested', 'vendor'], '정리');
+    expect(r.moved).toEqual([]);
+    expect(r.skipped.length).toBe(5);
+    expect(existsSync(join(nested, '.git'))).toBe(true);
+    expect(existsSync(join(nested, 'lib.ts'))).toBe(true);
+    expect(gitOut(nested, 'status', '--porcelain')).toBe('?? untracked.log');
+  });
+
+  test('이름이 ":" 로 시작하는 추적 파일도 추적하는 것으로 본다 (git 이 특별한 뜻으로 읽지 않게 한다)', async () => {
+    for (const name of [':colon.ts', ':(top)top.ts', ':(literal)lit.ts', ':(glob)g/a.ts', ':!not.ts']) write(name, 'x');
+    gitOut(ws.worktreePath, 'add', '-A');
+    const r = await core.cleanup.stash(ws.id, [':colon.ts', ':(top)top.ts', ':(literal)lit.ts', ':(glob)g', ':!not.ts'], '정리');
+    expect(r.moved).toEqual([]);
+    for (const s of r.skipped) expect(s.reason).toContain('추적');
+    expect(existsSync(inWs(':colon.ts'))).toBe(true);
+  });
+
+  test('추적하지 않는 폴더라도 안에 git 이 무시하는 파일(.env, 빌드 결과)이 있으면 옮기지 않는다', async () => {
+    writeFileSync(inWs('.gitignore'), 'dist/\n*.cache\n.env\n');
+    write('newpkg/index.ts', 'x');
+    write('newpkg/.env', 'SECRET=1');
+    write('newpkg/dist/out.js', 'built');
+    const r = await core.cleanup.stash(ws.id, ['newpkg', 'newpkg/.env'], '정리');
+    expect(r.moved).toEqual([]);
+    expect(r.skipped.every((s) => s.reason.includes('무시'))).toBe(true);
+    expect(readFileSync(inWs('newpkg/.env'), 'utf8')).toBe('SECRET=1');
+    // 무시되는 것이 없는 쪽만 골라 주면 옮겨진다
+    expect((await core.cleanup.stash(ws.id, ['newpkg/index.ts'], '정리')).moved.map((i) => i.path)).toEqual([join('newpkg', 'index.ts')]);
+  });
+
+  test('작업 폴더의 git 이 깨져 있으면 아무것도 옮기지 않는다', async () => {
+    write('a.log');
+    renameSync(inWs('.git'), inWs('.git-broken'));
+    await expect(core.cleanup.stash(ws.id, ['a.log'], '정리')).rejects.toThrow('git 상태를 확인할 수 없어');
+    expect(existsSync(inWs('a.log'))).toBe(true);
+    renameSync(inWs('.git-broken'), inWs('.git'));
+  });
+});
+
+describe('되돌리기와 저장 폴더', () => {
+  test('되돌릴 자리의 폴더가 밖을 가리키는 링크로 바뀌어 있으면 밖에 쓰지 않는다', async () => {
+    write('scratch/deep/note.md', '# 메모');
+    const { moved } = await core.cleanup.stash(ws.id, ['scratch/deep'], '정리');
+    const outside = tempDir();
+    rmSync(inWs('scratch'), { recursive: true });
+    symlinkSync(outside, inWs('scratch'));
+    expect(() => core.cleanup.restore(moved[0]!.id)).toThrow('작업 폴더 밖');
+    expect(readdirSync(outside)).toEqual([]);
+    expect(core.cleanup.list(projectId).length).toBe(1); // 옮겨 둔 것은 그대로다
+  });
+
+  test('옮겨 둔 파일을 찾지 못해도 아무것도 지우지 않고 목록에 남긴다', async () => {
+    write('a.log', '내용');
+    const { moved } = await core.cleanup.stash(ws.id, ['a.log'], '정리');
+    const dir = join(dataDir, 'cleanup', projectId, moved[0]!.id);
+    renameSync(dir, `${dir}-moved`); // 데이터 폴더가 옮겨진 것처럼
+    expect(() => core.cleanup.restore(moved[0]!.id)).toThrow('옮겨 둔 파일을 찾을 수 없습니다');
+    expect(readFileSync(join(`${dir}-moved`, 'a.log'), 'utf8')).toBe('내용');
+    expect(core.cleanup.list(projectId).length).toBe(1);
+    renameSync(`${dir}-moved`, dir);
+    core.cleanup.restore(moved[0]!.id);
+    expect(readFileSync(inWs('a.log'), 'utf8')).toBe('내용');
+  });
+
+  test('가리키는 곳이 없는 링크도 그대로 옮기고 그대로 되돌린다', async () => {
+    symlinkSync('./nowhere.txt', inWs('dangling'));
+    const { moved, skipped } = await core.cleanup.stash(ws.id, ['dangling'], '정리');
+    expect(skipped).toEqual([]);
+    core.cleanup.restore(moved[0]!.id);
+    expect(readdirSync(ws.worktreePath)).toContain('dangling');
+  });
+
+  test('워크스페이스가 지워진 항목은 고른 폴더로 꺼낼 수 있다. 같은 이름이 있으면 덮어쓰지 않는다', async () => {
+    write('a.log', '내용');
+    const { moved } = await core.cleanup.stash(ws.id, ['a.log'], '정리');
+    await core.service.remove(ws.id, { deleteWorktree: true });
+    const out = tempDir();
+    writeFileSync(join(out, 'a.log'), '이미 있던 것');
+    expect(() => core.cleanup.exportTo(moved[0]!.id, out)).toThrow('이미 다른 것이 있습니다');
+    expect(readFileSync(join(out, 'a.log'), 'utf8')).toBe('이미 있던 것');
+    rmSync(join(out, 'a.log'));
+    expect(core.cleanup.exportTo(moved[0]!.id, out)).toBe(join(out, 'a.log'));
+    expect(readFileSync(join(out, 'a.log'), 'utf8')).toBe('내용');
+    expect(core.cleanup.list(projectId)).toEqual([]);
+    expect(() => core.cleanup.exportTo('없는-id', out)).toThrow('정리 대기에 없는 항목');
+  });
+});
+
+describe('완료 처리가 모르는 것을 지우지 않는다', () => {
+  test('목록을 본 뒤에 작업 폴더가 바뀌었으면 아무것도 지우지 않고 알린다', async () => {
+    write('old.log');
+    const { moved } = await core.cleanup.stash(ws.id, ['old.log'], '정리');
+    const plan = await core.completionPlan(projectId);
+    expect(plan.workspaces[0]!.uncommitted).toBe(0);
+    const seen = Object.fromEntries(plan.workspaces.map((w) => [w.id, w.uncommitted]));
+    write('new-work.ts', '방금 한 일'); // 목록을 본 뒤에 생긴 변경
+    await expect(core.completeProject(projectId, { removeWorktrees: [ws.id], removeItems: [moved[0]!.id], seen })).rejects.toThrow('목록을 본 뒤에 작업 폴더가 바뀌었습니다');
+    expect(readFileSync(inWs('new-work.ts'), 'utf8')).toBe('방금 한 일');
+    expect(core.cleanup.list(projectId).length).toBe(1);
+    expect(core.projects.get(projectId)?.status).toBe('active');
+    // 막아 둔 것은 풀린다: 다시 에이전트를 시작할 수 있다
+    await core.service.startAgent(ws.id, SIZE);
+  });
+
+  test('목록에서 본 적 없는 작업 폴더는 지우지 않는다 (seen 없이 온 요청)', async () => {
+    await expect(core.completeProject(projectId, { removeWorktrees: [ws.id], removeItems: [], seen: {} })).rejects.toThrow('바뀌었습니다');
+    expect(existsSync(ws.worktreePath)).toBe(true);
+  });
+
+  test('git 으로 확인하지 못한 작업 폴더는 변경 수가 null 이고 무시 파일 수도 알려 준다', async () => {
+    writeFileSync(inWs('.gitignore'), '.env\n');
+    gitOut(ws.worktreePath, 'add', '-A');
+    gitOut(ws.worktreePath, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'ignore');
+    write('.env', 'SECRET=1');
+    expect((await core.completionPlan(projectId)).workspaces[0]).toMatchObject({ uncommitted: 0, ignored: 1 });
+    write('uncommitted.ts');
+    renameSync(inWs('.git'), inWs('.git-broken'));
+    expect((await core.completionPlan(projectId)).workspaces[0]).toMatchObject({ exists: true, uncommitted: null, ignored: null });
+    renameSync(inWs('.git-broken'), inWs('.git'));
+  });
+
+  test('완료 처리하는 동안에는 에이전트를 시작할 수 없다', async () => {
+    core.service.setCompleting(projectId, true);
+    await expect(core.service.startAgent(ws.id, SIZE)).rejects.toThrow('완료된 프로젝트입니다');
+    expect(core.delivery.stateFor(ws.id)).toBe('none');
+    core.service.setCompleting(projectId, false);
+    await core.service.startAgent(ws.id, SIZE);
+  });
+});
+
+describe('완료된 프로젝트는 코어에서도 읽기 전용이다', () => {
+  beforeEach(async () => {
+    write('a.log');
+    await core.cleanup.stash(ws.id, ['a.log'], '정리');
+    await completeWith({ removeWorktrees: [], removeItems: [] });
+  });
+
+  test('정리 대기로 옮기기와 되돌리기, 셸 열기, 채팅 보내기를 받지 않는다', async () => {
+    write('b.log');
+    await expect(core.cleanup.stash(ws.id, ['b.log'], '정리')).rejects.toThrow('완료된 프로젝트입니다');
+    expect(existsSync(inWs('b.log'))).toBe(true);
+    const item = core.cleanup.list(projectId)[0]!;
+    expect(() => core.cleanup.restore(item.id)).toThrow('완료된 프로젝트입니다');
+    await expect(core.service.openShell(ws.id, SIZE)).rejects.toThrow('완료된 프로젝트입니다');
+    await expect(core.service.sendUserInput(ws.id, '안녕')).rejects.toThrow('완료된 프로젝트입니다');
+  });
+
+  test('완료된 프로젝트의 꺼진 워크스페이스에는 메시지를 전달하려 하지 않는다', async () => {
+    core.messages.send({ projectId, from: { kind: 'user' }, toWorkspaceId: ws.id, body: '일해라' });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(core.delivery.state(ws.id)).toBe('none');
+    expect(core.service.isAgentRunning(ws.id)).toBe(false);
+    expect(core.delivery.error(ws.id)).toBeUndefined();
+  });
+
+  test('그 프로젝트의 토큰으로 온 도구 호출은 거절한다', async () => {
+    const res = await fetch(core.mcpUrl, { method: 'POST', headers: { Authorization: `Bearer ${core.workspaces.getToken(ws.id)}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+    expect(res.status).toBe(403);
+    core.reopenProject(projectId);
+    const ok = await fetch(core.mcpUrl, { method: 'POST', headers: { Authorization: `Bearer ${core.workspaces.getToken(ws.id)}`, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+    expect(ok.status).toBe(200);
+  });
 });

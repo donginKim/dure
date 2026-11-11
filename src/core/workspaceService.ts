@@ -173,6 +173,18 @@ export class WorkspaceService extends EventEmitter {
 
   private readonly lastExit = new Map<string, string>();
 
+  /** 완료 처리하는 중인 프로젝트. 그동안은 에이전트를 띄우지 않는다 (끄고 지우는 사이에 다시 뜨면 안 된다) */
+  private readonly completing = new Set<string>();
+
+  setCompleting(projectId: string, on: boolean): void {
+    if (on) this.completing.add(projectId); else this.completing.delete(projectId);
+  }
+
+  /** 완료됐거나 완료 처리하는 중인 프로젝트인가. 그런 프로젝트에서는 만들거나 띄우거나 전달하지 않는다. */
+  isProjectClosed(projectId: string): boolean {
+    return this.completing.has(projectId) || this.d.projects.get(projectId)?.status === 'done';
+  }
+
   /** 에이전트와 그 워크스페이스의 터미널을 모두 끄고 끝날 때까지 기다린다 (프로젝트 완료 처리). */
   async stopAndWait(id: string): Promise<void> {
     await this.killTerminals(id);
@@ -335,7 +347,7 @@ export class WorkspaceService extends EventEmitter {
   async create(i: CreateWorkspaceInput): Promise<Workspace> {
     const project = this.d.projects.get(i.projectId);
     if (!project) throw new Error(`프로젝트가 없습니다: ${i.projectId}`);
-    if (project.status === 'done') throw new Error(DONE_PROJECT);
+    if (this.isProjectClosed(project.id)) throw new Error(DONE_PROJECT);
     const repo = this.d.repos.get(i.repoId);
     if (!repo || repo.projectId !== project.id) throw new Error(`이 프로젝트에 등록된 저장소가 아닙니다: ${i.repoId}`);
 
@@ -422,7 +434,7 @@ export class WorkspaceService extends EventEmitter {
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
-    if (project.status === 'done') throw new Error(DONE_PROJECT);
+    if (this.isProjectClosed(project.id)) throw new Error(DONE_PROJECT);
     const settings = this.settings();
     const executable = this.agentExecutable(ws.agentKind, settings);
     // 저장된 뒤에 규칙이 바뀌었을 수도 있으니 쓰기 직전에 한 번 더 거른다.
@@ -435,6 +447,7 @@ export class WorkspaceService extends EventEmitter {
     const gitCommonDir = realGit ? await this.d.git.commonDir(ws.worktreePath).catch(() => undefined) : undefined;
     // 기다리는 사이에 지워지거나 닫혔으면 띄우지 않는다.
     if (this.removing.has(id) || this.detached || !this.d.workspaces.get(id)) throw new Error('지우는 중인 워크스페이스입니다.');
+    if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
     if (this.engine?.has(id)) return null;
     const firstPrompt = initialPrompt ?? this.delivery?.takeForStart(id);
     const launch = buildAgentLaunch({
@@ -659,6 +672,8 @@ export class WorkspaceService extends EventEmitter {
     // eslint-disable-next-line no-control-regex
     const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
     if (!message) throw new Error('보낼 글을 입력하세요.');
+    const owner = this.d.workspaces.get(id);
+    if (owner && this.isProjectClosed(owner.projectId)) throw new Error(DONE_PROJECT);
     if (this.engine?.has(id)) {
       if (!this.canSendInput(id)) throw new Error('지금은 보낼 수 없습니다.');
       // 사용자의 입력이다: 두레가 넣은 프롬프트로 치지 않고, 쉬는 중 확인을 지운다.
@@ -740,6 +755,7 @@ export class WorkspaceService extends EventEmitter {
 
   async openShell(id: string, size: { cols: number; rows: number }): Promise<TerminalInfo> {
     const ws = this.mustGet(id);
+    if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
     return this.d.pty.spawn({
       workspaceId: id, kind: 'shell', title: '셸',

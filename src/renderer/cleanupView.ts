@@ -13,6 +13,7 @@ type PlanWorkspace = CompletionPlan['workspaces'][number];
 /** 이 작업 폴더를 지우면 잃는 것이 있는가. 커밋하지 않은 변경은 지우면 돌아오지 않는다. */
 export function worktreeRisk(w: PlanWorkspace): string | null {
   if (!w.exists) return null;
+  if (w.uncommitted === null) return '커밋하지 않은 변경이 있는지 확인하지 못했습니다 (git 오류). 지우기 전에 작업 폴더를 직접 확인하세요';
   if (w.uncommitted > 0) return `커밋하지 않은 변경 ${w.uncommitted}건이 함께 지워집니다`;
   if (w.unpushed === null) return '이 브랜치는 원격에 없습니다. 커밋은 이 PC 의 저장소에만 남습니다';
   if (w.unpushed > 0) return `push 하지 않은 커밋 ${w.unpushed}건이 있습니다. 커밋은 이 PC 의 저장소에 남습니다`;
@@ -25,9 +26,22 @@ export function worktreeRisk(w: PlanWorkspace): string | null {
  */
 export function defaultChoice(plan: CompletionPlan): CompletionChoice {
   return {
+    // 확인하지 못한 것(null)은 고르지 않는다.
     removeWorktrees: plan.workspaces.filter((w) => w.exists && w.uncommitted === 0).map((w) => w.id),
     removeItems: plan.items.map((i) => i.id),
+    seen: seenCounts(plan),
   };
+}
+
+/** 목록을 볼 때의 변경 수. 지우기 직전에 두레가 다시 세어 견준다. */
+export function seenCounts(plan: CompletionPlan): Record<string, number | null> {
+  return Object.fromEntries(plan.workspaces.map((w) => [w.id, w.uncommitted]));
+}
+
+/** git 이 무시하는 파일(.env, 빌드 결과)도 작업 폴더와 함께 지워진다는 안내. 없으면 null */
+export function ignoredNote(w: PlanWorkspace): string | null {
+  if (!w.exists || w.ignored === 0) return null;
+  return w.ignored === null ? 'git 이 무시하는 파일이 있는지 확인하지 못했습니다' : `git 이 무시하는 파일·폴더 ${w.ignored}개(.env, 빌드 결과 등)도 함께 지워집니다`;
 }
 
 /** 완료 처리 버튼 옆에 보일 요약. */

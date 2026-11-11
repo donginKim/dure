@@ -148,6 +148,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       // 기다리던 메시지는 startAgent 가 takeForStart 로 가져가 첫 프롬프트로 준다.
       start: async (id) => { await service.startAgent(id, { cols: 120, rows: 40 }); },
       autoStart: () => settings.get().autoStartOnMessage,
+      isProjectClosed: (projectId) => service.isProjectClosed(projectId),
     },
   });
   service.attachDelivery(delivery);
@@ -192,7 +193,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         const exists = existsSync(w.worktreePath);
         return {
           id: w.id, name: w.name, branch: w.branch, worktreePath: w.worktreePath, exists,
-          uncommitted: exists ? await git.uncommittedCount(w.worktreePath).catch(() => 0) : 0,
+          // 확인하지 못한 것을 0 으로 치지 않는다: "변경 없음" 으로 보여 지워도 되는 것처럼 보이면 안 된다.
+          uncommitted: exists ? await git.uncommittedCount(w.worktreePath).catch(() => null) : 0,
+          ignored: exists ? await git.ignoredCount(w.worktreePath).catch(() => null) : 0,
           unpushed: exists ? await git.aheadCount(w.worktreePath, w.branch).catch(() => null) : null,
           agentRunning: service.isAgentRunning(w.id),
         };
@@ -206,24 +209,42 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       const all = workspaces.list(projectId);
       const removeWorktrees = new Set(Array.isArray(choice?.removeWorktrees) ? choice.removeWorktrees : []);
       const removeItems = new Set(Array.isArray(choice?.removeItems) ? choice.removeItems : []);
+      const seen = typeof choice?.seen === 'object' && choice.seen !== null ? choice.seen : {};
       // 이 프로젝트의 것이 아닌 id 는 받지 않는다.
       const items = cleanup.list(projectId).filter((i) => removeItems.has(i.id));
-      // 먼저 에이전트를 모두 끈다: 지우는 폴더에서 돌고 있으면 안 되고, 완료된 프로젝트에서는 일하지 않는다.
-      for (const w of all) await service.stopAndWait(w.id);
-      const failed: string[] = [];
-      for (const w of all) {
-        if (!removeWorktrees.has(w.id) || !existsSync(w.worktreePath)) continue;
-        const repo = repos.get(w.repoId);
-        try {
-          if (repo) await git.removeWorktree({ repoPath: repo.path, worktreePath: w.worktreePath });
-        } catch (e) { failed.push(`${w.name}: ${e instanceof Error ? e.message : String(e)}`); }
+      // 끄고 지우는 사이에 에이전트가 다시 뜨지 않게 먼저 막는다 (메시지로 띄우기, 사용자의 시작 버튼).
+      service.setCompleting(projectId, true);
+      try {
+        // 에이전트를 모두 끈다: 지우는 폴더에서 돌고 있으면 안 되고, 완료된 프로젝트에서는 일하지 않는다.
+        for (const w of all) await service.stopAndWait(w.id);
+        const alive = all.filter((w) => service.isAgentRunning(w.id) || pty.list(w.id).length > 0);
+        if (alive.length) throw new Error(`에이전트나 터미널이 꺼지지 않았습니다: ${alive.map((w) => w.name).join(', ')}. 잠시 뒤 다시 하세요.`);
+        // 지우기 전에 다시 센다. 목록을 본 뒤에 생긴 변경이 있으면 아무것도 지우지 않는다.
+        const targets = all.filter((w) => removeWorktrees.has(w.id) && existsSync(w.worktreePath));
+        const changed: string[] = [];
+        for (const w of targets) {
+          const now = await git.uncommittedCount(w.worktreePath).catch(() => null);
+          const before = Object.prototype.hasOwnProperty.call(seen, w.id) ? seen[w.id] : undefined;
+          if (before === undefined || now !== before) changed.push(w.name);
+        }
+        if (changed.length) throw new Error(`목록을 본 뒤에 작업 폴더가 바뀌었습니다: ${changed.join(', ')}. 아무것도 지우지 않았습니다. 다시 확인하세요.`);
+        const failed: string[] = [];
+        for (const w of targets) {
+          const repo = repos.get(w.repoId);
+          try {
+            if (!repo) throw new Error('저장소 정보가 없습니다');
+            await git.removeWorktree({ repoPath: repo.path, worktreePath: w.worktreePath });
+          } catch (e) { failed.push(`${w.name}: ${e instanceof Error ? e.message : String(e)}`); }
+        }
+        // 지우지 못한 작업 폴더가 있으면 거기서 멈춘다: 정리 대기는 그대로 두고 완료로 넘기지 않는다.
+        if (failed.length) throw new Error(`작업 폴더를 지우지 못했습니다. ${failed.join(' / ')}`);
+        cleanup.remove(items.map((i) => i.id));
+        const done = projects.setStatus(projectId, 'done');
+        return done;
+      } finally {
+        service.setCompleting(projectId, false);
+        service.emit('changed', projectId);
       }
-      cleanup.remove(items.map((i) => i.id));
-      // 지우지 못한 작업 폴더가 있으면 완료로 넘기지 않는다: 사용자가 이유를 보고 다시 정한다.
-      if (failed.length) throw new Error(`작업 폴더를 지우지 못했습니다. ${failed.join(' / ')}`);
-      const done = projects.setStatus(projectId, 'done');
-      service.emit('changed', projectId);
-      return done;
     },
     reopenProject(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);

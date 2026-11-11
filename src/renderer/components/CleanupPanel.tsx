@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CleanupItem, CompletionChoice, CompletionPlan, Project } from '@shared/types';
-import { choiceSummary, defaultChoice, formatBytes, worktreeRisk } from '../cleanupView';
+import { choiceSummary, defaultChoice, formatBytes, ignoredNote, seenCounts, worktreeRisk } from '../cleanupView';
 import { clock } from '../conversationView';
 
 /** 프로젝트의 "정리 대기": 에이전트가 최종 산출물이 아니라고 보고 옮겨 둔 것. 잘못 옮긴 것은 되돌린다. */
@@ -39,7 +39,8 @@ export function CleanupList({ project, readOnly }: { project: Project; readOnly:
                   <div className="cleanup-path">{i.isDir ? `${i.path}/` : i.path}</div>
                   <div className="cleanup-meta">{i.workspaceName} · {formatBytes(i.size)} · {clock(i.createdAt)}{i.reason && ` · ${i.reason}`}</div>
                 </div>
-                {!readOnly && <button className="btn ghost" title="작업 폴더의 원래 자리로 돌려놓습니다" disabled={i.workspaceId === null} onClick={() => restore(i.id)}>되돌리기</button>}
+                {!readOnly && i.workspaceId !== null && <button className="btn ghost" title="작업 폴더의 원래 자리로 돌려놓습니다" onClick={() => restore(i.id)}>되돌리기</button>}
+                <button className="btn ghost" title="고른 폴더로 꺼냅니다 (정리 대기에서는 빠집니다)" onClick={() => { setError(''); window.dure.cleanup.export(i.id).catch((e: Error) => setError(e.message)); }}>내보내기</button>
               </div>
             ))}
           </div>
@@ -52,7 +53,7 @@ export function CleanupList({ project, readOnly }: { project: Project; readOnly:
 /** 프로젝트 완료 처리: 지울 것을 보고 고른 뒤 완료로 옮긴다. */
 export function CompleteDialog({ project, onClose, onDone }: { project: Project; onClose: () => void; onDone: () => void }) {
   const [plan, setPlan] = useState<CompletionPlan | null>(null);
-  const [choice, setChoice] = useState<CompletionChoice>({ removeWorktrees: [], removeItems: [] });
+  const [choice, setChoice] = useState<CompletionChoice>({ removeWorktrees: [], removeItems: [], seen: {} });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -62,18 +63,18 @@ export function CompleteDialog({ project, onClose, onDone }: { project: Project;
     return () => { alive = false; };
   }, [project.id]);
 
-  const toggle = (key: keyof CompletionChoice, id: string): void => {
+  const toggle = (key: 'removeWorktrees' | 'removeItems', id: string): void => {
     setChoice((c) => ({ ...c, [key]: c[key].includes(id) ? c[key].filter((x) => x !== id) : [...c[key], id] }));
   };
   const submit = async (): Promise<void> => {
     setBusy(true); setError('');
     try {
-      await window.dure.cleanup.complete(project.id, choice);
+      await window.dure.cleanup.complete(project.id, { ...choice, seen: plan ? seenCounts(plan) : {} });
       onDone();
     } catch (e) {
       setError((e as Error).message);
-      // 일부만 지워졌을 수 있다. 지금 상태를 다시 읽는다.
-      window.dure.cleanup.plan(project.id).then(setPlan).catch(() => undefined);
+      // 상태가 바뀌었을 수 있다. 다시 읽고, 고른 것도 새 상태에 맞춰 처음부터 다시 정하게 한다.
+      window.dure.cleanup.plan(project.id).then((p) => { setPlan(p); setChoice(defaultChoice(p)); }).catch(() => undefined);
     } finally { setBusy(false); }
   };
   const running = plan?.workspaces.filter((w) => w.agentRunning).length ?? 0;
@@ -104,7 +105,8 @@ export function CompleteDialog({ project, onClose, onDone }: { project: Project;
                       <div>{w.name} <span className="muted">· {w.branch}</span></div>
                       <div className="cleanup-path">{w.worktreePath}</div>
                       {!w.exists && <div className="cleanup-meta">작업 폴더가 이미 없습니다</div>}
-                      {risk && <div className={`complete-risk${w.uncommitted > 0 ? ' bad' : ''}`}>{risk}</div>}
+                      {risk && <div className={`complete-risk${w.uncommitted !== 0 ? ' bad' : ''}`}>{risk}</div>}
+                      {ignoredNote(w) && <div className="complete-risk">{ignoredNote(w)}</div>}
                     </div>
                   </label>
                 );

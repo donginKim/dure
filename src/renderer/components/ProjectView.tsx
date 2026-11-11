@@ -195,7 +195,7 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
         <div className="end-row">
           <div>
             <div className="end-title">완전히 지우기</div>
-            <div className="muted">프로젝트와 그 기록(TODO, 대화, 자료, 정리 대기)을 두레에서 지웁니다. 저장소와 작업 폴더는 지우지 않습니다.</div>
+            <div className="muted">프로젝트와 그 기록(TODO, 대화, 자료)을 두레에서 지웁니다. <b>정리 대기에 옮겨 둔 파일도 영구히 지워집니다.</b> 저장소와 작업 폴더는 지우지 않습니다.</div>
           </div>
           <button className="btn danger" onClick={() => setRemovingProject(true)}>완전히 지우기</button>
         </div>

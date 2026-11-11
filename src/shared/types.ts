@@ -351,8 +351,10 @@ export interface CompletionPlan {
     id: string; name: string; branch: string; worktreePath: string;
     /** 작업 폴더가 아직 있는가 */
     exists: boolean;
-    /** 커밋하지 않은 변경 수 */
-    uncommitted: number;
+    /** 커밋하지 않은 변경 수. git 으로 확인하지 못했으면 null (그때는 기본으로 고르지 않는다) */
+    uncommitted: number | null;
+    /** git 이 무시하는 파일·폴더 수 (.env, 빌드 결과 등). 작업 폴더를 지우면 함께 지워진다. 확인하지 못했으면 null */
+    ignored: number | null;
     /** push 하지 않은 커밋 수. 원격에 이 브랜치가 없으면 null */
     unpushed: number | null;
     agentRunning: boolean;
@@ -366,4 +368,9 @@ export interface CompletionChoice {
   removeWorktrees: string[];
   /** 지울 정리 대기 항목 */
   removeItems: string[];
+  /**
+   * 목록을 볼 때의 커밋하지 않은 변경 수 (워크스페이스 id → 수). 지우기 직전에 다시 세어 이것과 다르면 지우지 않는다:
+   * 목록을 본 뒤에 생긴 변경을 모르고 지우면 안 된다.
+   */
+  seen: Record<string, number | null>;
 }

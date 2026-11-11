@@ -184,7 +184,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
             <span className="close" title={t.exitCode === undefined ? '터미널 끄기' : '탭 닫기'} onClick={(e) => { e.stopPropagation(); void window.dure.terminals.kill(t.id); }}>×</span>
           </div>
         ))}
-        <button className="btn ghost" title="셸 터미널 열기" onClick={() => void open('shell')}>+</button>
+        {!readOnly && <button className="btn ghost" title="셸 터미널 열기" onClick={() => void open('shell')}>+</button>}
       </div>
       <div className="term-area" ref={area}>
         {active

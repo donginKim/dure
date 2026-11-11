@@ -15,6 +15,8 @@ export interface DeliveryActions {
   wake(workspaceId: string, text: string): Promise<void>;
   /** 꺼진 에이전트를 띄운다. 기다리던 메시지는 띄우는 쪽이 takeForStart 로 가져가 첫 프롬프트로 준다 */
   start(workspaceId: string): Promise<void>;
+  /** 꺼진 에이전트를 메시지로 스스로 띄워도 되는가 (설정). 없으면 띄운다 */
+  autoStart?(): boolean;
 }
 
 interface Taken { text: string; messageIds: string[]; todoLines: string[] }
@@ -126,7 +128,7 @@ export class DeliveryService {
     const ws = this.d.workspaces.get(workspaceId);
     if (!ws || this.d.actions.isRemoving(workspaceId)) return 'none';
     if (ws.agentKind === 'codex') return 'waiting-codex';
-    if (ws.status === 'stopped') return 'starting';
+    if (ws.status === 'stopped') return this.d.actions.autoStart?.() === false ? 'waiting-start' : 'starting';
     if (ws.status === 'working') {
       const last = this.d.actions.lastActivityAt(workspaceId);
       return last !== undefined && now - last > STALE_MS ? 'waiting-unknown' : 'next-hook';

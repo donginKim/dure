@@ -3,7 +3,8 @@ import { isTerminalReply } from '@core/agents/trustPrompt';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
-import type { CreateWorkspaceInput, TodoAssignee, TodoPatch } from '@shared/types';
+import { DEFAULT_SETTINGS } from '@core/settings';
+import type { CreateWorkspaceInput, Settings, TodoAssignee, TodoPatch } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -113,6 +114,15 @@ export function registerIpc(core: Core): () => void {
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
     'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
+    'settings.get': () => core.settings.get(),
+    'settings.update': (patch: Partial<Settings>) => core.settings.update(patch),
+    'settings.defaults': () => ({ ...DEFAULT_SETTINGS }),
+    'settings.models': () => core.models(),
+    'settings.pickFolder': async () => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], title: '폴더 선택' });
+      return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0];
+    },
     'chat.get': (workspaceId: string) => core.chatView(workspaceId),
     'chat.step': (workspaceId: string, stepId: string) => core.chat.step(workspaceId, stepId),
     'chat.send': (workspaceId: string, text: string) => core.service.sendUserInput(workspaceId, text),
@@ -148,6 +158,8 @@ export function registerIpc(core: Core): () => void {
   // 상태가 바뀌면 전달 방식도 바뀌므로 messages 도 함께 알린다.
   const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
   const onChatChanged = (): void => changed('chat');
+  // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
+  const onSettingsChanged = (): void => { changed('settings'); changed('messages'); };
   const onMessagesChanged = (): void => changed('messages');
   const onCommitChanged = (): void => changed('commit');
   const onTodosChanged = (): void => changed('todos');
@@ -159,6 +171,7 @@ export function registerIpc(core: Core): () => void {
   core.messages.on('changed', onMessagesChanged);
   core.commit.on('changed', onCommitChanged);
   core.chat.on('changed', onChatChanged);
+  core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
 
   return () => {
@@ -170,6 +183,7 @@ export function registerIpc(core: Core): () => void {
     core.messages.off('changed', onMessagesChanged);
     core.commit.off('changed', onCommitChanged);
     core.chat.off('changed', onChatChanged);
+    core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));

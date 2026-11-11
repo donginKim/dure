@@ -12,7 +12,8 @@ export function TerminalPane({ terminalId }: { terminalId: string }) {
     if (!el) return;
     const term = new Terminal({
       fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace",
-      fontSize: 13,
+      // 설정의 터미널 글자 크기 (App 이 화면 전체의 값으로 둔다)
+      fontSize: Number(getComputedStyle(document.documentElement).getPropertyValue('--term-font')) || 13,
       cursorBlink: true,
       scrollback: 5000,
       allowProposedApi: true,

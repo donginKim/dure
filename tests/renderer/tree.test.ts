@@ -47,3 +47,7 @@ test('countByRepo 는 저장소별 워크스페이스 수를 센다', async () =
   expect(countByRepo([a, b, c])).toEqual({ r1: 2, r2: 1 });
   expect(countByRepo([])).toEqual({});
 });
+
+test('설정 화면을 고른 것은 목록이 바뀌어도 그대로다', () => {
+  expect(reconcileSelection({ type: 'settings' }, [])).toEqual({ type: 'settings' });
+});

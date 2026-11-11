@@ -86,6 +86,13 @@ const api: DureApi = {
     dismissQuestion: (workspaceId, requestId) => call('chat.dismissQuestion', workspaceId, requestId),
     commands: (workspaceId) => call('chat.commands', workspaceId),
   },
+  settings: {
+    get: () => call('settings.get'),
+    update: (patch) => call('settings.update', patch),
+    defaults: () => call('settings.defaults'),
+    models: () => call('settings.models'),
+    pickFolder: () => call('settings.pickFolder'),
+  },
   artifacts: {
     list: (projectId) => call('artifacts.list', projectId),
     get: (id) => call('artifacts.get', id),

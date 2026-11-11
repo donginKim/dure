@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { ChatPermission, ChatQuestion, SlashCommand } from '@shared/types';
+import type { ChatPermission, ChatQuestion, ModelChoice, SlashCommand } from '@shared/types';
 import { AgentSession, type AgentEvent, type SessionSpawn } from '../agents/session';
 import { stepInput, stepSummary } from './transcript';
 
@@ -81,6 +81,12 @@ export class ChatEngine extends EventEmitter {
   private readonly live = new Map<string, Live>();
   /** 앱을 닫는 중이다. 이후에는 새로 띄우지 않는다 */
   private closed = false;
+  /** 가장 최근에 에이전트가 알려 준 모델 목록 */
+  private lastModels: ModelChoice[] = [];
+
+  models(): ModelChoice[] {
+    return this.lastModels;
+  }
 
   constructor(private readonly hooks: EngineHooks) {
     super();
@@ -111,7 +117,11 @@ export class ChatEngine extends EventEmitter {
       this.emit('changed', workspaceId);
     });
     // 쓸 수 있는 슬래시 명령과 그 설명을 받아 둔다. 실패해도 대화에는 지장이 없다.
-    session.control<{ commands?: unknown }>({ subtype: 'initialize' }).then((r) => {
+    session.control<{ commands?: unknown; models?: unknown }>({ subtype: 'initialize' }).then((r) => {
+      // 고를 수 있는 모델 목록도 함께 온다. 설정 화면이 쓴다.
+      const models = (Array.isArray(r?.models) ? r.models : []).flatMap((m): ModelChoice[] => (isObj(m) && str(m.value)
+        ? [{ value: str(m.value), name: str(m.displayName) || str(m.value), description: str(m.description).slice(0, 200) }] : []));
+      if (models.length) this.lastModels = models;
       const list = Array.isArray(r?.commands) ? r.commands : [];
       l.commands = list.flatMap((c): SlashCommand[] => (isObj(c) && str(c.name) ? [{ name: str(c.name), description: str(c.description).slice(0, 300), argumentHint: str(c.argumentHint) }] : []));
       this.emit('changed', workspaceId);

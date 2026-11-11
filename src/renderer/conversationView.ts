@@ -25,6 +25,7 @@ const DELIVERY_LABEL: Record<DeliveryState, string> = {
   'next-hook': '다음 단계에 전달',
   waking: '깨우는 중',
   starting: '에이전트를 띄우는 중',
+  'waiting-start': '에이전트를 시작하면 전달됩니다 (메시지로 스스로 띄우지 않게 설정됨)',
   'waiting-unknown': '터미널 확인 필요: 에이전트가 무언가를 묻고 있을 수 있습니다',
   'waiting-codex': 'Codex 가 읽을 때까지 대기',
   held: '멈춰 있음',
@@ -36,7 +37,7 @@ export function deliveryLabel(state: DeliveryState): string {
 
 /** 사용자가 손을 써야 풀리는 상태인가 (화면에서 눈에 띄게 알린다) */
 export function needsAttention(state: DeliveryState): boolean {
-  return state === 'waiting-unknown' || state === 'waiting-codex' || state === 'held';
+  return state === 'waiting-unknown' || state === 'waiting-codex' || state === 'waiting-start' || state === 'held';
 }
 
 /** 전달 대기 중인 것 옆에 보여줄 말과, 사용자가 손을 써야 하는지. 전달 실패가 있으면 그것이 먼저다. */

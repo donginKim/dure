@@ -5,6 +5,7 @@ import type { ConversationData } from './components/ConversationPanel';
 import type { PendingInfo } from './components/TodoPanel';
 import { ProjectsHome } from './components/ProjectsHome';
 import { ProjectView } from './components/ProjectView';
+import { SettingsView } from './components/SettingsView';
 import { Sidebar } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
 import { buildTree, reconcileSelection, type Selection } from './tree';
@@ -55,11 +56,23 @@ export function App() {
     }
   }, []);
 
+  // 글자 크기 설정을 화면 전체의 값으로 둔다. 터미널은 열릴 때 이 값을 읽는다.
+  useEffect(() => {
+    const apply = (): void => {
+      window.dure.settings.get().then((s) => {
+        document.documentElement.style.setProperty('--chat-font', `${s.chatFontSize}px`);
+        document.documentElement.style.setProperty('--term-font', String(s.terminalFontSize));
+      }).catch(() => undefined);
+    };
+    apply();
+    return window.dure.onChanged((topic) => { if (topic === 'settings') apply(); });
+  }, []);
+
   useEffect(() => {
     void reload();
     return window.dure.onChanged((topic) => {
       // 채팅 보기의 변화는 그 화면이 스스로 다시 읽는다. 여기서 전부 다시 읽으면 에이전트가 일하는 내내 목록을 다시 받는다.
-      if (topic !== 'terminals' && topic !== 'chat') void reload();
+      if (topic !== 'terminals' && topic !== 'chat' && topic !== 'settings') void reload();
     });
   }, [reload]);
 
@@ -104,7 +117,8 @@ export function App() {
             onSelect={setSelection}
           />
         )}
-        {!node && !workspace && <ProjectsHome tree={tree} repos={repos} onSelect={setSelection} />}
+        {current?.type === 'settings' && <SettingsView />}
+        {!node && !workspace && current?.type !== 'settings' && <ProjectsHome tree={tree} repos={repos} onSelect={setSelection} />}
       </main>
     </div>
   );

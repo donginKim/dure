@@ -2,12 +2,13 @@ import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace } from '@shared/types';
+import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace, Settings } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
 import { buildAgentLaunch } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
 import type { ChatEngine } from './chat/engine';
+import { DEFAULT_SETTINGS, expandHome, parseArgs, reservedArg } from './settings';
 import type { DeliveryService } from './delivery';
 import type { Git } from './git';
 import type { MessageService } from './messages';
@@ -47,6 +48,8 @@ export interface WorkspaceServiceDeps {
   dataDir: string;
   worktreeRoot: string;
   baseEnv: Record<string, string>;
+  /** 두레의 설정. 없으면 기본값으로 동작한다 */
+  settings?: () => Settings;
 }
 
 function findExecutable(command: string, pathVar: string | undefined): string | undefined {
@@ -96,6 +99,26 @@ export class WorkspaceService extends EventEmitter {
   /** 채팅 방식의 에이전트를 돌리는 엔진을 이어 준다. */
   attachEngine(engine: ChatEngine): void {
     this.engine = engine;
+  }
+
+  private settings(): Settings {
+    return this.d.settings?.() ?? DEFAULT_SETTINGS;
+  }
+
+  /** 에이전트 실행 파일. 설정에 경로가 있으면 그것(실행할 수 있어야 한다), 없으면 PATH 에서 찾는다. */
+  private agentExecutable(kind: AgentKind, settings: Settings): string {
+    const custom = kind === 'claude' ? settings.claudePath : settings.codexPath;
+    if (custom) {
+      const full = expandHome(custom);
+      try {
+        accessSync(full, constants.X_OK);
+        if (statSync(full).isFile()) return full;
+      } catch { /* 아래에서 알린다 */ }
+      throw new Error(`설정에 적힌 실행 파일을 쓸 수 없습니다: ${custom}`);
+    }
+    const found = findExecutable(kind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
+    if (!found) throw new AgentNotInstalledError(kind);
+    return found;
   }
 
   /** 에이전트가 살아 있는가 (터미널 방식이든 채팅 방식이든). */
@@ -301,7 +324,9 @@ export class WorkspaceService extends EventEmitter {
 
     const typed = i.name?.trim();
     const name = typed || `${repo.name}-${this.d.workspaces.list(project.id).length + 1}`;
-    const projectDir = join(this.d.worktreeRoot, slugify(project.name));
+    const settings = this.settings();
+    // 작업 폴더 위치: 설정에 있으면 그곳, 없으면 기본 위치. 이미 만든 워크스페이스는 옮기지 않는다.
+    const projectDir = join(settings.worktreeRoot ? expandHome(settings.worktreeRoot) : this.d.worktreeRoot, slugify(project.name));
     const branches = new Set(await this.d.git.listBranches(repo.path));
     const slug = uniqueSlug(slugify(name), (c) => branches.has(`dure/${c}`) || existsSync(join(projectDir, c)));
     const branch = `dure/${slug}`;
@@ -324,7 +349,7 @@ export class WorkspaceService extends EventEmitter {
       const ws = this.d.workspaces.insert({
         id: crypto.randomUUID(), projectId: project.id, repoId: repo.id, name, nameLocked: Boolean(typed),
         branch, baseBranch: i.baseBranch, worktreePath, agentKind: i.agentKind,
-        permissionMode: i.permissionMode ?? 'ask', engine: i.engine, token: randomBytes(32).toString('hex'),
+        permissionMode: i.permissionMode ?? settings.defaultPermissionMode, engine: i.engine ?? settings.defaultEngine, token: randomBytes(32).toString('hex'),
       });
       this.emit('changed', ws.id);
       return ws;
@@ -380,8 +405,12 @@ export class WorkspaceService extends EventEmitter {
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
-    const executableCheck = findExecutable(ws.agentKind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
-    if (!executableCheck) throw new AgentNotInstalledError(ws.agentKind);
+    const settings = this.settings();
+    const executable = this.agentExecutable(ws.agentKind, settings);
+    // 저장된 뒤에 규칙이 바뀌었을 수도 있으니 쓰기 직전에 한 번 더 거른다.
+    const extraArgs = parseArgs(ws.agentKind === 'claude' ? settings.claudeArgs : settings.codexArgs);
+    const reserved = reservedArg(ws.agentKind, extraArgs);
+    if (reserved) throw new Error(`설정의 추가 인자에 쓸 수 없는 것이 있습니다: ${reserved}`);
     // 받은 메시지가 기다리고 있으면 그것을 첫 프롬프트로 준다. 실행 파일을 확인한 뒤에 가져가야 실패 시 사라지지 않는다.
     // 이 저장소에 대한 커밋·push 만 막기 위해 저장소의 공용 .git 폴더를 알아 둔다. 못 알아내면 막는 장치 없이 띄운다.
     const realGit = findExecutable('git', this.d.baseEnv.PATH);
@@ -404,9 +433,9 @@ export class WorkspaceService extends EventEmitter {
       initialPrompt: firstPrompt,
       headless,
       resumeSessionId,
+      model: settings.claudeModel || undefined,
+      extraArgs,
     });
-    const executable = findExecutable(launch.command, this.d.baseEnv.PATH);
-    if (!executable) throw new AgentNotInstalledError(ws.agentKind);
 
     let terminal: TerminalInfo | null = null;
     try {
@@ -437,7 +466,7 @@ export class WorkspaceService extends EventEmitter {
     if (terminal) this.agentTerminals.set(terminal.id, id);
     // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
     this.d.todos.takePending(id);
-    if (ws.agentKind === 'claude' && terminal) this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
+    if (ws.agentKind === 'claude' && terminal && settings.autoTrust) this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
     // Claude Code 는 첫 hook 이 올 때까지 '시작 중' 이다: 폴더 신뢰 창이 떠 있을 수 있다 (실험 12: 그동안은 hook 이 오지 않는다).
     // Codex 는 hook 이 없어 알 길이 없으므로 예전처럼 쉬는 중으로 둔다.
     this.d.workspaces.update(id, { status: ws.agentKind === 'claude' ? 'starting' : 'idle' });

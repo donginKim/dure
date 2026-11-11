@@ -474,3 +474,82 @@ test('코어를 닫은 뒤에는 에이전트를 띄우지 않는다', async () 
   await expect(core.service.startAgent(ws.id, SIZE)).rejects.toThrow();
   expect(core.engine.has(ws.id)).toBe(false);
 });
+
+// ---- 설정이 실제 동작에 반영되는가 ----
+
+test('설정의 모델과 추가 인자가 에이전트의 인자로 들어간다 (다음에 시작할 때부터)', async () => {
+  core.settings.update({ claudeModel: 'opus', claudeArgs: '--effort high --add-dir "/a b"' });
+  const ws = await started('args');
+  const argv = argvLog(ws.id)[0]!;
+  expect(argv.slice(argv.indexOf('--model'), argv.indexOf('--model') + 2)).toEqual(['--model', 'opus']);
+  expect(argv).toEqual(expect.arrayContaining(['--effort', 'high', '--add-dir', '/a b']));
+  // 두레가 정하는 인자는 그대로다
+  expect(argv).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits', '--output-format', 'stream-json']));
+});
+
+test('설정의 실행 파일 경로를 쓴다. 쓸 수 없는 경로면 이유를 알려 주고 띄우지 않는다', async () => {
+  const other = join(fakeBin, 'my-claude');
+  writeFileSync(other, readFileSync(join(fakeBin, 'claude')));
+  chmodSync(other, 0o755);
+  core.settings.update({ claudePath: other });
+  const ws = await started('custom-path');
+  expect(core.service.isAgentRunning(ws.id)).toBe(true);
+  core.settings.update({ claudePath: '/nonexistent/claude' });
+  const ws2 = await create('bad-path');
+  await expect(core.service.startAgent(ws2.id, SIZE)).rejects.toThrow('설정에 적힌 실행 파일을 쓸 수 없습니다: /nonexistent/claude');
+  expect(status(ws2.id)).toBe('stopped');
+});
+
+test('새 워크스페이스의 기본 방식·권한 모드·작업 폴더 위치는 설정을 따른다', async () => {
+  const root = join(tempDir(), '내 작업 폴더');
+  core.settings.update({ defaultEngine: 'terminal', defaultPermissionMode: 'bypass', worktreeRoot: root });
+  const ws = await create('defaults');
+  expect(ws).toMatchObject({ engine: 'terminal', permissionMode: 'bypass' });
+  expect(ws.worktreePath.startsWith(root)).toBe(true);
+  // 만들 때 직접 고른 값이 먼저다
+  expect(await create('explicit', { engine: 'chat', permissionMode: 'ask' })).toMatchObject({ engine: 'chat', permissionMode: 'ask' });
+});
+
+test('에이전트끼리의 대화 상한은 설정을 따른다', async () => {
+  core.settings.update({ threadCap: 2 });
+  const a = await create('cap-a');
+  const b = await create('cap-b');
+  const send = (body: string, threadId?: string) => core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: a.id }, toWorkspaceId: b.id, body, threadId });
+  const first = send('1');
+  send('2', first.threadId);
+  expect(core.messages.threads(projectId)[0]!.capped).toBe(false);
+  send('3', first.threadId);
+  expect(core.messages.threads(projectId)[0]!.capped).toBe(true);
+});
+
+test('"메시지로 띄우기" 를 끄면 꺼진 에이전트는 뜨지 않고, 직접 시작하면 그 메시지가 전달된다', async () => {
+  core.settings.update({ autoStartOnMessage: false });
+  const front = await started('f5');
+  const back = await create('b5');
+  core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: front.id }, toWorkspaceId: back.id, body: '기다리는 메시지' });
+  await new Promise((r) => setTimeout(r, 600));
+  expect(status(back.id)).toBe('stopped');
+  expect(core.delivery.state(back.id)).toBe('waiting-start');
+  await core.service.startAgent(back.id, SIZE);
+  await until(() => said(back.id).some((t) => t.includes('> 기다리는 메시지')));
+});
+
+test('"커밋 뒤 알리기" 를 끄면 커밋해도 에이전트에게 메시지가 가지 않는다', async () => {
+  const ws = await started('notify-off');
+  core.settings.update({ notifyAgentOnCommit: false });
+  writeFileSync(join(ws.worktreePath, 'a.txt'), 'x');
+  await core.commit.commit(ws.id, { files: ['a.txt'], message: 'add a' });
+  await new Promise((r) => setTimeout(r, 300));
+  expect(core.messages.threads(projectId)).toEqual([]);
+  core.settings.update({ notifyAgentOnCommit: true });
+  writeFileSync(join(ws.worktreePath, 'b.txt'), 'x');
+  await core.commit.commit(ws.id, { files: ['b.txt'], message: 'add b' });
+  expect(core.messages.threads(projectId).length).toBe(1);
+});
+
+test('모델 목록: 에이전트가 알려 준 것을 설정 화면용으로 간추린다', async () => {
+  expect(core.models()).toEqual([]);
+  await started('models');
+  // 가짜 에이전트는 모델 목록을 주지 않는다: 빈 목록 그대로다 (던지지 않는다)
+  expect(core.models()).toEqual([]);
+});

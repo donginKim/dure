@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
+import { SettingsService } from './settings';
 import { ChatEngine } from './chat/engine';
-import type { ChatView, SlashCommand } from '@shared/types';
+import type { ChatView, ModelChoice, SlashCommand } from '@shared/types';
 import { CommitDraftStore } from './commitDrafts';
 import { CommitService } from './commitService';
 import { openDatabase } from './db';
@@ -34,6 +35,9 @@ export interface Core {
   delivery: DeliveryService;
   chat: ChatService;
   engine: ChatEngine;
+  settings: SettingsService;
+  /** 설정 화면이 고르게 보여줄 모델 목록 (채팅 방식의 에이전트가 한 번이라도 떠야 채워진다) */
+  models(): ModelChoice[];
   /** 채팅 화면이 받는 것: 대화, 쓰는 중인 글, 승인·질문 대기 */
   chatView(workspaceId: string): ChatView;
   slashCommands(workspaceId: string): SlashCommand[];
@@ -74,7 +78,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   }
 
   const todos = new TodoService(db);
+  const settings = new SettingsService(db);
   const messages = new MessageService(db);
+  messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
   const pty = new PtyManager();
   const git = createGit(o.baseEnv);
@@ -117,7 +123,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools]);
   const service = new WorkspaceService({
-    projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
+    projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
 
   const delivery: DeliveryService = new DeliveryService({
@@ -129,6 +135,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       wake: (id, text) => service.wake(id, text),
       // 기다리던 메시지는 startAgent 가 takeForStart 로 가져가 첫 프롬프트로 준다.
       start: async (id) => { await service.startAgent(id, { cols: 120, rows: 40 }); },
+      autoStart: () => settings.get().autoStartOnMessage,
     },
   });
   service.attachDelivery(delivery);
@@ -159,11 +166,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   onStatus = (id) => service.emit('changed', id);
   noteHook = (id, event, blocked) => service.noteHook(id, event, blocked);
 
-  const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages });
+  const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, commitDrafts, commit,
+    models: () => engine.models(),
     chatView(workspaceId) {
       const snap = chat.snapshot(workspaceId);
       const ws = workspaces.get(workspaceId);

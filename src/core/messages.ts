@@ -76,8 +76,16 @@ export function formatDelivery(m: Message, d: { fromName: string; artifacts: Art
  * 이벤트: 'changed' (projectId), 'sent' (message), 'released' (projectId: 붙잡혀 있던 것이 풀림)
  */
 export class MessageService extends EventEmitter {
+  /** 에이전트끼리 주고받는 횟수의 상한. 설정에서 바꿀 수 있다 */
+  private caps: () => { thread: number; project: number } = () => ({ thread: THREAD_CAP, project: PROJECT_CAP });
+
   constructor(private readonly db: Database.Database) {
     super();
+  }
+
+  /** 상한을 어디서 읽을지 정한다 (설정). 바뀐 값은 다음 메시지부터 적용된다. */
+  useCaps(caps: () => { thread: number; project: number }): void {
+    this.caps = caps;
   }
 
   private ensureFlow(projectId: string): void {
@@ -127,9 +135,10 @@ export class MessageService extends EventEmitter {
         JSON.stringify(i.artifactIds ?? []), now);
       this.db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(now, threadId);
       if (fromAgent) {
+        const caps = this.caps();
         // 메시지는 저장하되, 상한을 넘으면 전달을 멈춘다. 버리지 않는다.
-        this.db.prepare('UPDATE threads SET agent_streak = agent_streak + 1, capped = (agent_streak + 1 > ?) WHERE id = ?').run(THREAD_CAP, threadId);
-        this.db.prepare('UPDATE project_flow SET agent_streak = agent_streak + 1, capped = (agent_streak + 1 > ?) WHERE project_id = ?').run(PROJECT_CAP, i.projectId);
+        this.db.prepare('UPDATE threads SET agent_streak = agent_streak + 1, capped = (agent_streak + 1 > ?) WHERE id = ?').run(caps.thread, threadId);
+        this.db.prepare('UPDATE project_flow SET agent_streak = agent_streak + 1, capped = (agent_streak + 1 > ?) WHERE project_id = ?').run(caps.project, i.projectId);
       } else if (fromUser) {
         this.liftCaps(i.projectId);
       }

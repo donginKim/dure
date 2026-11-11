@@ -122,7 +122,8 @@ export interface ProjectFlow {
 }
 
 /** 받는 워크스페이스에 메시지가 어떻게 전달될지 */
-export type DeliveryState = 'none' | 'next-hook' | 'waking' | 'starting' | 'waiting-unknown' | 'waiting-codex' | 'held';
+/** waiting-start: 에이전트가 꺼져 있고, 메시지로 스스로 띄우지 않게 설정돼 있다. 사용자가 시작하면 전달된다 */
+export type DeliveryState = 'none' | 'next-hook' | 'waking' | 'starting' | 'waiting-start' | 'waiting-unknown' | 'waiting-codex' | 'held';
 
 /** 작업 폴더에서 바뀐 파일 하나 */
 export interface ChangedFile {
@@ -271,3 +272,44 @@ export type ChatView = ChatSnapshot & {
   /** 에이전트가 오류로 끝났을 때 남긴 글 (채팅 방식) */
   lastError: string | null;
 };
+
+/** 두레의 설정. 앱 전체에 하나다. */
+export interface Settings {
+  /** 새 워크스페이스의 기본 에이전트 */
+  defaultAgent: AgentKind;
+  /** 새 Claude Code 워크스페이스의 기본 방식 */
+  defaultEngine: AgentEngine;
+  /** 새 워크스페이스의 기본 권한 모드 */
+  defaultPermissionMode: PermissionMode;
+  /** 작업 폴더(worktree)를 만드는 상위 폴더. 빈 값이면 기본 위치 */
+  worktreeRoot: string;
+  /** Claude Code 실행 파일의 절대 경로. 빈 값이면 PATH 에서 찾는다 */
+  claudePath: string;
+  /** Claude Code 의 모델. 빈 값이면 Claude Code 의 기본 */
+  claudeModel: string;
+  /** Claude Code 에 더 줄 인자 (한 줄, 셸처럼 따옴표로 묶을 수 있다) */
+  claudeArgs: string;
+  codexPath: string;
+  codexArgs: string;
+  /** 터미널 방식에서 폴더 신뢰 창에 두레가 대신 답한다 */
+  autoTrust: boolean;
+  /** 사용자 개입 없이 에이전트끼리 주고받는 횟수의 상한: 대화 하나 */
+  threadCap: number;
+  /** 같은 상한: 프로젝트 전체 */
+  projectCap: number;
+  /** 꺼진 에이전트에게 메시지가 오면 스스로 띄운다 */
+  autoStartOnMessage: boolean;
+  /** 커밋·push 뒤에 에이전트에게 알린다 */
+  notifyAgentOnCommit: boolean;
+  /** 터미널 글자 크기 (px) */
+  terminalFontSize: number;
+  /** 채팅 글자 크기 (px) */
+  chatFontSize: number;
+}
+
+/** 설정 화면이 모델을 고르게 보여줄 목록 (채팅 방식의 에이전트가 알려 준 것) */
+export interface ModelChoice {
+  value: string;
+  name: string;
+  description: string;
+}

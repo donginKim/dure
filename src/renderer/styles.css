@@ -17,6 +17,7 @@
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+html { color-scheme: dark; }
 body { background: var(--bg); overflow: hidden; }
 button, input, select { font: inherit; color: inherit; }
 
@@ -474,7 +475,7 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 .side-settings { display: flex; align-items: center; gap: 8px; margin: 6px; padding: 8px 10px; background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); color: var(--muted); cursor: pointer; text-align: left; }
 .side-settings:hover, .side-settings.selected { color: var(--text); background: var(--panel-2); }
 .side-settings .gear { font-size: 14px; }
-.page.settings { max-width: 900px; width: 100%; }
+.page.settings > * { max-width: 900px; }
 .set-saved { margin-left: 10px; color: var(--ok); }
 .set-box { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .set-row { display: flex; gap: 20px; align-items: flex-start; justify-content: space-between; padding: 13px 16px; border-top: 1px solid var(--line); }

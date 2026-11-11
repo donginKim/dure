@@ -351,3 +351,17 @@ describe('nudge (에이전트에게 알리기)', () => {
     await expect(core.service.nudge(ws.id)).rejects.toThrow();
   });
 });
+
+test('에이전트를 새로 시작하면 꺼져 있던 동안 쌓인 미전달 변경은 버린다', async () => {
+  // 새 대화는 이전 목록을 본 적이 없다. 지난 변경 기록을 전달하면 소음일 뿐이고, 목록은 todo_list 로 읽는다.
+  const ws = await create({ name: 'fresh-start' });
+  const t = core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  core.todos.remove(t.id, { actor: 'user' });
+  expect(core.todos.pendingCount(ws.id)).toBe(2);
+  await core.service.startAgent(ws.id, SIZE);
+  expect(core.todos.pendingCount(ws.id)).toBe(0);
+  // 이미 떠 있는 에이전트에 대한 startAgent 는 미전달 변경을 건드리지 않는다
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'B' }, 'user');
+  await core.service.startAgent(ws.id, SIZE);
+  expect(core.todos.pendingCount(ws.id)).toBe(1);
+});

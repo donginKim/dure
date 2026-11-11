@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Project, Repo, Workspace } from '@shared/types';
+import type { Project, Repo, Todo, Workspace } from '@shared/types';
+import type { PendingInfo } from './components/TodoPanel';
 import { ProjectsHome } from './components/ProjectsHome';
 import { ProjectView } from './components/ProjectView';
 import { Sidebar } from './components/Sidebar';
@@ -10,19 +11,25 @@ export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [repos, setRepos] = useState<Repo[]>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [pending, setPending] = useState<Record<string, PendingInfo>>({});
   const [selection, setSelection] = useState<Selection>(null);
   const [error, setError] = useState('');
 
   const reload = useCallback(async () => {
     try {
       const ps = await window.dure.projects.list();
-      const [ws, rs] = await Promise.all([
+      const [ws, rs, ts, pe] = await Promise.all([
         Promise.all(ps.map((p) => window.dure.workspaces.list(p.id))),
         Promise.all(ps.map((p) => window.dure.repos.list(p.id))),
+        Promise.all(ps.map((p) => window.dure.todos.list(p.id))),
+        Promise.all(ps.map((p) => window.dure.todos.pending(p.id))),
       ]);
       setProjects(ps);
       setWorkspaces(ws.flat());
       setRepos(rs.flat());
+      setTodos(ts.flat());
+      setPending(Object.assign({}, ...pe));
       setError('');
     } catch (e) {
       setError((e as Error).message);
@@ -50,7 +57,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} repos={repos} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <Sidebar tree={tree} repos={repos} todos={todos} selection={current} onSelect={setSelection} onCreateProject={createProject} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
         {node && (
@@ -59,6 +66,7 @@ export function App() {
             project={node.project}
             repos={repos.filter((r) => r.projectId === node.project.id)}
             workspaces={node.workspaces}
+            todos={todos.filter((t) => t.projectId === node.project.id)}
             onSelect={setSelection}
           />
         )}
@@ -68,6 +76,8 @@ export function App() {
             workspace={workspace}
             project={projects.find((p) => p.id === workspace.projectId)}
             repo={repos.find((r) => r.id === workspace.repoId)}
+            todos={todos.filter((t) => t.workspaceId === workspace.id)}
+            pending={pending[workspace.id]}
             onSelect={setSelection}
           />
         )}

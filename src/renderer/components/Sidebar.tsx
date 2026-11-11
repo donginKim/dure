@@ -1,15 +1,20 @@
 import { useState } from 'react';
-import type { Repo } from '@shared/types';
+import type { Repo, Todo } from '@shared/types';
+import { progress } from '../todoView';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, selection, onSelect, onCreateProject }: {
-  tree: TreeNode[]; repos: Repo[]; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
+export function Sidebar({ tree, repos, todos, selection, onSelect, onCreateProject }: {
+  tree: TreeNode[]; repos: Repo[]; todos: Todo[]; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const repoName = (id: string): string => repos.find((r) => r.id === id)?.name ?? '';
+  const progressOf = (workspaceId: string): string => {
+    const { done, total } = progress(todos.filter((t) => t.workspaceId === workspaceId));
+    return total > 0 ? `${done}/${total}` : '';
+  };
 
   const create = async (): Promise<void> => {
     if (!name.trim()) return;
@@ -71,7 +76,7 @@ export function Sidebar({ tree, repos, selection, onSelect, onCreateProject }: {
                 >
                   <span className={`dot ${w.status}`} />
                   <div style={{ minWidth: 0 }}>
-                    <div className="ws-name">{w.name}</div>
+                    <div className="ws-name">{w.name}{progressOf(w.id) && <span className="ws-progress" title="TODO 진행도">{progressOf(w.id)}</span>}</div>
                     <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
                   </div>
                 </div>

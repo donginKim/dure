@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import type { Project, Repo, RepoStatus, Workspace } from '@shared/types';
+import type { Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
+import { groupTodos, progress } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
 import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
+import { TodoList } from './TodoPanel';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
-export function ProjectView({ project, repos, workspaces, onSelect }: {
-  project: Project; repos: Repo[]; workspaces: Workspace[]; onSelect: (s: Selection) => void;
+export function ProjectView({ project, repos, workspaces, todos, onSelect }: {
+  project: Project; repos: Repo[]; workspaces: Workspace[]; todos: Todo[]; onSelect: (s: Selection) => void;
 }) {
   const [statuses, setStatuses] = useState<Record<string, RepoStatus>>({});
   const [error, setError] = useState('');
@@ -114,6 +116,26 @@ export function ProjectView({ project, repos, workspaces, onSelect }: {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>TODO</h2></div>
+        <div className="todo-groups">
+          {groupTodos(todos, workspaces).map((g) => {
+            const { done, total } = progress(g.items);
+            return (
+              <div className="todo-group" key={g.key}>
+                <div className="todo-group-head">
+                  {g.workspaceId === null ? <span className="folder" /> : <span className={`dot ${workspaces.find((w) => w.id === g.workspaceId)?.status ?? ''}`} />}
+                  <span className="t">{g.title}</span>
+                  {total > 0 && <span className="count">{done}/{total}</span>}
+                </div>
+                <TodoList projectId={project.id} workspaceId={g.workspaceId} items={g.items} />
+              </div>
+            );
+          })}
+        </div>
+        <div className="help">프로젝트 항목은 프로젝트 전체의 할 일입니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</div>
       </div>
 
       <div className="section">

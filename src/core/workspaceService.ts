@@ -190,6 +190,8 @@ export class WorkspaceService extends EventEmitter {
       env: { ...this.d.baseEnv, ...launch.env }, cols: size.cols, rows: size.rows,
     });
     this.agentTerminals.set(terminal.id, id);
+    // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
+    this.d.todos.takePending(id);
     this.d.workspaces.update(id, { status: 'idle' });
     this.emit('changed', id);
     return terminal;

@@ -142,3 +142,47 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 .pcard-ws:hover { background: var(--panel-2); }
 .pcard-ws .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .muted { color: var(--muted); font-size: 12px; }
+
+/* 워크스페이스 화면: 터미널 + TODO 패널 */
+.ws-body { display: flex; flex: 1; min-height: 0; }
+.ws-terms { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.todo-panel { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
+.todo-head { display: flex; align-items: center; gap: 8px; padding: 9px 8px 9px 14px; border-bottom: 1px solid var(--line); }
+.todo-head .t { font-weight: 600; letter-spacing: 0.04em; }
+.todo-head .spacer { flex: 1; }
+.todo-scroll { flex: 1; overflow-y: auto; padding: 10px 10px 14px; }
+.todo-tab { flex: none; width: 30px; border: 0; border-left: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; writing-mode: vertical-rl; padding: 12px 0; font-size: 12px; letter-spacing: 0.06em; }
+.todo-tab:hover { color: var(--text); background: var(--panel-2); }
+.todo-pending { margin: 10px 10px 0; padding: 9px 10px; border: 1px solid #6b5a2a; background: #2a2413; color: var(--warn); border-radius: var(--radius); display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
+.todo-pending .btn { align-self: flex-start; }
+
+.todo-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 6px; border-radius: var(--radius); position: relative; }
+.todo-row:hover { background: var(--panel-2); }
+.todo-row input[type='checkbox'] { margin-top: 3px; accent-color: var(--accent); }
+.todo-main { flex: 1; min-width: 0; }
+.todo-title { cursor: text; word-break: break-word; white-space: pre-wrap; }
+.todo-row.done .todo-title { color: var(--muted); text-decoration: line-through; }
+.todo-row.cancelled .todo-title { color: var(--muted); text-decoration: line-through; }
+.todo-detail { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-edit { width: 100%; padding: 2px 6px !important; }
+.todo-doing { display: flex; align-items: center; gap: 5px; color: var(--accent); font-size: 11.5px; white-space: nowrap; }
+.todo-actions { display: none; position: absolute; right: 4px; top: 3px; gap: 2px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px; }
+.todo-row:hover .todo-actions { display: flex; }
+.icon { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 11.5px; white-space: nowrap; }
+.icon:hover:not(:disabled) { color: var(--text); background: var(--line); }
+.icon:disabled { opacity: 0.35; cursor: default; }
+.icon.danger:hover { color: var(--danger); }
+.todo-sub { margin: 10px 6px 3px; color: var(--warn); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; }
+.todo-none { padding: 4px 6px 8px; }
+.todo-add { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 0 2px; }
+.todo-add input[type='text'] { flex: 1; min-width: 0; }
+.todo-mine { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.spin { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--accent); border-top-color: transparent; display: inline-block; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.ws-progress { margin-left: 7px; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; }
+
+/* 프로젝트 화면의 TODO 묶음 */
+.todo-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.todo-group { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.todo-group-head { display: flex; align-items: center; gap: 8px; padding: 2px 6px 8px; }
+.todo-group-head .t { font-weight: 600; }

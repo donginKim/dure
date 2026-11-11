@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ERROR_PREFIX } from '@shared/ipc';
-import type { Project, Repo, TerminalInfo, Workspace } from '@shared/types';
+import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types';
 import { STATUS_LABEL, type Selection } from '../tree';
 import { ConfirmDialog } from './dialogs';
 import { TerminalPane } from './TerminalPane';
+import { TodoPanel, type PendingInfo } from './TodoPanel';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
@@ -17,8 +18,8 @@ export function describeError(message: string): string {
   return message;
 }
 
-export function WorkspaceView({ workspace, project, repo, onSelect }: {
-  workspace: Workspace; project?: Project; repo?: Repo; onSelect: (s: Selection) => void;
+export function WorkspaceView({ workspace, project, repo, todos, pending, onSelect }: {
+  workspace: Workspace; project?: Project; repo?: Repo; todos: Todo[]; pending?: PendingInfo; onSelect: (s: Selection) => void;
 }) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -94,6 +95,8 @@ export function WorkspaceView({ workspace, project, repo, onSelect }: {
         {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
         <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
+      <div className="ws-body">
+      <div className="ws-terms">
       <div className="tabs">
         {terminals.map((t) => (
           <div key={t.id} className={`tab${t.id === activeId ? ' active' : ''}`} onClick={() => setActiveId(t.id)}>
@@ -116,6 +119,9 @@ export function WorkspaceView({ workspace, project, repo, onSelect }: {
             </div>
           )}
         {active && error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}
+      </div>
+      </div>
+      <TodoPanel workspace={workspace} items={todos} pending={pending} />
       </div>
       {removing && (
         <ConfirmDialog

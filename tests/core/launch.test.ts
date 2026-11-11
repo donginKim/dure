@@ -159,10 +159,11 @@ test('지침: 사용자의 말과 TODO 변경은 사용자 권위로, 다른 워
 describe('git 대리 실행 파일', () => {
   test('두 에이전트 모두 files 에 bin/git(0o700)이 있고 env.PATH 가 그 폴더로 시작한다', () => {
     for (const kind of ['claude', 'codex'] as const) {
-      const l = buildAgentLaunch({ ...common, kind, permissionMode: 'ask', realGit: '/usr/bin/git' });
+      const l = buildAgentLaunch({ ...common, kind, permissionMode: 'ask', realGit: '/usr/bin/git', gitCommonDir: '/repos/쇼핑/.git' });
       const shim = l.files.find((f) => f.path === '/data/workspaces/w1/bin/git')!;
       expect(shim.mode).toBe(0o700);
       expect(shim.content).toContain("'/usr/bin/git'");
+      expect(shim.content).toContain("'/repos/쇼핑/.git'"); // 이 저장소의 커밋만 막는다
       expect(l.env.PATH).toBe('/data/workspaces/w1/bin:/usr/bin:/bin');
     }
   });

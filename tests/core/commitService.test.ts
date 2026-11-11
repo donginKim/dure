@@ -130,3 +130,24 @@ test('commit_draft_save 도구가 초안을 저장하고 changed 가 난다', as
   expect(core.commitDrafts.get(ws.id)?.message).toBe('feat: 로그인 링크 추가\n\n비밀번호 찾기로 연결');
   expect(changed).toEqual([ws.id]);
 });
+
+test('push: 현재 브랜치가 워크스페이스의 브랜치가 아니면 거절한다', async () => {
+  addOrigin();
+  gitOut(ws.worktreePath, 'checkout', '-q', '-b', 'somewhere-else');
+  await expect(core.commit.push(ws.id)).rejects.toThrow('이 워크스페이스의 브랜치(dure/프론트)가 아닙니다');
+});
+
+test('알림 스레드는 제목이 같아도 다른 에이전트가 만든 스레드를 쓰지 않는다', async () => {
+  const repo = core.repos.list(projectId)[0];
+  const other = await core.service.create({ projectId, repoId: repo.id, name: '백엔드', baseBranch: 'main', agentKind: 'claude' });
+  await agentWorking();
+  const fake = core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: other.id }, toWorkspaceId: ws.id, body: '두레 알림' });
+  edit('a.txt', '1\n');
+  await core.commit.commit(ws.id, { files: ['a.txt'], message: 'c1' });
+  expect(core.messages.messages(fake.threadId)).toHaveLength(1); // 가짜 스레드에 알림이 붙지 않았다
+  expect(core.messages.threads(projectId)).toHaveLength(2);
+});
+
+test('state: 병합 중이면 merging 이 true', async () => {
+  expect((await core.commit.state(ws.id)).merging).toBe(false);
+});

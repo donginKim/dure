@@ -150,6 +150,8 @@ export interface CommitState {
   remoteUrl: string | null;
   /** 아직 push 하지 않은 커밋 수. 원격에 이 브랜치가 없으면 null */
   ahead: number | null;
+  /** 병합(또는 cherry-pick, revert)이 진행 중이다. 이때는 전체를 한 번에 커밋해야 한다 */
+  merging: boolean;
 }
 
 export interface TerminalInfo {

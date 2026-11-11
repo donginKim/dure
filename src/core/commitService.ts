@@ -32,12 +32,13 @@ export class CommitService extends EventEmitter {
   async state(workspaceId: string): Promise<CommitState> {
     const ws = this.mustGet(workspaceId);
     const branch = await this.d.git.currentBranch(ws.worktreePath);
-    const [files, remoteUrl, ahead] = await Promise.all([
+    const [files, remoteUrl, ahead, merging] = await Promise.all([
       this.d.git.changedFiles(ws.worktreePath),
       this.d.git.remoteUrl(ws.worktreePath),
       this.d.git.aheadCount(ws.worktreePath, branch),
+      this.d.git.merging(ws.worktreePath),
     ]);
-    return { branch, files, draft: this.d.drafts.get(workspaceId) ?? null, remoteUrl, ahead };
+    return { branch, files, draft: this.d.drafts.get(workspaceId) ?? null, remoteUrl, ahead, merging };
   }
 
   async commit(workspaceId: string, i: { files: string[]; message: string }): Promise<CommitResult> {
@@ -54,6 +55,10 @@ export class CommitService extends EventEmitter {
     const ws = this.mustGet(workspaceId);
     if (!(await this.d.git.remoteUrl(ws.worktreePath))) throw new Error('원격 저장소(origin)가 없습니다.');
     const branch = await this.d.git.currentBranch(ws.worktreePath);
+    // 이 워크스페이스의 브랜치만 보낸다. 에이전트가 브랜치를 바꿔 놓았을 수 있다.
+    if (branch !== ws.branch) {
+      throw new Error(`현재 브랜치(${branch === 'HEAD' ? '분리된 HEAD' : branch})는 이 워크스페이스의 브랜치(${ws.branch})가 아닙니다. 터미널에서 브랜치를 확인하세요.`);
+    }
     const output = await this.d.git.push({ path: ws.worktreePath, branch });
     this.notify(ws, `사용자가 push 했다: ${branch} → origin`);
     this.emit('changed', workspaceId);
@@ -64,7 +69,12 @@ export class CommitService extends EventEmitter {
   private notify(ws: Workspace, text: string): void {
     if (this.d.workspaces.get(ws.id)?.status === 'stopped') return;
     const thread = this.d.messages.threads(ws.projectId)
-      .find((t) => t.title === NOTICE_THREAD && this.d.messages.messages(t.id).some((m) => m.toWorkspaceId === ws.id));
+      .find((t) => {
+        if (t.title !== NOTICE_THREAD) return false;
+        // 제목만 같은 스레드를 다른 에이전트가 만들 수 있다. 두레가 이 워크스페이스에 보낸 것으로 시작하는 스레드만 쓴다.
+        const first = this.d.messages.messages(t.id)[0];
+        return first?.from.kind === 'system' && first.toWorkspaceId === ws.id;
+      });
     try {
       this.d.messages.send({
         projectId: ws.projectId, from: { kind: 'system' }, toWorkspaceId: ws.id, body: text,

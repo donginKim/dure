@@ -145,3 +145,70 @@ test('push: 원격이 앞서 있으면 GitError 이고 강제로 밀지 않는�
   await expect(git.push({ path: repo, branch: 'main' })).rejects.toBeInstanceOf(GitError);
   expect(execFileSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).trim()).toBe(remoteHead);
 });
+
+describe('리뷰에서 재현된 문제', () => {
+  test('commitFiles: 대괄호·별표가 든 파일 이름이 패턴으로 읽혀 다른 파일까지 커밋되지 않는다', async () => {
+    const repo = makeRepo();
+    for (const n of ['[id].txt', 'i.txt', 'd.txt', '*.txt', 'secret.txt']) write(repo, n, 'x\n');
+    await git.commitFiles({ path: repo, files: ['[id].txt'], message: 'only bracket' });
+    expect(gitOut(repo, 'show', '--name-only', '--format=', 'HEAD')).toBe('[id].txt');
+    await git.commitFiles({ path: repo, files: ['*.txt'], message: 'only star' });
+    expect(gitOut(repo, 'show', '--name-only', '--format=', 'HEAD')).toBe('*.txt');
+    expect((await git.changedFiles(repo)).map((f) => f.path).sort()).toEqual(['d.txt', 'i.txt', 'secret.txt']);
+  });
+
+  test('commitFiles: 콜론으로 시작하는 파일 이름도 커밋된다', async () => {
+    const repo = makeRepo();
+    write(repo, ':foo', 'x\n');
+    await git.commitFiles({ path: repo, files: [':foo'], message: 'colon' });
+    expect(gitOut(repo, 'show', '--name-only', '--format=', 'HEAD')).toBe(':foo');
+  });
+
+  test('push: 브랜치 이름이 + 로 시작해도 강제로 밀지 않는다', async () => {
+    const { repo, bare } = repoWithOrigin();
+    await git.push({ path: repo, branch: 'main' });
+    // 원격에 동료의 커밋을 올린다
+    const other = join(tempDir(), 'other');
+    execFileSync('git', ['clone', '-q', bare, other]);
+    writeFileSync(join(other, 'theirs.txt'), 't\n');
+    execFileSync('git', ['-C', other, 'add', '-A']);
+    execFileSync('git', ['-C', other, '-c', 'user.name=o', '-c', 'user.email=o@example.invalid', 'commit', '-q', '-m', 'theirs']);
+    execFileSync('git', ['-C', other, 'push', '-q', 'origin', 'main']);
+    const remoteHead = execFileSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).trim();
+    write(repo, 'mine.txt', 'm\n');
+    await git.commitFiles({ path: repo, files: ['mine.txt'], message: 'mine' });
+    gitOut(repo, 'checkout', '-q', '-b', '+main'); // "+main" 은 git 에게 "main 을 강제로" 라는 뜻이다
+    await git.push({ path: repo, branch: '+main' }).catch(() => undefined);
+    expect(execFileSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).trim()).toBe(remoteHead); // 동료의 커밋이 그대로다
+  });
+
+  test('push: 브랜치가 아닌 상태(HEAD)는 거절한다', async () => {
+    const { repo } = repoWithOrigin();
+    await expect(git.push({ path: repo, branch: 'HEAD' })).rejects.toThrow('브랜치가 아닌 상태');
+  });
+
+  test('commitFiles: 병합 중에는 전체를 고르면 병합 커밋으로 마무리된다', async () => {
+    const repo = makeRepo();
+    write(repo, 'a.txt', 'base\n'); gitOut(repo, 'add', '-A'); gitOut(repo, 'commit', '-q', '-m', 'base');
+    gitOut(repo, 'checkout', '-q', '-b', 'side'); write(repo, 'a.txt', 'side\n'); gitOut(repo, 'commit', '-q', '-am', 'side');
+    gitOut(repo, 'checkout', '-q', 'main'); write(repo, 'a.txt', 'main\n'); gitOut(repo, 'commit', '-q', '-am', 'main');
+    try { gitOut(repo, 'merge', 'side'); } catch { /* 충돌 */ }
+    write(repo, 'a.txt', 'resolved\n');
+    expect(await git.merging(repo)).toBe(true);
+    const files = await git.changedFiles(repo);
+    await expect(git.commitFiles({ path: repo, files: [], message: 'x' })).rejects.toThrow();
+    await git.commitFiles({ path: repo, files: files.map((f) => f.path), message: 'merge side' });
+    expect(gitOut(repo, 'log', '-1', '--format=%P').split(' ')).toHaveLength(2); // 부모가 둘인 병합 커밋
+    expect(await git.merging(repo)).toBe(false);
+  });
+
+  test('commitFiles: 병합 중에 일부만 고르면 이유를 말하며 거절한다', async () => {
+    const repo = makeRepo();
+    write(repo, 'a.txt', 'base\n'); write(repo, 'b.txt', 'b\n'); gitOut(repo, 'add', '-A'); gitOut(repo, 'commit', '-q', '-m', 'base');
+    gitOut(repo, 'checkout', '-q', '-b', 'side'); write(repo, 'a.txt', 'side\n'); gitOut(repo, 'commit', '-q', '-am', 'side');
+    gitOut(repo, 'checkout', '-q', 'main'); write(repo, 'a.txt', 'main\n'); gitOut(repo, 'commit', '-q', '-am', 'main');
+    try { gitOut(repo, 'merge', 'side'); } catch { /* 충돌 */ }
+    write(repo, 'a.txt', 'resolved\n'); write(repo, 'b.txt', 'b2\n');
+    await expect(git.commitFiles({ path: repo, files: ['b.txt'], message: 'x' })).rejects.toThrow('병합 중에는 일부 파일만 커밋할 수 없습니다');
+  });
+});

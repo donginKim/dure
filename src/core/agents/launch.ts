@@ -19,8 +19,10 @@ export interface AgentLaunchInput {
   token: string;
   configDir: string;
   instructions: string;
-  /** 진짜 git 의 절대 경로. 주면 에이전트의 commit·push 를 막는 대리 실행 파일을 건다 */
+  /** 진짜 git 의 절대 경로. gitCommonDir 와 함께 주면 에이전트의 commit·push 를 막는 대리 실행 파일을 건다 */
   realGit?: string;
+  /** 이 워크스페이스 저장소의 공용 .git 폴더 (실제 경로). 이 저장소에 대한 commit·push 만 막는다 */
+  gitCommonDir?: string;
   /** 에이전트에게 물려줄 PATH. 대리 실행 파일 폴더를 이 앞에 붙인다 */
   basePath: string;
   /** 띄우자마자 실행할 프롬프트. 폴더 신뢰 창이 있으면 그 뒤에 실행된다 (실험 12) */
@@ -51,10 +53,10 @@ export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
   const launch = buildBase(i);
   // 두 에이전트 모두 프롬프트는 마지막 위치 인자다.
   if (i.initialPrompt) launch.args.push(i.initialPrompt);
-  if (i.realGit) {
+  if (i.realGit && i.gitCommonDir) {
     // 에이전트가 실행하는 git 이 이 파일을 먼저 타게 한다 (실험 09). 사용자 셸 탭에는 걸지 않는다.
     const bin = join(i.configDir, 'bin');
-    launch.files.push({ path: join(bin, 'git'), content: gitShimScript(i.realGit), mode: 0o700 });
+    launch.files.push({ path: join(bin, 'git'), content: gitShimScript(i.realGit, i.gitCommonDir), mode: 0o700 });
     launch.env.PATH = `${bin}:${i.basePath}`;
   }
   return launch;

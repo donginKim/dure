@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import type { ChangedFile, CommitResult } from '@shared/types';
 
 export class GitError extends Error {
@@ -27,6 +28,10 @@ export interface Git {
   aheadCount(path: string, branch: string): Promise<number | null>;
   /** 브랜치를 origin 으로 보낸다. 강제로 밀지 않는다. git 이 낸 글을 돌려준다 */
   push(o: { path: string; branch: string }): Promise<string>;
+  /** 병합, cherry-pick, revert 가 진행 중인가 */
+  merging(path: string): Promise<boolean>;
+  /** 저장소의 공용 .git 폴더의 실제 경로 (worktree 들이 함께 쓰는 곳) */
+  commonDir(path: string): Promise<string>;
   addWorktree(o: { repoPath: string; worktreePath: string; branch: string; baseBranch: string }): Promise<void>;
   removeWorktree(o: { repoPath: string; worktreePath: string }): Promise<void>;
 }
@@ -54,11 +59,15 @@ export function createGit(env?: Record<string, string>): Git {
     });
 
   // git push 처럼 진행 상황을 표준 오류로 내는 명령의 출력을 모두 받는다.
-  const runBoth = (args: string[]): Promise<string> =>
+  const runBoth = (args: string[], o: { timeoutMs?: number; extraEnv?: Record<string, string> } = {}): Promise<string> =>
     new Promise((resolve, reject) => {
-      execFile('git', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, env }, (err, stdout, stderr) => {
+      const childEnv = o.extraEnv ? { ...(env ?? process.env), ...o.extraEnv } : env;
+      execFile('git', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, env: childEnv, timeout: o.timeoutMs }, (err, stdout, stderr) => {
         const all = `${stdout}${stderr}`.trim();
         if (!err) return resolve(all);
+        if ((err as { killed?: boolean }).killed) {
+          return reject(new GitError(`git ${args[0] === '-C' ? args[2] : args[0]} 이(가) 시간 안에 끝나지 않아 멈췄습니다.${all ? `\n${all}` : ''}`, all));
+        }
         reject(new GitError(`git ${args[0] === '-C' ? args[2] : args[0]} 실패: ${all || err.message}`, all || err.message));
       });
     });
@@ -144,13 +153,40 @@ export function createGit(env?: Record<string, string>): Git {
       return files;
     },
 
+    async merging(path) {
+      for (const ref of ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD']) {
+        try {
+          await run(['-C', path, 'rev-parse', '-q', '--verify', ref]);
+          return true;
+        } catch { /* 없음 */ }
+      }
+      return false;
+    },
+
+    async commonDir(path) {
+      const dir = (await raw(['-C', path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
+      try { return realpathSync(dir); } catch { return dir; }
+    },
+
     async commitFiles(o) {
       if (o.files.length === 0) throw new Error('커밋할 파일을 고르세요.');
       const message = o.message.trim();
       if (!message) throw new Error('커밋 메시지를 입력하세요.');
-      // 경로 앞에는 항상 -- 를 두고, 메시지는 한 인자 안에 넣는다: 어느 쪽도 옵션으로 읽히지 않는다.
-      await raw(['-C', o.path, 'add', '-A', '--', ...o.files]);
-      await runBoth(['-C', o.path, 'commit', `--message=${message}`, '--', ...o.files]);
+      // --literal-pathspecs: 경로를 글자 그대로 읽는다. 없으면 "[id].txt" 나 "*.txt" 같은 이름이 패턴으로 읽혀
+      // 고르지 않은 파일까지 커밋된다. 경로 앞에는 항상 -- 를 두고, 메시지는 한 인자 안에 넣는다.
+      const lit = ['--literal-pathspecs', '-C', o.path];
+      if (await git.merging(o.path)) {
+        // 병합 중에는 git 이 일부 파일만 커밋하는 것을 허락하지 않는다.
+        const all = (await git.changedFiles(o.path)).map((f) => f.path);
+        if (all.some((p) => !o.files.includes(p))) {
+          throw new Error('병합 중에는 일부 파일만 커밋할 수 없습니다. 전체를 선택하세요.');
+        }
+        await raw([...lit, 'add', '-A', '--', ...o.files]);
+        await runBoth(['-C', o.path, 'commit', `--message=${message}`]);
+      } else {
+        await raw([...lit, 'add', '-A', '--', ...o.files]);
+        await runBoth([...lit, 'commit', `--message=${message}`, '--', ...o.files]);
+      }
       return {
         hash: (await raw(['-C', o.path, 'rev-parse', '--short', 'HEAD'])).trim(),
         subject: (await raw(['-C', o.path, 'log', '-1', '--format=%s'])).trim(),
@@ -175,7 +211,11 @@ export function createGit(env?: Record<string, string>): Git {
     },
 
     async push(o) {
-      return runBoth(['-C', o.path, 'push', '-u', 'origin', o.branch]);
+      if (o.branch === 'HEAD' || !o.branch) throw new Error('브랜치가 아닌 상태(분리된 HEAD)에서는 push 할 수 없습니다.');
+      // 보낼 것을 refs/heads/… 로 정확히 적는다. 브랜치 이름만 넘기면 "+main" 같은 이름이 "강제로 밀기" 로 읽힌다.
+      const ref = `refs/heads/${o.branch}`;
+      // 비밀번호를 물으며 멈추지 않게 하고(화면에서 답할 방법이 없다), 끝없이 기다리지 않게 한다.
+      return runBoth(['-C', o.path, 'push', '-u', 'origin', `${ref}:${ref}`], { timeoutMs: 120_000, extraEnv: { GIT_TERMINAL_PROMPT: '0' } });
     },
 
     async addWorktree(o) {
@@ -203,5 +243,5 @@ export function createGit(env?: Record<string, string>): Git {
 const defaultGit = createGit();
 export const {
   isGitRepo, listBranches, currentBranch, branchExists, deleteBranch, uncommittedCount, addWorktree, removeWorktree,
-  changedFiles, commitFiles, remoteUrl, aheadCount, push,
+  changedFiles, commitFiles, remoteUrl, aheadCount, push, merging, commonDir,
 } = defaultGit;

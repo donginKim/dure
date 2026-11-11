@@ -238,13 +238,17 @@ export class WorkspaceService extends EventEmitter {
     const executableCheck = findExecutable(ws.agentKind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
     if (!executableCheck) throw new AgentNotInstalledError(ws.agentKind);
     // 받은 메시지가 기다리고 있으면 그것을 첫 프롬프트로 준다. 실행 파일을 확인한 뒤에 가져가야 실패 시 사라지지 않는다.
+    // 이 저장소에 대한 커밋·push 만 막기 위해 저장소의 공용 .git 폴더를 알아 둔다. 못 알아내면 막는 장치 없이 띄운다.
+    const realGit = findExecutable('git', this.d.baseEnv.PATH);
+    const gitCommonDir = realGit ? await this.d.git.commonDir(ws.worktreePath).catch(() => undefined) : undefined;
     const firstPrompt = initialPrompt ?? this.delivery?.takeForStart(id);
     const launch = buildAgentLaunch({
       kind: ws.agentKind,
       permissionMode: ws.permissionMode,
       mcpUrl: this.d.mcpUrl,
       hookUrl: this.d.hookUrl,
-      realGit: findExecutable('git', this.d.baseEnv.PATH),
+      realGit,
+      gitCommonDir,
       basePath: this.d.baseEnv.PATH ?? '',
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),

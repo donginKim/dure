@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommitResult, CommitState, Workspace } from '@shared/types';
-import { fileLabel, pathsToCommit, pushHint, statusLabel } from '../commitView';
+import { fileLabel, forgetEdit, pathsToCommit, pushHint, recallEdit, rememberEdit, statusLabel } from '../commitView';
 import { clock } from '../conversationView';
 import { Dialog } from './dialogs';
-
-// 창을 닫아도 사용자가 고치던 메시지는 남겨 둔다 (앱을 끄면 사라진다).
-const edits = new Map<string, { message: string; draftAt: number | null }>();
 
 /**
  * 커밋 창. 에이전트가 써 둔 메시지를 사용자가 고친 뒤, 커밋과 push 를 직접 누른다.
@@ -14,7 +11,14 @@ const edits = new Map<string, { message: string; draftAt: number | null }>();
 export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onClose: () => void }) {
   const [state, setState] = useState<CommitState | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [message, setMessage] = useState(edits.get(workspace.id)?.message ?? '');
+  const [message, setMessageRaw] = useState(recallEdit(workspace.id)?.message ?? '');
+  // 고치는 글은 칠 때마다 기억해 둔다: 창을 닫거나 커밋이 실패해도 사라지지 않는다.
+  const setMessage = (text: string): void => {
+    setMessageRaw(text);
+    const cur = recallEdit(workspace.id);
+    rememberEdit(workspace.id, { base: cur?.base ?? '', draftAt: cur?.draftAt ?? null, message: text });
+  };
+  const known = useRef<Set<string>>(new Set()); // 이미 목록에서 본 파일
   const [newDraft, setNewDraft] = useState<string | null>(null); // 고치는 중에 에이전트가 새로 쓴 메시지
   const [busy, setBusy] = useState<'commit' | 'push' | null>(null);
   const [committed, setCommitted] = useState<CommitResult | null>(null);
@@ -28,21 +32,23 @@ export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onC
     try {
       const s = await window.dure.commit.state(workspace.id);
       setState(s);
-      setChecked((cur) => (selectAll ? new Set(s.files.map((f) => f.path)) : new Set(s.files.map((f) => f.path).filter((p) => cur.has(p)))));
-      const saved = edits.get(workspace.id);
+      // 처음 보는 파일은 체크한 채로 넣는다 (창을 연 뒤 에이전트가 새로 바꾼 파일). 사용자가 끈 것은 그대로 둔다.
+      setChecked((cur) => new Set(s.files.map((f) => f.path).filter((p) => selectAll || cur.has(p) || !known.current.has(p))));
+      known.current = new Set(s.files.map((f) => f.path));
+      const saved = recallEdit(workspace.id);
+      const draft = s.draft?.message ?? '';
       const draftAt = s.draft?.updatedAt ?? null;
       if (!saved) {
         // 처음 여는 것: 에이전트의 초안으로 채운다.
-        setMessage(s.draft?.message ?? '');
-        edits.set(workspace.id, { message: s.draft?.message ?? '', draftAt });
+        setMessageRaw(draft);
+        rememberEdit(workspace.id, { base: draft, message: draft, draftAt });
       } else if (s.draft && draftAt !== saved.draftAt) {
         // 에이전트가 초안을 새로 썼다. 사용자가 손대지 않았으면 바꾸고, 고치던 중이면 덮어쓰지 않고 알린다.
-        const untouched = messageRef.current === saved.message;
-        if (untouched) {
-          setMessage(s.draft.message);
-          edits.set(workspace.id, { message: s.draft.message, draftAt });
-        } else {
-          setNewDraft(s.draft.message);
+        if (messageRef.current === saved.base) {
+          setMessageRaw(draft);
+          rememberEdit(workspace.id, { base: draft, message: draft, draftAt });
+        } else if (draft !== messageRef.current) {
+          setNewDraft(draft);
         }
       }
     } catch (e) {
@@ -69,9 +75,9 @@ export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onC
     try {
       const res = await window.dure.commit.run(workspace.id, { files: pathsToCommit(files, checked), message });
       setCommitted(res);
-      setMessage('');
+      setMessageRaw('');
       setNewDraft(null);
-      edits.delete(workspace.id);
+      forgetEdit(workspace.id); // 커밋했으니 고치던 글은 더 필요 없다
       await load(true);
     } catch (e) {
       setError((e as Error).message); // 고친 메시지는 그대로 둔다
@@ -93,7 +99,7 @@ export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onC
   };
 
   const hint = state ? pushHint(state) : null;
-  const edited = (edits.get(workspace.id)?.message ?? '') !== message;
+  const edited = (recallEdit(workspace.id)?.base ?? '') !== message;
 
   return (
     <Dialog title="커밋" onClose={onClose} wide>
@@ -118,6 +124,11 @@ export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onC
         ))}
       </div>
 
+      {state?.merging && (
+        <div className="thread-notice">
+          <span className="grow">병합이 진행 중입니다. 일부 파일만 커밋할 수 없어 전체를 한 번에 커밋합니다.</span>
+        </div>
+      )}
       <div className="commit-msg-head">
         <span>커밋 메시지</span>
         {state?.draft && !edited && <span className="muted">에이전트가 작성 · {clock(state.draft.updatedAt)}</span>}
@@ -129,8 +140,8 @@ export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onC
           <button
             className="btn accent"
             onClick={() => {
-              setMessage(newDraft);
-              edits.set(workspace.id, { message: newDraft, draftAt: state?.draft?.updatedAt ?? null });
+              setMessageRaw(newDraft);
+              rememberEdit(workspace.id, { base: newDraft, message: newDraft, draftAt: state?.draft?.updatedAt ?? null });
               setNewDraft(null);
             }}
           >불러오기</button>

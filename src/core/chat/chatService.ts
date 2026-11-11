@@ -334,7 +334,12 @@ export class ChatService extends EventEmitter {
   /** 사용자가 에이전트 터미널에 직접 입력했다. 승인 창의 커서가 옮겨졌을 수 있으니 채팅에서는 답하지 못하게 한다. */
   noteTerminalInput(workspaceId: string): void {
     const s = this.states.get(workspaceId);
-    if (s) s.terminalInputAt = Date.now();
+    if (s) {
+      const now = Date.now();
+      // 고르는 화면에서 고르거나 닫으면 hook 없이 기록만 바뀐다 (실험 17). 키를 누른 뒤 기록을 다시 읽어 본다.
+      if (now - s.terminalInputAt > 500) for (const ms of [700, 2500]) this.later(workspaceId, s, ms);
+      s.terminalInputAt = now;
+    }
     if (!s?.pendingPermission?.canAnswer) return;
     s.pendingPermission = { ...s.pendingPermission, canAnswer: false };
     this.emit('changed', workspaceId);

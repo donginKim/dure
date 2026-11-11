@@ -84,6 +84,10 @@ export interface DureApi {
     stopAgent(id: string): Promise<void>;
     /** 에이전트를 돌리는 방식을 바꾼다. 꺼져 있을 때만 된다 */
     setEngine(id: string, engine: AgentEngine): Promise<void>;
+    /** 표시 이름을 바꾼다 (브랜치와 작업 폴더는 그대로). 직접 지은 이름은 에이전트가 바꾸지 못한다 */
+    rename(id: string, name: string): Promise<Workspace>;
+    /** 에이전트가 작업에 맞게 이름을 바꿔도 되는가 */
+    setAutoName(id: string, on: boolean): Promise<Workspace>;
   };
   terminals: {
     list(workspaceId: string): Promise<TerminalInfo[]>;
@@ -171,7 +175,7 @@ export const IPC_CHANNELS = [
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
-  'workspaces.stopAgent', 'workspaces.setEngine',
+  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
   'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.pending', 'todos.nudge',

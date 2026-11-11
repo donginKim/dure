@@ -67,6 +67,8 @@ const api: DureApi = {
     interrupt: (id) => call('workspaces.interrupt', id),
     stopAgent: (id) => call('workspaces.stopAgent', id),
     setEngine: (id, engine) => call('workspaces.setEngine', id, engine),
+    rename: (id, name) => call('workspaces.rename', id, name),
+    setAutoName: (id, on) => call('workspaces.setAutoName', id, on),
   },
   terminals: {
     list: (workspaceId) => call('terminals.list', workspaceId),

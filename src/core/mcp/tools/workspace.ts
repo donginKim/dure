@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { ToolBundle } from '../server';
 
 /** 워크스페이스 자신에 관한 도구. */
@@ -18,6 +19,31 @@ export const workspaceTools: ToolBundle = (server, ctx, deps) => {
       }],
     }),
   );
+
+  // 조율 에이전트는 화면의 목록에 나오지 않는다: 요약과 이름이 없다.
+  if (ctx.workspace.role !== 'coordinator') {
+    server.registerTool(
+      'workspace_describe',
+      {
+        description: [
+          '이 워크스페이스가 지금 무엇을 하는지를 두레 화면에 알린다. 사용자는 왼쪽 목록에서 워크스페이스마다 이 한 줄을 보고 무슨 일이 진행 중인지 안다.',
+          'summary: 지금 하는 일 한 줄 (80자까지). 일을 시작할 때, 하는 일이 바뀔 때, 끝났을 때 갱신하라.',
+          'name: 워크스페이스의 표시 이름 (40자까지). 지금 이름이 작업 내용을 말해 주지 않을 때만 준다. 사용자가 직접 지은 이름은 바뀌지 않는다. 브랜치와 작업 폴더는 바뀌지 않는다.',
+        ].join(' '),
+        inputSchema: {
+          summary: z.string().optional().describe('지금 하는 일 한 줄. 예: "로그인 폼 검증 붙이는 중", "API 완성, 커밋 대기"'),
+          name: z.string().optional().describe('작업 내용을 말해 주는 짧은 이름. 예: "로그인 화면"'),
+        },
+      },
+      async ({ summary, name }) => {
+        try {
+          return { content: [{ type: 'text' as const, text: JSON.stringify(deps.describe(ctx.workspace.id, { summary, name })) }] };
+        } catch (e) {
+          return { content: [{ type: 'text' as const, text: e instanceof Error ? e.message : String(e) }], isError: true };
+        }
+      },
+    );
+  }
 
   // 워크스페이스는 저장소 하나만 보지만, 프로젝트에는 저장소가 여럿일 수 있다.
   // 에이전트가 같은 프로젝트의 다른 저장소와 워크스페이스를 폴더를 뒤지지 않고 알 수 있게 한다.

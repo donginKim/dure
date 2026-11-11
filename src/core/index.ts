@@ -119,6 +119,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     // 조율 서비스는 워크스페이스 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get coordinator() { return coordinator; },
     get dbs() { return dbs; },
+    describe: (workspaceId, patch) => service.describeByAgent(workspaceId, patch),
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get delivery() { return delivery; },
     onHook: (workspace, event, payload) => {

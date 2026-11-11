@@ -35,7 +35,9 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
   const [committing, setCommitting] = useState(false);
   // 보기: 터미널 또는 채팅. 워크스페이스마다 기억한다. Codex 는 채팅 보기가 없다.
   const canChat = workspace.agentKind === 'claude';
-  const [mode, setMode] = useState<ViewMode>(() => (canChat ? recallView(workspace.id, window.localStorage) : 'terminal'));
+  // 채팅 방식: 에이전트가 터미널 화면 없이 돈다. 이때 "터미널" 보기는 셸 터미널만 보인다.
+  const chatEngine = workspace.engine === 'chat';
+  const [mode, setMode] = useState<ViewMode>(() => (canChat ? recallView(workspace.id, window.localStorage, chatEngine ? 'chat' : 'terminal') : 'terminal'));
   const switchTo = (next: ViewMode): void => { setMode(next); rememberView(workspace.id, next, window.localStorage); };
   // 커밋 버튼에 보일 것: 바뀐 파일 수와 에이전트가 써 둔 초안이 있는지
   const [commitInfo, setCommitInfo] = useState<{ changed: number; hasDraft: boolean }>({ changed: 0, hasDraft: false });
@@ -90,7 +92,8 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         ? await window.dure.terminals.startAgent(workspace.id, size())
         : await window.dure.terminals.openShell(workspace.id, size());
       await load();
-      setActiveId(t.id);
+      if (t) setActiveId(t.id);
+      else switchTo('chat'); // 채팅 방식의 에이전트는 터미널이 없다
       // 처음 뜰 때의 폴더 신뢰 창에는 두레가 대신 답한다. 못 넘어가면 '시작 중' 에 머물고 채팅 보기가 터미널로 안내한다.
     } catch (e) {
       setError(describeError((e as Error).message));
@@ -98,7 +101,11 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
   };
 
   // 끝난 터미널(exitCode 가 있음)은 탭으로 남아 마지막 출력을 보여준다. 살아 있는 에이전트만 "있다"로 친다.
-  const hasAgent = terminals.some((t) => t.kind === 'agent' && t.exitCode === undefined);
+  const hasAgent = chatEngine ? workspace.status !== 'stopped' : terminals.some((t) => t.kind === 'agent' && t.exitCode === undefined);
+  const setEngine = (engine: 'chat' | 'terminal'): void => {
+    setError('');
+    window.dure.workspaces.setEngine(workspace.id, engine).then(() => switchTo(engine)).catch((e: Error) => setError(e.message));
+  };
   const active = terminals.find((t) => t.id === activeId);
 
   return (
@@ -120,13 +127,25 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         <span className="tag">{STATUS_LABEL[workspace.status]}</span>
         <span className="spacer" />
         <div className="view-switch" role="tablist" aria-label="보기">
-          <button role="tab" aria-selected={mode === 'terminal'} className={mode === 'terminal' ? 'on' : ''} onClick={() => switchTo('terminal')} title="에이전트가 도는 터미널을 그대로 봅니다">터미널</button>
           <button
             role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'on' : ''} disabled={!canChat} onClick={() => switchTo('chat')}
-            title={canChat ? '같은 대화를 채팅 형태로 봅니다. 에이전트는 그대로입니다' : 'Codex 는 아직 채팅 보기를 지원하지 않습니다'}
+            title={canChat ? '에이전트와의 대화' : 'Codex 는 아직 채팅 보기를 지원하지 않습니다'}
           >채팅</button>
+          <button role="tab" aria-selected={mode === 'terminal'} className={mode === 'terminal' ? 'on' : ''} onClick={() => switchTo('terminal')} title={chatEngine ? '이 작업 폴더의 셸 터미널' : '에이전트가 도는 터미널을 그대로 봅니다'}>{chatEngine ? '셸' : '터미널'}</button>
         </div>
+        {canChat && !hasAgent && (
+          <select
+            className="engine-select" value={workspace.engine} onChange={(e) => setEngine(e.target.value as 'chat' | 'terminal')}
+            title="에이전트를 돌리는 방식. 채팅: 글이 실시간으로 흐르고 승인과 질문이 버튼으로 옵니다. 터미널: Claude Code 를 터미널에서 그대로 띄웁니다"
+          >
+            <option value="chat">채팅 방식</option>
+            <option value="terminal">터미널 방식</option>
+          </select>
+        )}
         {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
+        {hasAgent && chatEngine && (
+          <button className="btn ghost" title="에이전트를 끕니다. 대화는 남아 있어 다시 시작하면 이어집니다" onClick={() => { window.dure.workspaces.stopAgent(workspace.id).catch((e: Error) => setError(e.message)); }}>끄기</button>
+        )}
         {workspace.agentKind === 'claude' && (workspace.status === 'working' || workspace.status === 'waiting_user') && (
           <button className="btn" title="하던 일을 멈춥니다. 에이전트는 꺼지지 않습니다" onClick={() => { window.dure.workspaces.interrupt(workspace.id).catch((e: Error) => setError(e.message)); }}>멈춤</button>
         )}
@@ -169,9 +188,19 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
           : (
             <div className="term-empty">
               {error && <div className="error">{error}</div>}
-              <div>{hasAgent ? '터미널을 고르세요.' : '에이전트가 꺼져 있습니다.'}</div>
-              {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
-              <div style={{ fontSize: 12 }}>처음 시작할 때 에이전트가 묻는 “이 폴더를 신뢰하는가” 에는 두레가 대신 “신뢰함” 으로 답합니다. 넘어가지 않으면 터미널에서 직접 답하세요.</div>
+              {chatEngine ? (
+                <>
+                  <div>이 작업 폴더에서 직접 명령을 실행하려면 셸 터미널을 여세요.</div>
+                  <button className="btn" onClick={() => void open('shell')}>셸 터미널 열기</button>
+                  <div style={{ fontSize: 12 }}>에이전트는 채팅 보기에 있습니다.</div>
+                </>
+              ) : (
+                <>
+                  <div>{hasAgent ? '터미널을 고르세요.' : '에이전트가 꺼져 있습니다.'}</div>
+                  {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
+                  <div style={{ fontSize: 12 }}>처음 시작할 때 에이전트가 묻는 “이 폴더를 신뢰하는가” 에는 두레가 대신 “신뢰함” 으로 답합니다. 넘어가지 않으면 터미널에서 직접 답하세요.</div>
+                </>
+              )}
             </div>
           )}
         {active && error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}

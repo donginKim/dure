@@ -52,7 +52,7 @@ beforeEach(async () => {
   core = await createCore({ dataDir, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: `${fakeBin}:/usr/bin:/bin`, SHELL: '/bin/sh', HOME: tempDir() } });
   projectId = core.projects.create('쇼핑몰').id;
   const repo = await core.addRepo(projectId, makeRepo('shop'));
-  const mk = (name: string, agentKind: 'claude' | 'codex' = 'claude') => core.service.create({ projectId, repoId: repo.id, name, baseBranch: 'main', agentKind });
+  const mk = (name: string, agentKind: 'claude' | 'codex' = 'claude') => core.service.create({ projectId, repoId: repo.id, name, baseBranch: 'main', agentKind, engine: 'terminal' });
   front = await mk('프론트');
   back = await mk('백엔드');
 });

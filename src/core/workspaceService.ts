@@ -125,11 +125,9 @@ export class WorkspaceService extends EventEmitter {
     if (code !== 0 && code !== null && stderr.trim() && this.d.workspaces.get(id)) this.lastExit.set(id, stderr.trim().split('\n').slice(-3).join('\n'));
   }
 
-  /** 채팅 방식의 에이전트가 마지막으로 끝날 때 남긴 오류 글. 화면이 이유를 보여주는 데 쓴다. 한 번 읽으면 지워진다 */
-  takeExitError(id: string): string | undefined {
-    const e = this.lastExit.get(id);
-    this.lastExit.delete(id);
-    return e;
+  /** 채팅 방식의 에이전트가 마지막으로 끝날 때 남긴 오류 글. 화면이 이유를 보여주는 데 쓴다. 다시 시작하면 지워진다 */
+  exitError(id: string): string | undefined {
+    return this.lastExit.get(id);
   }
 
   private readonly lastExit = new Map<string, string>();

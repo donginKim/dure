@@ -165,6 +165,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         streaming: o.streaming,
         question: o.question,
         engine: ws?.engine ?? 'terminal',
+        lastError: service.exitError(workspaceId) ?? null,
         canSend: service.canSendInput(workspaceId),
       };
     },

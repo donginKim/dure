@@ -260,4 +260,6 @@ export type ChatView = ChatSnapshot & {
   streaming: string | null;
   /** 에이전트가 고르라고 묻는 것 (채팅 방식) */
   question: ChatQuestion | null;
+  /** 에이전트가 오류로 끝났을 때 남긴 글 (채팅 방식) */
+  lastError: string | null;
 };

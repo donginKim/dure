@@ -1,6 +1,12 @@
 export type AgentKind = 'claude' | 'codex';
 export type PermissionMode = 'ask' | 'bypass';
 /**
+ * 에이전트를 돌리는 방식.
+ * chat: 터미널 화면 없이 구조화된 입출력으로 돌린다 (글이 실시간으로 흐르고, 승인과 질문이 화면의 버튼으로 온다). Claude Code 만 된다.
+ * terminal: 터미널 안에서 CLI 를 그대로 띄운다.
+ */
+export type AgentEngine = 'chat' | 'terminal';
+/**
  * starting: 에이전트를 막 띄웠고 아직 첫 신호가 오지 않았다. 폴더 신뢰 창 같은 선택 창이 떠 있을 수 있다.
  */
 export type WorkspaceStatus = 'stopped' | 'starting' | 'idle' | 'working' | 'waiting_user';
@@ -33,6 +39,7 @@ export interface Workspace {
   worktreePath: string;
   agentKind: AgentKind;
   permissionMode: PermissionMode;
+  engine: AgentEngine;
   status: WorkspaceStatus;
   createdAt: number;
 }
@@ -170,6 +177,8 @@ export interface CreateWorkspaceInput {
   baseBranch: string;
   agentKind: AgentKind;
   permissionMode?: PermissionMode;
+  /** 주지 않으면 Claude Code 는 chat, Codex 는 terminal */
+  engine?: AgentEngine;
 }
 
 /** 채팅 보기: 에이전트가 한 일 하나 (도구 호출 하나) */
@@ -209,6 +218,20 @@ export interface ChatPermission {
    * (답은 터미널에 Enter 나 Esc 를 써 넣는 것이라, 창의 모양을 모르면 엉뚱한 선택지가 눌린다.)
    */
   canAnswer: boolean;
+  /** "앞으로 묻지 않기" 로 답할 수 있는가 (채팅 방식에서, 에이전트가 규칙을 제안했을 때) */
+  canAlways?: boolean;
+}
+
+/** 에이전트가 여러 선택지 중에서 고르라고 묻는 것 */
+export interface ChatQuestion {
+  questions: { question: string; header: string; multiSelect: boolean; options: { label: string; description: string }[] }[];
+}
+
+/** 채팅 입력창에서 쓸 수 있는 슬래시 명령 */
+export interface SlashCommand {
+  name: string;
+  description: string;
+  argumentHint: string;
 }
 
 export interface ChatSnapshot {
@@ -229,4 +252,14 @@ export interface ChatSnapshot {
 }
 
 /** 채팅 화면이 받는 것: 대화와, 지금 입력창으로 보낼 수 있는지 */
-export type ChatView = ChatSnapshot & { canSend: boolean };
+export type ChatView = ChatSnapshot & {
+  canSend: boolean;
+  /** 에이전트를 돌리는 방식 */
+  engine: AgentEngine;
+  /** 지금 쓰고 있는 글 (채팅 방식에서 실시간으로 흐른다). 없으면 null */
+  streaming: string | null;
+  /** 에이전트가 고르라고 묻는 것 (채팅 방식) */
+  question: ChatQuestion | null;
+  /** 에이전트가 오류로 끝났을 때 남긴 글 (채팅 방식) */
+  lastError: string | null;
+};

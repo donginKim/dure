@@ -8,8 +8,11 @@ import { formatChatRelay, parseLine, stepInput, stepSummary, type Piece } from '
 
 export interface ChatDeps {
   workspaces: WorkspaceStore;
-  /** 대화 기록을 읽어도 되는 뿌리 폴더 (보통 ~/.claude). 이 밖의 경로는 읽지 않는다 */
-  allowedRoot: string;
+  /**
+   * 대화 기록을 읽어도 되는 뿌리 폴더들 (보통 ~/.claude). 이 밖의 경로는 읽지 않는다.
+   * 여럿일 수 있다: CLAUDE_CONFIG_DIR 로 옮긴 폴더가 안의 projects 를 ~/.claude 로 이어 둔 경우가 있다.
+   */
+  allowedRoot: string | string[];
   /** 작업 중에 기록을 다시 읽는 간격 (ms). 기본 1000 */
   pollMs?: number;
   /** 기록에서 "사용자가 중단함" 을 읽었다. 중단과 승인 거부 때는 hook 이 오지 않아 상태를 여기서 되돌려야 한다 (실험 12c, 15e) */
@@ -65,15 +68,19 @@ const field = (payload: unknown, key: string): unknown =>
  */
 export class ChatService extends EventEmitter {
   private readonly states = new Map<string, State>();
-  private readonly root: string;
+  private readonly roots: string[];
   private poll: NodeJS.Timeout | null = null;
   private disposed = false;
 
   constructor(private readonly d: ChatDeps) {
     super();
-    let root = resolve(d.allowedRoot);
-    try { root = realpathSync(root); } catch { /* 아직 없는 폴더 */ }
-    this.root = root;
+    const roots = new Set<string>();
+    for (const r of Array.isArray(d.allowedRoot) ? d.allowedRoot : [d.allowedRoot]) {
+      if (!r) continue;
+      roots.add(resolve(r));
+      try { roots.add(realpathSync(resolve(r))); } catch { /* 아직 없는 폴더 */ }
+    }
+    this.roots = [...roots];
   }
 
   private state(id: string): State {
@@ -87,11 +94,15 @@ export class ChatService extends EventEmitter {
     return s;
   }
 
+  private inside(path: string): boolean {
+    return this.roots.some((r) => path.startsWith(r + sep));
+  }
+
   /** hook 이 알려준 경로가 읽어도 되는 기록 파일인가. 글자로만 본다 (파일이 아직 없을 수 있다). */
   private acceptable(path: unknown): path is string {
     if (typeof path !== 'string' || !path.endsWith('.jsonl')) return false;
     const full = resolve(path);
-    return full.startsWith(this.root + sep) || full.startsWith(resolve(this.d.allowedRoot) + sep);
+    return this.inside(full);
   }
 
   /**
@@ -226,7 +237,7 @@ export class ChatService extends EventEmitter {
         throw e;
       }
       // 보통 파일만 읽는다: 파이프 같은 것을 열면 메인 프로세스가 멈춘다.
-      if (!real.startsWith(this.root + sep) || !lstatSync(real).isFile()) { s.error = true; return; }
+      if (!this.inside(real) || !lstatSync(real).isFile()) { s.error = true; return; }
       fd = openSync(real, 'r');
       const size = fstatSync(fd).size;
       if (size < s.offset) { // 파일이 줄었다: 처음부터 다시 읽는다
@@ -346,10 +357,10 @@ export class ChatService extends EventEmitter {
   }
 
   /** 곧 기록이 바뀔 일을 했다 (hook 을 부르지 않는 슬래시 명령 등). 몇 번 더 읽어 본다. */
-  refreshSoon(workspaceId: string): void {
+  refreshSoon(workspaceId: string, delays: number[] = [500, 1500, 3000, 6000, 12000]): void {
     const s = this.states.get(workspaceId);
     if (!s) return;
-    for (const ms of [500, 1500, 3000, 6000, 12000]) this.later(workspaceId, s, ms);
+    for (const ms of delays) this.later(workspaceId, s, ms);
   }
 
   /** 두레가 에이전트를 중단시켰다 (hook 이 오지 않는다). */

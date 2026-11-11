@@ -1,5 +1,5 @@
 import type { ChatItem, ChatStep, Message } from '@shared/types';
-import { elapsed, mergeEntries, recallView, rememberView, stepsLabel, toBlocks, toInline } from '../../src/renderer/chatView';
+import { elapsed, matchCommands, mergeEntries, recallView, rememberView, stepsLabel, toBlocks, toInline } from '../../src/renderer/chatView';
 
 test('toBlocks: 문단, 제목, 목록, 번호 목록, 코드 블록(언어), 표, 가로줄', () => {
   const md = ['# 제목', '', '첫 문단', '이어지는 줄', '', '- 하나', '- 둘', '  - 둘의 하나', '', '1. 첫째', '2. 둘째', '', '```ts', 'const a = 1;', '', '# 제목 아님', '```', '',
@@ -133,4 +133,25 @@ test('보기 전환 기억: 처음은 터미널, 고른 값은 워크스페이�
   expect(recallView('w2', storage)).toBe('terminal');
   expect(recallView('w1', undefined)).toBe('terminal');
   expect(recallView('w1', { getItem: () => { throw new Error('막힘'); } })).toBe('terminal');
+});
+
+test('보기 전환 기억: 고른 적이 없으면 주어진 기본값 (채팅 방식의 워크스페이스는 채팅)', () => {
+  const data = new Map<string, string>();
+  const storage = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { data.set(k, v); } };
+  expect(recallView('w1', storage, 'chat')).toBe('chat');
+  rememberView('w1', 'terminal', storage);
+  expect(recallView('w1', storage, 'chat')).toBe('terminal');
+});
+
+test('matchCommands: "/" 로 시작하는 한 낱말일 때만, 앞글자가 맞는 것이 먼저', () => {
+  const cmds = ['compact', 'context', 'clear', 'model', 'superpowers:brainstorming', 'cost'].map((name) => ({ name, description: '', argumentHint: '' }));
+  expect(matchCommands('/', cmds).map((c) => c.name)).toEqual(['compact', 'context', 'clear', 'model', 'superpowers:brainstorming', 'cost']);
+  expect(matchCommands('/co', cmds).map((c) => c.name)).toEqual(['compact', 'context', 'cost']);
+  expect(matchCommands('/CO', cmds).map((c) => c.name)).toEqual(['compact', 'context', 'cost']);
+  expect(matchCommands('/brain', cmds).map((c) => c.name)).toEqual(['superpowers:brainstorming']);
+  expect(matchCommands('/', cmds, 2).length).toBe(2);
+  expect(matchCommands('/model opus', cmds)).toEqual([]);
+  expect(matchCommands('안녕 /co', cmds)).toEqual([]);
+  expect(matchCommands('', cmds)).toEqual([]);
+  expect(matchCommands('/zzz', cmds)).toEqual([]);
 });

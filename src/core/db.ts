@@ -102,6 +102,12 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  // 에이전트를 돌리는 방식과, 이어갈 대화의 id. 이미 있던 Claude Code 워크스페이스도 채팅 방식으로 옮긴다.
+  `
+  ALTER TABLE workspaces ADD COLUMN engine TEXT NOT NULL DEFAULT 'terminal';
+  ALTER TABLE workspaces ADD COLUMN session_id TEXT;
+  UPDATE workspaces SET engine = 'chat' WHERE agent_kind = 'claude';
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

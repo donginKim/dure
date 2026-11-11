@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import type { ChatItem, ChatStep, ChatView, Message, Workspace } from '@shared/types';
-import { elapsed, mergeEntries, stepsLabel, stepsRunning, type Entry, type PeerEntry } from '../chatView';
+import type { ChatItem, ChatQuestion, ChatStep, ChatView, Message, SlashCommand, Workspace } from '@shared/types';
+import { elapsed, matchCommands, mergeEntries, stepsLabel, stepsRunning, type Entry, type PeerEntry } from '../chatView';
 import { clock, deliveryNote, workspaceName } from '../conversationView';
 import { Attachment, type ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
@@ -125,7 +125,53 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
   }
 });
 
-const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [], canSend: false };
+/** 에이전트가 여러 선택지 중에서 고르라고 묻는 카드 (채팅 방식). */
+function QuestionCard({ question, onAnswer, onDismiss }: { question: ChatQuestion; onAnswer: (answers: Record<string, string>) => void; onDismiss: () => void }) {
+  // 질문 글 → 고른 선택지들, 직접 쓴 답
+  const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const [typed, setTyped] = useState<Record<string, string>>({});
+  const answerOf = (q: ChatQuestion['questions'][number]): string => (typed[q.question]?.trim() || (picked[q.question] ?? []).join(', '));
+  const ready = question.questions.length > 0 && question.questions.every((q) => answerOf(q));
+  const toggle = (q: ChatQuestion['questions'][number], label: string): void => {
+    setTyped((t) => ({ ...t, [q.question]: '' }));
+    setPicked((p) => {
+      const cur = p[q.question] ?? [];
+      const next = q.multiSelect ? (cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label]) : [label];
+      return { ...p, [q.question]: next };
+    });
+  };
+  return (
+    <div className="permit ask">
+      <div className="permit-title">에이전트가 묻습니다</div>
+      {question.questions.map((q) => (
+        <div key={q.question} className="ask-q">
+          <div className="ask-text">{q.question}{q.multiSelect && <span className="permit-hint"> (여러 개 고를 수 있음)</span>}</div>
+          <div className="ask-options">
+            {q.options.map((o) => {
+              const on = !typed[q.question]?.trim() && (picked[q.question] ?? []).includes(o.label);
+              return (
+                <button key={o.label} className={`ask-option${on ? ' on' : ''}`} aria-pressed={on} onClick={() => toggle(q, o.label)}>
+                  <span className="ask-label">{o.label}</span>
+                  {o.description && <span className="ask-desc">{o.description}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <input
+            type="text" className="ask-other" placeholder="직접 쓰기" value={typed[q.question] ?? ''}
+            onChange={(e) => setTyped((t) => ({ ...t, [q.question]: e.target.value }))}
+          />
+        </div>
+      ))}
+      <div className="permit-actions">
+        <button className="btn primary" disabled={!ready} onClick={() => onAnswer(Object.fromEntries(question.questions.map((q) => [q.question, answerOf(q)])))}>답하기</button>
+        <button className="btn" onClick={onDismiss}>답하지 않고 넘기기</button>
+      </div>
+    </div>
+  );
+}
+
+const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [], canSend: false, engine: 'chat', streaming: null, question: null, lastError: null };
 
 /**
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.
@@ -149,6 +195,9 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   //  manual: 사용자가 직접 열었다 (승인 창의 다른 선택지 등)
   const [peek, setPeek] = useState<{ why: 'slash'; count: number } | { why: 'manual' } | null>(null);
   const [startingLong, setStartingLong] = useState(false);
+  // 입력창에서 고를 수 있는 슬래시 명령 (채팅 방식의 에이전트가 알려 준다)
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [menuAt, setMenuAt] = useState(0);
   const entryCount = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -170,6 +219,25 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     return () => clearInterval(t);
   }, [view.workingSince]);
 
+  const liveChat = view.engine === 'chat' && hasAgent;
+  useEffect(() => {
+    if (!liveChat) { setCommands([]); return; }
+    let alive = true;
+    // 목록은 에이전트가 뜬 직후에 온다. 빈 목록이면 조금 뒤에 다시 묻는다.
+    const ask = (left: number): void => {
+      window.dure.chat.commands(workspace.id).then((list) => {
+        if (!alive) return;
+        if (list.length) setCommands(list);
+        else if (left > 0) setTimeout(() => ask(left - 1), 1500);
+      }).catch(() => undefined);
+    };
+    ask(6);
+    return () => { alive = false; };
+  }, [liveChat, workspace.id]);
+  const menu = useMemo(() => matchCommands(draft, commands), [draft, commands]);
+  useEffect(() => { setMenuAt(0); }, [draft]);
+  const pick = (c: SlashCommand): void => { setDraft(`/${c.name} `); input.current?.focus(); };
+
   const messages = useMemo(() => Object.values(conversation.messages).flat(), [conversation.messages]);
   const entries = useMemo(() => mergeEntries(view.items, messages, workspace.id), [view.items, messages, workspace.id]);
 
@@ -180,7 +248,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     if (stick.current) el.scrollTop = el.scrollHeight;
     else if (el.scrollHeight - el.scrollTop - el.clientHeight >= 60) setBehind(true);
     else stick.current = true; // 내용이 다 보이면 맨 아래에 있는 것이다
-  }, [entries, view.pendingPermission, view.queued]);
+  }, [entries, view.pendingPermission, view.queued, view.streaming, view.question]);
 
   const onScroll = (): void => {
     const el = scroller.current;
@@ -219,6 +287,14 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    // 슬래시 명령 목록이 떠 있으면 ↑↓ 로 고르고 Tab 이나 Enter 로 넣는다.
+    if (menu.length && !e.nativeEvent.isComposing) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMenuAt((i) => (i + 1) % menu.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMenuAt((i) => (i - 1 + menu.length) % menu.length); return; }
+      const chosen = menu[Math.min(menuAt, menu.length - 1)]!;
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && draft !== `/${chosen.name}`)) { e.preventDefault(); pick(chosen); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setDraft(''); return; }
+    }
     // 한글 조합 중의 Enter 는 글자를 확정하는 것이지 보내기가 아니다.
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -226,7 +302,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     }
   };
 
-  const answer = (a: 'allow' | 'deny'): void => {
+  const answer = (a: 'allow' | 'deny' | 'always'): void => {
     setError('');
     window.dure.chat.answerPermission(workspace.id, a).catch((e: Error) => setError(e.message));
   };
@@ -270,9 +346,18 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   if (!hasAgent) {
     composer = (
       <div className="composer-off">
-        <span>에이전트가 꺼져 있습니다.</span>
+        <span>{view.lastError ? `에이전트가 오류로 끝났습니다: ${view.lastError}` : '에이전트가 꺼져 있습니다.'}</span>
         <button className="btn primary" onClick={onStartAgent}>에이전트 시작</button>
       </div>
+    );
+  } else if (view.question) {
+    composer = (
+      <QuestionCard
+        key={view.question.questions.map((q) => q.question).join('|')}
+        question={view.question}
+        onAnswer={(answers) => { setError(''); window.dure.chat.answerQuestion(workspace.id, answers).catch((e: Error) => setError(e.message)); }}
+        onDismiss={() => { setError(''); window.dure.chat.dismissQuestion(workspace.id).catch((e: Error) => setError(e.message)); }}
+      />
     );
   } else if (status === 'waiting_user') {
     composer = (
@@ -287,8 +372,9 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
         <div className="permit-actions">
           {permission?.canAnswer && <button className="btn primary" onClick={() => answer('allow')}>허용</button>}
           {permission?.canAnswer && <button className="btn" onClick={() => answer('deny')}>거부</button>}
-          {permission?.canAnswer && !showPeek && <button className="btn" onClick={() => setPeek({ why: 'manual' })} title={'"다시 묻지 않기" 같은 다른 선택지를 직접 고릅니다'}>다른 선택지</button>}
-          {!permission?.canAnswer && <span className="permit-hint">위 창에서 ↑↓ 로 고르고 Enter 를 누르세요.</span>}
+          {permission?.canAlways && <button className="btn" onClick={() => answer('always')} title="허용하고, 앞으로 같은 것은 묻지 않습니다">허용하고 앞으로 묻지 않기</button>}
+          {permission?.canAnswer && view.engine === 'terminal' && !showPeek && <button className="btn" onClick={() => setPeek({ why: 'manual' })} title={'"다시 묻지 않기" 같은 다른 선택지를 직접 고릅니다'}>다른 선택지</button>}
+          {!permission?.canAnswer && view.engine === 'terminal' && <span className="permit-hint">위 창에서 ↑↓ 로 고르고 Enter 를 누르세요.</span>}
         </div>
       </div>
     );
@@ -302,11 +388,22 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   } else {
     composer = (
       <div className="composer">
+        {menu.length > 0 && (
+          <div className="slash-menu" role="listbox">
+            {menu.map((c, i) => (
+              <button key={c.name} role="option" aria-selected={i === menuAt} className={`slash-item${i === menuAt ? ' on' : ''}`} onMouseDown={(e) => { e.preventDefault(); pick(c); }} onMouseEnter={() => setMenuAt(i)}>
+                <span className="slash-name">/{c.name}{c.argumentHint && <span className="slash-arg"> {c.argumentHint}</span>}</span>
+                <span className="slash-desc">{c.description}</span>
+              </button>
+            ))}
+            <div className="slash-foot">↑↓ 고르기 · Tab 넣기 · Esc 닫기</div>
+          </div>
+        )}
         <textarea
           ref={input}
           value={draft}
           rows={Math.min(8, Math.max(1, draft.split('\n').length))}
-          placeholder={status === 'working' ? '작업 중에 보내면 에이전트가 다음 단계에서 읽습니다' : '에이전트에게 시킬 일을 쓰세요'}
+          placeholder={status === 'working' ? '작업 중에 보내면 에이전트가 다음 단계에서 읽습니다' : commands.length ? '에이전트에게 시킬 일을 쓰세요 · / 로 명령 고르기' : '에이전트에게 시킬 일을 쓰세요'}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
         />
@@ -327,7 +424,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
         <div className="chat-col">
           {view.hidden > 0 && <div className="chat-notice"><span>앞쪽 {view.hidden}개 항목은 줄였습니다. 전부 보려면 터미널 보기를 쓰세요.</span></div>}
-          {loaded && entries.length === 0 && view.queued.length === 0 && (
+          {loaded && entries.length === 0 && view.queued.length === 0 && !view.streaming && (
             <div className="chat-blank">
               <div className="chat-blank-title">아직 대화가 없습니다</div>
               <div>{hasAgent ? '아래에 시킬 일을 쓰면 여기에 대화가 쌓입니다.' : '에이전트를 시작하면 여기에 대화가 쌓입니다.'}</div>
@@ -335,6 +432,9 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
             </div>
           )}
           {entries.map((e) => <EntryView key={e.id} entry={e} workspaceId={workspace.id} workspaces={workspaces} conversation={conversation} />)}
+          {view.streaming && (
+            <div className="say streaming"><Markdown text={view.streaming} /><span className="typing" aria-hidden /></div>
+          )}
           {view.queued.map((q) => (
             <div key={q.id} className="bubble-row queued">
               <div className="bubble">{q.text}</div>

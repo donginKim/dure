@@ -52,7 +52,7 @@ beforeEach(async () => {
   core = await createCore({ dataDir, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: `${fakeBin}:/usr/bin:/bin`, SHELL: '/bin/sh', HOME: tempDir() } });
   projectId = core.projects.create('쇼핑몰').id;
   const repo = await core.addRepo(projectId, makeRepo('shop'));
-  const mk = (name: string, agentKind: 'claude' | 'codex' = 'claude') => core.service.create({ projectId, repoId: repo.id, name, baseBranch: 'main', agentKind });
+  const mk = (name: string, agentKind: 'claude' | 'codex' = 'claude') => core.service.create({ projectId, repoId: repo.id, name, baseBranch: 'main', agentKind, engine: 'terminal' });
   front = await mk('프론트');
   back = await mk('백엔드');
 });
@@ -156,7 +156,7 @@ test('collect 는 TODO 변경과 메시지를 한 글로 묶고 두 번째 호�
 });
 
 test('깨우는 도중 에이전트가 종료되면 메시지가 다시 미전달이 된다', async () => {
-  const t = await core.service.startAgent(back.id, SIZE);
+  const t = (await core.service.startAgent(back.id, SIZE))!;
   await runHook(back, 'Stop');
   const m = send(front, back, '사라지면 안 되는 말');
   core.pty.kill(t.id);
@@ -198,7 +198,7 @@ test('첫 프롬프트로 띄운 에이전트의 첫 프롬프트도 사용자 �
 });
 
 test('사용자가 에이전트 터미널에 입력하면 쉬는 중 확인이 풀려, 치던 글 위에 메시지를 써 넣지 않는다', async () => {
-  const t = await core.service.startAgent(back.id, SIZE);
+  const t = (await core.service.startAgent(back.id, SIZE))!;
   await runHook(back, 'Stop');
   core.service.noteTerminalInput(t.id); // 사용자가 입력창에 무언가 치기 시작했다
   send(front, back, '끼어들면 안 되는 말');

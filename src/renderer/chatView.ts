@@ -1,4 +1,4 @@
-import type { ChatItem, ChatStep, Message } from '@shared/types';
+import type { ChatItem, ChatStep, Message, SlashCommand } from '@shared/types';
 
 // ---- 마크다운: 글자만으로 그릴 조각으로 나눈다. HTML 로 해석하지 않는다. ----
 
@@ -199,10 +199,29 @@ export function mergeEntries(items: ChatItem[], messages: Message[], workspaceId
 export type ViewMode = 'terminal' | 'chat';
 const viewKey = (workspaceId: string): string => `dure.view.${workspaceId}`;
 
-export function recallView(workspaceId: string, storage: Pick<Storage, 'getItem'> | undefined): ViewMode {
-  try { return storage?.getItem(viewKey(workspaceId)) === 'chat' ? 'chat' : 'terminal'; } catch { return 'terminal'; }
+/** 기억해 둔 보기. 고른 적이 없으면 fallback (채팅 방식의 워크스페이스는 채팅, 터미널 방식은 터미널). */
+export function recallView(workspaceId: string, storage: Pick<Storage, 'getItem'> | undefined, fallback: ViewMode = 'terminal'): ViewMode {
+  try {
+    const v = storage?.getItem(viewKey(workspaceId));
+    return v === 'chat' || v === 'terminal' ? v : fallback;
+  } catch { return fallback; }
 }
 
 export function rememberView(workspaceId: string, mode: ViewMode, storage: Pick<Storage, 'setItem'> | undefined): void {
   try { storage?.setItem(viewKey(workspaceId), mode); } catch { /* 저장소를 못 쓰면 기억하지 않는다 */ }
+}
+
+// ---- 슬래시 명령 고르기 ----
+
+/**
+ * 입력창에 "/" 로 시작하는 한 낱말을 치는 중이면 맞는 명령을 돌려준다. 그 밖에는 빈 배열.
+ * 이름이 그 글자로 시작하는 것이 먼저, 이름 안에 든 것이 그 뒤다.
+ */
+export function matchCommands(draft: string, commands: SlashCommand[], limit = 8): SlashCommand[] {
+  const m = /^\/(\S*)$/.exec(draft);
+  if (!m) return [];
+  const q = m[1]!.toLowerCase();
+  const starts = commands.filter((c) => c.name.toLowerCase().startsWith(q));
+  const contains = commands.filter((c) => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q));
+  return [...starts, ...contains].slice(0, limit);
 }

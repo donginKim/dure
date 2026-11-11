@@ -7,6 +7,7 @@ import { baseInstructions } from './agents/instructions';
 import { buildAgentLaunch } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
+import type { ChatEngine } from './chat/engine';
 import type { DeliveryService } from './delivery';
 import type { Git } from './git';
 import type { MessageService } from './messages';
@@ -84,6 +85,69 @@ export class WorkspaceService extends EventEmitter {
   /** 폴더 신뢰 창을 지켜보는 중인 워크스페이스 → 그만두는 함수 */
   private readonly trustWatchers = new Map<string, () => void>();
 
+  private engine?: ChatEngine;
+  /** 채팅 방식으로 띄운 에이전트: 언제 띄웠고 지난 대화를 이어 띄웠는가 (이어가기에 실패하면 새 대화로 다시 띄운다) */
+  private readonly chatStarts = new Map<string, { at: number; resumed: boolean; size: { cols: number; rows: number } }>();
+
+  /** 채팅 방식의 에이전트를 돌리는 엔진을 이어 준다. */
+  attachEngine(engine: ChatEngine): void {
+    this.engine = engine;
+  }
+
+  /** 에이전트가 살아 있는가 (터미널 방식이든 채팅 방식이든). */
+  isAgentRunning(id: string): boolean {
+    return this.engine?.has(id) === true || this.d.pty.list(id).some((t) => t.kind === 'agent');
+  }
+
+  /** 채팅 방식의 에이전트가 승인이나 답을 기다린다 / 답을 받아 다시 일한다. */
+  noteWaiting(id: string, waiting: boolean): void {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || ws.status === 'stopped') return;
+    this.confirmedIdle.delete(id);
+    this.lastActivity.set(id, Date.now());
+    const next = waiting ? 'waiting_user' : 'working';
+    if (ws.status === next) return;
+    this.d.workspaces.update(id, { status: next });
+    this.emit('changed', id);
+  }
+
+  /** 채팅 방식의 에이전트 프로세스가 끝났다. */
+  noteSessionExit(id: string, code: number | null, stderr: string): void {
+    const start = this.chatStarts.get(id);
+    this.chatStarts.delete(id);
+    this.agentEnded(id);
+    // 이어갈 대화가 사라졌으면(기록 파일이 지워짐 등) 곧바로 끝난다. 새 대화로 한 번 다시 띄운다.
+    if (start?.resumed && code !== 0 && Date.now() - start.at < 10_000 && this.d.workspaces.get(id) && !this.removing.has(id)) {
+      this.d.workspaces.setSessionId(id, null);
+      this.startAgent(id, start.size).catch(() => undefined);
+      return;
+    }
+    if (code !== 0 && code !== null && stderr.trim() && this.d.workspaces.get(id)) this.lastExit.set(id, stderr.trim().split('\n').slice(-3).join('\n'));
+  }
+
+  /** 채팅 방식의 에이전트가 마지막으로 끝날 때 남긴 오류 글. 화면이 이유를 보여주는 데 쓴다. 다시 시작하면 지워진다 */
+  exitError(id: string): string | undefined {
+    return this.lastExit.get(id);
+  }
+
+  private readonly lastExit = new Map<string, string>();
+
+  /** 에이전트를 끈다 (터미널 방식이든 채팅 방식이든). */
+  stopAgent(id: string): void {
+    this.engine?.stop(id);
+    for (const t of this.d.pty.list(id)) if (t.kind === 'agent') this.d.pty.kill(t.id);
+  }
+
+  /** 에이전트를 돌리는 방식을 바꾼다. 꺼져 있을 때만 된다. */
+  setEngine(id: string, engine: 'chat' | 'terminal'): void {
+    const ws = this.mustGet(id);
+    if (engine !== 'chat' && engine !== 'terminal') throw new Error('알 수 없는 방식입니다.');
+    if (engine === 'chat' && ws.agentKind !== 'claude') throw new Error('채팅 방식은 Claude Code 만 지원합니다.');
+    if (this.isAgentRunning(id)) throw new Error('에이전트를 끈 뒤에 바꿀 수 있습니다.');
+    this.d.workspaces.update(id, { engine });
+    this.emit('changed', id);
+  }
+
   /** 대화 서비스를 이어 준다: 승인 창 상태를 묻고, 중단·종료·삭제를 알린다. */
   attachChat(chat: ChatService): void {
     this.chat = chat;
@@ -130,6 +194,11 @@ export class WorkspaceService extends EventEmitter {
     const workspaceId = this.agentTerminals.get(terminalId);
     if (!workspaceId) return;
     this.agentTerminals.delete(terminalId);
+    this.agentEnded(workspaceId);
+  };
+
+  /** 에이전트가 끝난 뒤의 정리 (두 방식 공통). */
+  private agentEnded(workspaceId: string): void {
     this.trustWatchers.get(workspaceId)?.();
     this.confirmedIdle.delete(workspaceId);
     this.synthetic.delete(workspaceId);
@@ -155,7 +224,20 @@ export class WorkspaceService extends EventEmitter {
   }
 
   /** 워크스페이스의 터미널을 모두 끄고 실제로 끝날 때까지 (최대 3초) 기다린다. */
+  /** 여러 선택지 질문에 답한다 (채팅 방식). */
+  answerQuestion(id: string, answers: Record<string, string>): void {
+    if (!this.engine?.has(id)) throw new Error('질문을 기다리는 중이 아닙니다.');
+    this.engine.answerQuestion(id, answers);
+  }
+
+  dismissQuestion(id: string): void {
+    if (!this.engine?.has(id)) throw new Error('질문을 기다리는 중이 아닙니다.');
+    this.engine.dismissQuestion(id);
+  }
+
   private async killTerminals(workspaceId: string): Promise<void> {
+    this.engine?.stop(workspaceId);
+    for (let i = 0; i < 100 && this.engine?.has(workspaceId); i++) await new Promise((r) => setTimeout(r, 30));
     for (const t of this.d.pty.list(workspaceId)) this.d.pty.kill(t.id);
     const deadline = Date.now() + 3000;
     while (this.d.pty.list(workspaceId).length > 0 && Date.now() < deadline) {
@@ -204,7 +286,7 @@ export class WorkspaceService extends EventEmitter {
       const ws = this.d.workspaces.insert({
         id: crypto.randomUUID(), projectId: project.id, repoId: repo.id, name, nameLocked: Boolean(typed),
         branch, baseBranch: i.baseBranch, worktreePath, agentKind: i.agentKind,
-        permissionMode: i.permissionMode ?? 'ask', token: randomBytes(32).toString('hex'),
+        permissionMode: i.permissionMode ?? 'ask', engine: i.engine, token: randomBytes(32).toString('hex'),
       });
       this.emit('changed', ws.id);
       return ws;
@@ -244,10 +326,14 @@ export class WorkspaceService extends EventEmitter {
     this.emit('changed', id);
   }
 
-  async startAgent(id: string, size: { cols: number; rows: number }, initialPrompt?: string): Promise<TerminalInfo> {
+  /** 에이전트를 띄운다. 터미널 방식이면 그 터미널을, 채팅 방식이면 null 을 돌려준다. */
+  async startAgent(id: string, size: { cols: number; rows: number }, initialPrompt?: string): Promise<TerminalInfo | null> {
     const ws = this.mustGet(id);
     const running = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (running) return running;
+    if (this.engine?.has(id)) return null;
+    const headless = ws.engine === 'chat' && ws.agentKind === 'claude' && this.engine !== undefined;
+    const resumeSessionId = headless ? this.d.workspaces.getSessionId(id) : undefined;
     if (this.removing.has(id)) throw new Error('지우는 중인 워크스페이스입니다.');
     this.d.pty.forgetExited(id, 'agent'); // 지난 에이전트 탭 기록은 치운다
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
@@ -272,11 +358,13 @@ export class WorkspaceService extends EventEmitter {
       configDir: this.configDir(id),
       instructions: baseInstructions(ws, project),
       initialPrompt: firstPrompt,
+      headless,
+      resumeSessionId,
     });
     const executable = findExecutable(launch.command, this.d.baseEnv.PATH);
     if (!executable) throw new AgentNotInstalledError(ws.agentKind);
 
-    let terminal: TerminalInfo;
+    let terminal: TerminalInfo | null = null;
     try {
       for (const f of launch.files) {
         mkdirSync(dirname(f.path), { recursive: true });
@@ -284,7 +372,13 @@ export class WorkspaceService extends EventEmitter {
         writeFileSync(f.path, f.content, { mode });
         chmodSync(f.path, mode); // 이미 있던 파일은 writeFileSync 가 권한을 바꾸지 않는다
       }
-      terminal = this.d.pty.spawn({
+      if (headless) {
+        // 채팅 방식: 터미널 화면 없이 띄운다. 폴더 신뢰 창이 없고(실험 17), 프롬프트는 표준 입력으로 보낸다.
+        this.chatStarts.set(id, { at: Date.now(), resumed: Boolean(resumeSessionId), size });
+        this.lastExit.delete(id);
+        this.engine!.start(id, { command: executable, args: launch.args, cwd: ws.worktreePath, env: { ...this.d.baseEnv, ...launch.env } });
+        if (firstPrompt) this.engine!.say(id, firstPrompt);
+      } else terminal = this.d.pty.spawn({
         workspaceId: id, kind: 'agent', title: AGENT_NAMES[ws.agentKind],
         command: executable, args: launch.args, cwd: ws.worktreePath,
         env: { ...this.d.baseEnv, ...launch.env }, cols: size.cols, rows: size.rows,
@@ -296,10 +390,10 @@ export class WorkspaceService extends EventEmitter {
     // 첫 프롬프트는 두레가 넣은 것이다: 사용자 개입으로 세지 않는다.
     if (firstPrompt) this.synthetic.add(id);
     this.lastActivity.set(id, Date.now());
-    this.agentTerminals.set(terminal.id, id);
+    if (terminal) this.agentTerminals.set(terminal.id, id);
     // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
     this.d.todos.takePending(id);
-    if (ws.agentKind === 'claude') this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
+    if (ws.agentKind === 'claude' && terminal) this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
     // Claude Code 는 첫 hook 이 올 때까지 '시작 중' 이다: 폴더 신뢰 창이 떠 있을 수 있다 (실험 12: 그동안은 hook 이 오지 않는다).
     // Codex 는 hook 이 없어 알 길이 없으므로 예전처럼 쉬는 중으로 둔다.
     this.d.workspaces.update(id, { status: ws.agentKind === 'claude' ? 'starting' : 'idle' });
@@ -383,6 +477,17 @@ export class WorkspaceService extends EventEmitter {
    */
   async wake(id: string, text: string): Promise<void> {
     const ws = this.d.workspaces.get(id);
+    if (ws && this.engine?.has(id)) {
+      // 채팅 방식: 터미널에 써 넣지 않고 메시지로 보낸다. 쉬는 중임이 확인됐을 때만 한다 (같은 것을 두 번 보내지 않게).
+      if (ws.status !== 'idle' || !this.confirmedIdle.has(id) || this.removing.has(id)) throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
+      this.confirmedIdle.delete(id);
+      this.synthetic.add(id); // 이 프롬프트는 두레가 넣는 것이다
+      this.lastActivity.set(id, Date.now());
+      this.d.workspaces.update(id, { status: 'working' });
+      this.emit('changed', id);
+      try { this.engine.say(id, text); } catch (e) { this.synthetic.delete(id); throw e; }
+      return;
+    }
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (!ws || ws.agentKind !== 'claude' || ws.status !== 'idle' || !this.confirmedIdle.has(id) || !terminal || this.removing.has(id)) {
       throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
@@ -412,6 +517,15 @@ export class WorkspaceService extends EventEmitter {
    */
   interrupt(id: string): void {
     const ws = this.d.workspaces.get(id);
+    if (ws && this.engine?.has(id)) {
+      if (ws.status !== 'working' && ws.status !== 'waiting_user') return;
+      this.engine.interrupt(id).catch(() => undefined);
+      this.confirmedIdle.delete(id);
+      this.d.workspaces.update(id, { status: 'idle' });
+      this.chat?.interrupted(id);
+      this.emit('changed', id);
+      return;
+    }
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (!ws || !terminal || ws.agentKind !== 'claude' || (ws.status !== 'working' && ws.status !== 'waiting_user')) return;
     this.d.pty.write(terminal.id, '\x1b');
@@ -442,6 +556,8 @@ export class WorkspaceService extends EventEmitter {
   canSendInput(id: string): boolean {
     const ws = this.d.workspaces.get(id);
     if (!ws || ws.agentKind !== 'claude' || this.removing.has(id)) return false;
+    // 채팅 방식은 글을 메시지로 보내므로 언제든 받는다 (작업 중이면 에이전트가 같은 차례 안에 읽는다, 실험 18).
+    if (this.engine?.has(id)) return ws.status !== 'stopped';
     if (ws.status !== 'idle' && ws.status !== 'working') return false;
     return this.d.pty.list(id).some((t) => t.kind === 'agent');
   }
@@ -451,6 +567,18 @@ export class WorkspaceService extends EventEmitter {
     // eslint-disable-next-line no-control-regex
     const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
     if (!message) throw new Error('보낼 글을 입력하세요.');
+    if (this.engine?.has(id)) {
+      if (!this.canSendInput(id)) throw new Error('지금은 보낼 수 없습니다.');
+      // 사용자의 입력이다: 두레가 넣은 프롬프트로 치지 않고, 쉬는 중 확인을 지운다.
+      this.confirmedIdle.delete(id);
+      this.synthetic.delete(id);
+      const wsNow = this.d.workspaces.get(id);
+      // 작업 중에 보낸 글은 UserPromptSubmit 을 부르지 않을 수 있다. 사용자가 끼어든 것으로 센다.
+      if (wsNow && wsNow.status !== 'idle') this.d.messages.userIntervened(wsNow.projectId);
+      this.engine.say(id, message);
+      this.chat?.refreshSoon(id, [300, 1200, 3000]);
+      return;
+    }
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
     const before = this.d.workspaces.get(id);
     if (!this.canSendInput(id) || !terminal || !before) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
@@ -495,7 +623,9 @@ export class WorkspaceService extends EventEmitter {
    * 채팅의 승인 카드에서 고른 답을 승인 창에 써 넣는다.
    * hook 으로 승인 창임이 확인됐고, 사용자가 터미널에서 그 창을 건드리지 않았을 때만 한다 (실험 15e: 커서는 "1. Yes" 에 있다).
    */
-  answerPermission(id: string, answer: 'allow' | 'deny'): void {
+  answerPermission(id: string, answer: 'allow' | 'deny' | 'always'): void {
+    if (this.engine?.has(id)) { this.engine.answerPermission(id, answer); return; }
+    if (answer === 'always') throw new Error('터미널 방식에서는 "앞으로 묻지 않기" 를 터미널에서 고르세요.');
     const ws = this.d.workspaces.get(id);
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (!ws || !terminal || ws.agentKind !== 'claude' || ws.status !== 'waiting_user' || !this.chat?.hasPendingPermission(id)) {

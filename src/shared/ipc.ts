@@ -1,6 +1,6 @@
 import type {
-  Artifact, ChatView, CommitResult, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
-  TodoAssignee, TodoPatch, Workspace,
+  AgentEngine, Artifact, ChatView, CommitResult, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  SlashCommand, TodoAssignee, TodoPatch, Workspace,
 } from './types';
 
 export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat';
@@ -39,10 +39,15 @@ export interface DureApi {
     uncommitted(id: string): Promise<number>;
     /** 작업 중인 에이전트를 멈춘다 (프로세스는 살려 둔다) */
     interrupt(id: string): Promise<void>;
+    /** 에이전트를 끈다 */
+    stopAgent(id: string): Promise<void>;
+    /** 에이전트를 돌리는 방식을 바꾼다. 꺼져 있을 때만 된다 */
+    setEngine(id: string, engine: AgentEngine): Promise<void>;
   };
   terminals: {
     list(workspaceId: string): Promise<TerminalInfo[]>;
-    startAgent(workspaceId: string, size: TerminalSize): Promise<TerminalInfo>;
+    /** 터미널 방식이면 그 터미널, 채팅 방식이면 null */
+    startAgent(workspaceId: string, size: TerminalSize): Promise<TerminalInfo | null>;
     openShell(workspaceId: string, size: TerminalSize): Promise<TerminalInfo>;
     write(id: string, data: string): void;
     resize(id: string, cols: number, rows: number): void;
@@ -89,7 +94,13 @@ export interface DureApi {
     /** 단계 하나의 입력·출력 원문 */
     step(workspaceId: string, stepId: string): Promise<{ input: string; output: string | null } | null>;
     send(workspaceId: string, text: string): Promise<void>;
-    answerPermission(workspaceId: string, answer: 'allow' | 'deny'): Promise<void>;
+    /** always: 허용하고 앞으로 같은 것은 묻지 않는다 (채팅 방식) */
+    answerPermission(workspaceId: string, answer: 'allow' | 'deny' | 'always'): Promise<void>;
+    /** 여러 선택지 질문에 답한다. answers: 질문 글 → 답 */
+    answerQuestion(workspaceId: string, answers: Record<string, string>): Promise<void>;
+    dismissQuestion(workspaceId: string): Promise<void>;
+    /** 입력창에서 쓸 수 있는 슬래시 명령 (채팅 방식의 에이전트가 떠 있을 때) */
+    commands(workspaceId: string): Promise<SlashCommand[]>;
   };
   artifacts: {
     list(projectId: string): Promise<Artifact[]>;
@@ -103,6 +114,7 @@ export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
+  'workspaces.stopAgent', 'workspaces.setEngine',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
   'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.pending', 'todos.nudge',
@@ -110,7 +122,7 @@ export const IPC_CHANNELS = [
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
   'commit.state', 'commit.run', 'commit.push',
-  'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission',
+  'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;
 export type IpcChannel = (typeof IPC_CHANNELS)[number];
 

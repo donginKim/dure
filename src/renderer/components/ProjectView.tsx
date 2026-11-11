@@ -103,7 +103,7 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
                 </div>
                 <span className={`tag${n === 0 ? ' warn' : ''}`}>{n === 0 ? '워크스페이스 없음' : `워크스페이스 ${n}개`}</span>
                 {!done && <button className={`btn${n === 0 ? ' primary' : ''}`} disabled={st ? !st.ok : false} onClick={() => setCreatingFor(r.id)}>워크스페이스 만들기</button>}
-                <button className="btn ghost" title="목록에서 빼기 (폴더는 그대로)" onClick={() => void removeRepo(r.id)}>빼기</button>
+                {!done && <button className="btn ghost" title="목록에서 빼기 (폴더는 그대로)" onClick={() => void removeRepo(r.id)}>빼기</button>}
               </div>
             );
           })}

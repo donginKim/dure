@@ -1,11 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readSync, statSync } from 'node:fs';
-import { basename, isAbsolute, join } from 'node:path';
+import { closeSync, lstatSync, mkdirSync, openSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
-import type { PlanDecision, PlanResult, PlanTodo, Proposal, ProposalItem, SpecFile, Workspace } from '@shared/types';
+import { isNewRepoId, newRepoId, newRepoName, validRepoName } from '@shared/plan';
+import type { PlanDecision, PlanRepo, PlanResult, PlanTodo, Proposal, ProposalItem, Repo, SpecFile, Workspace } from '@shared/types';
 import type { Git } from './git';
 import type { MessageService } from './messages';
+import { slugify } from './slug';
 import type { ProjectStore, RepoStore, WorkspaceStore } from './stores';
 import type { TodoService } from './todos';
 import { COORDINATOR_NAME, type WorkspaceService } from './workspaceService';
@@ -13,6 +15,7 @@ import { COORDINATOR_NAME, type WorkspaceService } from './workspaceService';
 interface Row { id: string; project_id: string; status: string; items: string; note: string; created_at: number }
 
 const MAX_ITEMS = 20;
+const MAX_NEW_REPOS = 5;
 const MAX_TODOS = 40;
 const MAX_SUMMARY = 20_000;
 /** 기획서 파일을 글로 넘길 때의 상한. 넘으면 뒤를 자르고 알린다 */
@@ -24,16 +27,26 @@ const text = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function toProposal(r: Row): Proposal {
-  let plan: { summary?: unknown; items?: unknown; projectTodos?: unknown } = {};
+  let plan: { summary?: unknown; newRepos?: unknown; items?: unknown; projectTodos?: unknown } = {};
   try { const v = JSON.parse(r.items) as unknown; plan = Array.isArray(v) ? { items: v } : isObj(v) ? v : {}; } catch { /* 빈 계획 */ }
   return {
     id: r.id, projectId: r.project_id, status: r.status === 'approved' ? 'approved' : r.status === 'rejected' ? 'rejected' : 'pending',
     summary: typeof plan.summary === 'string' ? plan.summary : '',
+    newRepos: Array.isArray(plan.newRepos) ? plan.newRepos as PlanRepo[] : [],
     items: Array.isArray(plan.items) ? (plan.items as ProposalItem[]).map((i) => ({ ...i, todos: Array.isArray(i.todos) ? i.todos : [], existing: i.existing === true })) : [],
     projectTodos: Array.isArray(plan.projectTodos) ? plan.projectTodos as PlanTodo[] : [],
     note: r.note, createdAt: r.created_at,
   };
 }
+
+/** 그 자리에 무엇이든 있는가. 끊어진 심볼릭 링크도 있는 것으로 본다. */
+const taken = (path: string): boolean => { try { lstatSync(path); return true; } catch { return false; } };
+/** 새 저장소를 만드는 git 명령 하나가 기다릴 시간. 서명 프로그램이나 hook 이 입력을 기다리며 멈추면 승인이 끝나지 않는다 */
+const GIT_STEP_MS = 30_000;
+const within = <T>(p: Promise<T>, what: string): Promise<T> => new Promise<T>((done, fail) => {
+  const timer = setTimeout(() => fail(new Error(`${what} 이(가) 시간 안에 끝나지 않았습니다.`)), GIT_STEP_MS);
+  p.then((v) => { clearTimeout(timer); done(v); }, (e) => { clearTimeout(timer); fail(e); });
+});
 
 export { COORDINATOR_NAME };
 
@@ -57,6 +70,8 @@ export class CoordinatorService extends EventEmitter {
     service: WorkspaceService;
     /** 조율 에이전트의 폴더를 두는 곳 (두레 데이터 폴더 아래) */
     dir: string;
+    /** 새 저장소를 만드는 상위 폴더. 그 아래 프로젝트 이름의 폴더에 만든다 */
+    repoRoot: string;
   }) {
     super();
   }
@@ -87,6 +102,62 @@ export class CoordinatorService extends EventEmitter {
     return r ? toProposal(r) : null;
   }
 
+  /** 이 프로젝트의 새 저장소가 만들어질 폴더. */
+  newRepoDir(projectId: string): string {
+    const project = this.d.projects.get(projectId);
+    if (!project) throw new Error(`프로젝트가 없습니다: ${projectId}`);
+    return join(resolve(this.d.repoRoot), slugify(project.name));
+  }
+
+  /** 계획안의 새 저장소를 확인한다: 폴더 이름이 될 수 있고, 등록된 저장소와 겹치지 않고, 그 자리에 아무것도 없어야 한다. */
+  private newRepos(projectId: string, raw: unknown, problems: string[]): PlanRepo[] {
+    if (raw === undefined || raw === null) return [];
+    if (!Array.isArray(raw)) { problems.push('새 저장소는 목록이어야 한다'); return []; }
+    if (raw.length > MAX_NEW_REPOS) { problems.push(`새 저장소는 한 번에 ${MAX_NEW_REPOS}개까지다`); return []; }
+    const dir = this.newRepoDir(projectId);
+    const registered = this.d.repos.list(projectId);
+    const out: PlanRepo[] = [];
+    for (const x of raw) {
+      const o: Record<string, unknown> = isObj(x) ? x : { name: x };
+      const name = oneLine(o.name, 80);
+      if (!validRepoName(name)) { problems.push(`새 저장소 이름 "${name}": 영문, 숫자, . _ - 만 쓸 수 있다 (60자까지, 폴더 이름이 된다)`); continue; }
+      // 대소문자를 가리지 않는 디스크에서 같은 폴더가 되지 않게 한다.
+      if (out.some((r) => r.name.toLowerCase() === name.toLowerCase())) { problems.push(`새 저장소 이름이 겹친다: "${name}"`); continue; }
+      if (registered.some((r) => r.name.toLowerCase() === name.toLowerCase())) { problems.push(`"${name}" 은 이미 등록된 저장소의 이름이다. 그 저장소를 쓰거나 다른 이름을 써라`); continue; }
+      if (taken(join(dir, name))) { problems.push(`새 저장소 "${name}": 그 자리에 이미 폴더나 파일이 있다 (${join(dir, name)}). 다른 이름을 써라`); continue; }
+      out.push({ name, description: text(o.description, 500) });
+    }
+    return out;
+  }
+
+  /** 새 저장소 하나를 만든다: 폴더, git 초기화, README 와 첫 커밋 (작업 폴더를 만들려면 커밋이 하나 있어야 한다), 프로젝트에 등록. */
+  private async createRepo(projectId: string, r: PlanRepo, made: { path: string; repo?: Repo }[]): Promise<Repo> {
+    const dir = this.newRepoDir(projectId);
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, r.name);
+    // 있으면 실패한다: 이미 있는 폴더를 건드리지 않는다. 여기서 만든 폴더만 되돌릴 때 지운다.
+    try { mkdirSync(path); } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`새 저장소 "${r.name}": 그 자리에 이미 폴더나 파일이 있습니다 (${path}).`);
+      throw e;
+    }
+    const entry: { path: string; repo?: Repo } = { path };
+    made.push(entry);
+    const git = (args: string[]): Promise<string> => within(this.d.git.raw(['-C', path, ...args]), `git ${args.find((a) => !a.startsWith('-') && !a.includes('=')) ?? ''}`);
+    await git(['init', '-b', 'main']);
+    writeFileSync(join(path, 'README.md'), `# ${r.name}\n${r.description ? `\n${r.description}\n` : ''}`);
+    // -f: 사용자의 전역 무시 규칙이 README 를 무시해도 넣는다.
+    await git(['add', '-f', 'README.md']);
+    const commit = ['commit', '-m', 'chore: initial commit (created by dure)'];
+    // 사용자의 git 설정으로 커밋한다. 서명이나 hook 때문에 안 되면 그것 없이 한다. 이름·이메일은 설정이 없을 때만 두레의 것을 쓴다.
+    await git(commit).catch(async () => {
+      const has = async (key: string): Promise<boolean> => Boolean((await git(['config', key]).catch(() => '')).trim());
+      const who = [...(await has('user.name') ? [] : ['-c', 'user.name=dure']), ...(await has('user.email') ? [] : ['-c', 'user.email=dure@localhost'])];
+      await git([...who, '-c', 'commit.gpgsign=false', ...commit, '--no-verify']);
+    });
+    entry.repo = this.d.repos.add(projectId, path);
+    return entry.repo;
+  }
+
   private todos(raw: unknown, where: string, problems: string[]): PlanTodo[] {
     if (raw === undefined || raw === null) return [];
     if (!Array.isArray(raw)) { problems.push(`${where}: TODO 는 목록이어야 한다`); return []; }
@@ -105,11 +176,12 @@ export class CoordinatorService extends EventEmitter {
    * 계획안을 화면에 올릴 모양으로 다듬고 확인한다. 저장소는 이름으로도 받는다 (에이전트는 id 를 모른다).
    * 이름이 이미 있는 워크스페이스와 같으면 새로 만들지 않고 TODO 만 더하는 항목으로 본다.
    */
-  private async clean(projectId: string, rawItems: unknown, rawProjectTodos: unknown): Promise<{ items: ProposalItem[]; projectTodos: PlanTodo[]; problems: string[] }> {
+  private async clean(projectId: string, rawRepos: unknown, rawItems: unknown, rawProjectTodos: unknown): Promise<{ newRepos: PlanRepo[]; items: ProposalItem[]; projectTodos: PlanTodo[]; problems: string[] }> {
     const repos = this.d.repos.list(projectId);
     const workers = this.d.workspaces.list(projectId);
     const items: ProposalItem[] = [];
     const problems: string[] = [];
+    const newRepos = this.newRepos(projectId, rawRepos, problems);
     const list = Array.isArray(rawItems) ? rawItems : [];
     if (list.length > MAX_ITEMS) problems.push(`워크스페이스는 한 번에 ${MAX_ITEMS}개까지다`);
     const names = new Set<string>();
@@ -130,8 +202,12 @@ export class CoordinatorService extends EventEmitter {
         continue;
       }
       const repoKey = oneLine(o.repo ?? o.repoId, 300);
+      // 새 저장소: 아직 없으므로 이름으로 가리킨다. 첫 커밋이 있는 main 에서 시작한다.
+      const fresh = newRepos.find((r) => r.name === repoKey || newRepoId(r.name) === repoKey);
+      if (fresh) { items.push({ name, repoId: newRepoId(fresh.name), baseBranch: 'main', role, todos, existing: false }); continue; }
+      if (isNewRepoId(repoKey)) { problems.push(`"${name}": 새 저장소 "${newRepoName(repoKey)}" 가 계획안에 없다`); continue; }
       const repo = repos.find((r) => r.id === repoKey) ?? repos.find((r) => r.name === repoKey) ?? repos.find((r) => r.path === repoKey);
-      if (!repo) { problems.push(`"${name}": 등록된 저장소가 아니다 (${repoKey || '저장소 없음'}). 등록된 저장소: ${repos.map((r) => r.name).join(', ') || '없음'}`); continue; }
+      if (!repo) { problems.push(`"${name}": 등록된 저장소가 아니다 (${repoKey || '저장소 없음'}). 등록된 저장소: ${repos.map((r) => r.name).join(', ') || '없음'}. 맞는 저장소가 없으면 new_repos 에 새 저장소를 넣어라`); continue; }
       const branches = await this.d.git.listBranches(repo.path).catch(() => [] as string[]);
       const wanted = oneLine(o.base_branch ?? o.baseBranch, 200);
       let baseBranch = wanted;
@@ -140,25 +216,25 @@ export class CoordinatorService extends EventEmitter {
       if (!baseBranch) { problems.push(`"${name}": 저장소 ${repo.name} 의 기준 브랜치를 정할 수 없다`); continue; }
       items.push({ name, repoId: repo.id, baseBranch, role, todos, existing: false });
     }
-    return { items, projectTodos: this.todos(rawProjectTodos, '프로젝트 TODO', problems), problems };
+    return { newRepos, items, projectTodos: this.todos(rawProjectTodos, '프로젝트 TODO', problems), problems };
   }
 
   /**
    * 조율 에이전트가 계획안을 올린다. 앞의 미결 계획안은 이것으로 바뀐다. 이때는 아무것도 만들지 않는다.
    * 문제가 있는 항목이 하나라도 있으면 올리지 않고 이유를 던진다 (에이전트가 고쳐서 다시 낸다).
    */
-  async propose(projectId: string, raw: { summary?: unknown; workspaces?: unknown; project_todos?: unknown; note?: unknown }): Promise<Proposal> {
+  async propose(projectId: string, raw: { summary?: unknown; new_repos?: unknown; workspaces?: unknown; project_todos?: unknown; note?: unknown }): Promise<Proposal> {
     const project = this.d.projects.get(projectId);
     if (!project) throw new Error(`프로젝트가 없습니다: ${projectId}`);
     if (this.d.service.isProjectClosed(projectId)) throw new Error('완료된 프로젝트다. 계획안을 올릴 수 없다.');
-    const { items, projectTodos, problems } = await this.clean(projectId, raw?.workspaces, raw?.project_todos);
+    const { newRepos, items, projectTodos, problems } = await this.clean(projectId, raw?.new_repos, raw?.workspaces, raw?.project_todos);
     // 사용자가 앞의 계획안을 승인해 만드는 중이면, 그 결과가 정해진 뒤에 올리게 한다.
     const current = this.pending(projectId);
     if (current && this.deciding.has(current.id)) throw new Error('사용자가 앞의 계획안을 승인해 만드는 중이다. 승인 알림을 받은 뒤에 다시 올려라.');
     if (problems.length) throw new Error(`계획안을 올리지 않았다. 고쳐서 다시 내라: ${problems.join(' / ')}`);
-    if (items.length === 0 && projectTodos.length === 0) throw new Error('계획안이 비어 있다. 워크스페이스나 TODO 를 넣어라.');
+    if (newRepos.length === 0 && items.length === 0 && projectTodos.length === 0) throw new Error('계획안이 비어 있다. 워크스페이스나 TODO 를 넣어라.');
     const id = crypto.randomUUID();
-    const plan = { summary: text(raw?.summary, MAX_SUMMARY), items, projectTodos };
+    const plan = { summary: text(raw?.summary, MAX_SUMMARY), newRepos, items, projectTodos };
     this.d.db.transaction(() => {
       this.d.db.prepare("UPDATE proposals SET status = 'rejected' WHERE project_id = ? AND status = 'pending'").run(projectId);
       this.d.db.prepare('INSERT INTO proposals (id, project_id, status, items, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -189,12 +265,18 @@ export class CoordinatorService extends EventEmitter {
       const r = this.d.db.prepare('SELECT * FROM proposals WHERE id = ?').get(proposalId) as Row | undefined;
       if (!r || r.status !== 'pending') throw new Error('승인을 기다리는 계획안이 아닙니다.');
       if (this.d.service.isProjectClosed(r.project_id)) throw new Error('완료된 프로젝트입니다.');
-      const { items, projectTodos, problems } = await this.clean(r.project_id, decision?.items, decision?.projectTodos);
+      const { newRepos, items, projectTodos, problems } = await this.clean(r.project_id, decision?.newRepos, decision?.items, decision?.projectTodos);
       if (problems.length) throw new Error(problems.join(' / '));
-      if (items.length === 0 && projectTodos.length === 0) throw new Error('만들 것이 없습니다. 거절하려면 "거절" 을 누르세요.');
+      if (newRepos.length === 0 && items.length === 0 && projectTodos.length === 0) throw new Error('만들 것이 없습니다. 거절하려면 "거절" 을 누르세요.');
+      const madeRepos: { path: string; repo?: Repo }[] = [];
       const created: Workspace[] = [];
       const todoIds: string[] = [];
       try {
+        // 저장소가 먼저다: 워크스페이스는 그 저장소에서 만든다.
+        for (const nr of newRepos) {
+          const repo = await this.createRepo(r.project_id, nr, madeRepos);
+          for (const it of items) if (it.repoId === newRepoId(nr.name)) it.repoId = repo.id;
+        }
         const targets = new Map<string, Workspace>();
         for (const it of items) {
           if (it.existing) { targets.set(it.name, this.d.workspaces.list(r.project_id).find((w) => w.name === it.name)!); continue; }
@@ -211,21 +293,32 @@ export class CoordinatorService extends EventEmitter {
         for (const id of todoIds) { try { this.d.todos.remove(id, { actor: 'user' }); } catch { /* 이미 없음 */ } }
         // 되돌리지 못한 것은 숨기지 않는다: 무엇이 남았는지 알려야 사용자가 치울 수 있다.
         const left: string[] = [];
-        for (const ws of created) await this.d.service.discard(ws.id).catch(() => { left.push(ws.name); });
-        const why = e instanceof Error ? e.message : String(e);
-        throw new Error(left.length ? `${why} (만들던 것을 되돌리지 못했습니다. 남은 워크스페이스: ${left.join(', ')}. "현황" 에서 지운 뒤 다시 승인하세요)` : why);
+        for (const ws of created) await this.d.service.discard(ws.id).catch(() => { left.push(`워크스페이스 ${ws.name}`); });
+        // 여기서 만든 저장소도 치운다. 이 승인에서 새로 만든 빈 폴더만 지운다 (mkdir 이 성공한 것만 목록에 있다).
+        const root = resolve(this.d.repoRoot) + sep;
+        for (const m of madeRepos.reverse()) {
+          try {
+            if (m.repo) this.d.repos.remove(m.repo.id);
+            if (!m.path.startsWith(root)) throw new Error('새 저장소 폴더 밖');
+            rmSync(m.path, { recursive: true, force: true });
+            for (const it of items) if (m.repo && it.repoId === m.repo.id) it.repoId = newRepoId(m.repo.name);
+          } catch { left.push(`저장소 폴더 ${m.path}`); }
+        }
+        const why = e instanceof Error ? e.message : (e as { detail?: string })?.detail ?? String(e);
+        throw new Error(left.length ? `${why} (만들던 것을 되돌리지 못했습니다. 남은 것: ${left.join(', ')}. "현황" 에서 지운 뒤 다시 승인하세요)` : why);
       }
       this.d.db.prepare("UPDATE proposals SET status = 'approved', items = ? WHERE id = ? AND status = 'pending'")
-        .run(JSON.stringify({ summary: toProposal(r).summary, items, projectTodos }), proposalId);
+        .run(JSON.stringify({ summary: toProposal(r).summary, newRepos, items, projectTodos }), proposalId);
       this.emit('changed', r.project_id);
       const repoName = (id: string): string => this.d.repos.get(id)?.name ?? '';
       this.tell(r.project_id, [
         '사용자가 계획안을 검토하고 승인했다. 두레가 아래를 만들었다. 사용자가 고쳤을 수 있으니 이 목록이 최종이다.',
+        ...madeRepos.map((m) => `- 새 저장소 "${basename(m.path)}" (${m.path}): 만들어 프로젝트에 등록했다. README.md 와 첫 커밋만 있다.`),
         ...items.map((it) => `- 워크스페이스 "${it.name}" (저장소 ${repoName(it.repoId)}${it.existing ? ', 이미 있던 것' : ', 새로 만듦'})${it.role ? `: ${it.role}` : ''}${it.todos.length ? `\n${it.todos.map((t) => `  - TODO${t.assignee === 'user' ? '(사용자 몫)' : ''}: ${t.title}`).join('\n')}` : ''}`),
         ...(projectTodos.length ? ['- 프로젝트 TODO:', ...projectTodos.map((t) => `  - ${t.assignee === 'user' ? '(사용자 몫) ' : ''}${t.title}`)] : []),
         'TODO 는 이미 적혀 있다. 다시 적지 마라. 이제 각 워크스페이스에 message_send 로 작업을 시작하라고 알려라 (할 일은 그 워크스페이스의 TODO 에 있다고 알려 주면 된다).',
       ].join('\n'));
-      return { created, todos: todoIds.length };
+      return { repos: madeRepos.flatMap((m) => (m.repo ? [m.repo] : [])), created, todos: todoIds.length };
     } finally {
       this.deciding.delete(proposalId);
     }

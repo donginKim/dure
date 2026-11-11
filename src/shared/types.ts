@@ -391,6 +391,9 @@ export interface PlanTodo {
 }
 
 /** 계획안에 든 워크스페이스 하나와 그 TODO */
+/** 계획안의 새 저장소: 아직 없고, 승인하면 두레가 폴더를 만들고 git 저장소로 초기화해 프로젝트에 등록한다 */
+export interface PlanRepo { name: string; description: string }
+
 export interface ProposalItem {
   name: string;
   /** 등록된 저장소의 id */
@@ -414,6 +417,8 @@ export interface Proposal {
   status: 'pending' | 'approved' | 'rejected';
   /** 기획서를 정리한 글 (마크다운): 요구사항, 범위, 불확실한 점 */
   summary: string;
+  /** 승인하면 새로 만들 저장소 (맞는 저장소가 등록돼 있지 않을 때) */
+  newRepos: PlanRepo[];
   items: ProposalItem[];
   /** 프로젝트 전체의 TODO (어느 워크스페이스에도 속하지 않는 일, 사용자가 결정할 것) */
   projectTodos: PlanTodo[];
@@ -424,12 +429,16 @@ export interface Proposal {
 
 /** 사용자가 검토 화면에서 고친 최종 계획 */
 export interface PlanDecision {
+  /** 새로 만들 저장소. items 의 repoId 가 `new:<이름>` 이면 이 목록의 저장소를 가리킨다 */
+  newRepos?: PlanRepo[];
   items: ProposalItem[];
   projectTodos: PlanTodo[];
 }
 
 /** 계획안을 승인해 만든 것 */
 export interface PlanResult {
+  /** 새로 만들어 등록한 저장소 */
+  repos: Repo[];
   created: Workspace[];
   todos: number;
 }
@@ -450,4 +459,6 @@ export interface CoordinatorInfo {
   workspace: Workspace;
   /** 승인을 기다리는 제안. 없으면 null */
   proposal: Proposal | null;
+  /** 새 저장소가 만들어질 폴더 (그 아래에 저장소 이름의 폴더가 생긴다) */
+  newRepoDir: string;
 }

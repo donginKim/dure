@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, sep } from 'node:path';
+import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
@@ -70,6 +70,8 @@ export interface CoreOptions {
   dataDir: string;
   /** worktree 를 만드는 상위 폴더 */
   worktreeRoot: string;
+  /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
+  repoRoot?: string;
   /** 터미널과 에이전트에 물려줄 환경 (로그인 셸 환경) */
   baseEnv: Record<string, string>;
   /** Claude Code 가 대화 기록을 두는 폴더. 기본 ~/.claude */
@@ -156,7 +158,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       isProjectClosed: (projectId) => service.isProjectClosed(projectId),
     },
   });
-  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators') });
+  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos') });
   service.attachDelivery(delivery);
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.

@@ -563,6 +563,9 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 .plan-ws-name { flex: 1; min-width: 120px; font-weight: 600; font-size: 14px; }
 .plan-ws-line select { max-width: 170px; }
 .plan-role { width: 100%; }
+.plan-path { color: var(--muted); font-size: 12px; word-break: break-all; }
+.plan-path code { color: var(--text, inherit); }
+.plan-none { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
 .plan-sublabel { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .plan-todos { display: flex; flex-direction: column; gap: 5px; }
 .plan-todo { display: flex; align-items: flex-start; gap: 8px; }

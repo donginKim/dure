@@ -81,7 +81,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // hook 으로 상태가 바뀌면 서비스의 'changed' 로 내보낸다. 서비스는 MCP 주소가 정해진 뒤에 만들어지므로 나중에 잇는다.
   let onStatus: (workspaceId: string) => void = () => undefined;
   let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
-  const chat = new ChatService({ workspaces, allowedRoot: o.claudeDir ?? join(homedir(), '.claude'), onInterrupted: (id) => service.noteInterrupted(id) });
+  const chat = new ChatService({ workspaces, // Claude Code 는 CLAUDE_CONFIG_DIR 가 있으면 그 폴더에 대화 기록을 둔다. 에이전트가 물려받는 환경과 같은 값을 쓴다.
+    allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id) });
   const mcp = await startMcpServer({
     workspaces, projects, repos, todos, messages, commitDrafts,
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
@@ -132,8 +133,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const engine = new ChatEngine({
     onSession: (id, sessionId) => { if (workspaces.get(id)) workspaces.setSessionId(id, sessionId); },
     onWaiting: (id, waiting) => service.noteWaiting(id, waiting),
-    // 사용자가 멈춰서 끝난 차례는 Stop hook 을 부르지 않는다. 상태를 여기서 되돌린다.
-    onTurnEnd: (id, interrupted) => { if (interrupted) { chat.interrupted(id); service.noteInterrupted(id); } },
+    // 차례가 끝났는데도 '작업 중' 이면 Stop hook 이 오지 않은 것이다 (사용자가 멈춤, 로그인 만료 같은 오류). 쉬는 중으로 되돌린다.
+    // 보통은 Stop hook 이 먼저 와서 이미 쉬는 중이고, 그때는 아무것도 바뀌지 않는다.
+    onTurnEnd: (id) => { chat.interrupted(id); service.noteInterrupted(id); },
     onActivity: (id) => chat.refreshSoon(id, [0, 300, 1200]),
     onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
   });

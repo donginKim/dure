@@ -366,3 +366,23 @@ test('오래된 항목은 버리고 버린 수를 hidden 에 더한다', () => {
   expect(snap.items.at(-1)).toMatchObject({ text: 'm2099' });
   expect(snap.hidden).toBe(1700);
 });
+
+test('뿌리 폴더가 여럿이면, 한 뿌리 안의 링크가 다른 뿌리를 가리켜도 읽는다 (프로필 폴더가 ~/.claude 로 이어진 경우)', () => {
+  chat.dispose();
+  const home = join(tempDir(), 'home claude');
+  const profile = join(tempDir(), 'profile');
+  mkdirSync(join(home, 'projects', 'p'), { recursive: true });
+  mkdirSync(profile);
+  symlinkSync(join(home, 'projects'), join(profile, 'projects'));
+  writeFileSync(join(home, 'projects', 'p', 's.jsonl'), userLine('이어진 폴더의 기록'));
+  wsId = addWorkspace();
+  chat = new ChatService({ workspaces, allowedRoot: [profile, home, ''] });
+  chat.noteHook(wsId, 'Stop', { transcript_path: join(profile, 'projects', 'p', 's.jsonl') });
+  expect(chat.snapshot(wsId)).toMatchObject({ available: true, items: [expect.objectContaining({ text: '이어진 폴더의 기록' })] });
+  // 두 뿌리 어디에도 없는 곳을 가리키는 링크는 여전히 읽지 않는다
+  const outside = join(tempDir(), 'x.jsonl');
+  writeFileSync(outside, userLine('비밀'));
+  symlinkSync(outside, join(profile, 'evil.jsonl'));
+  chat.noteHook(wsId, 'Stop', { transcript_path: join(profile, 'evil.jsonl') });
+  expect(chat.snapshot(wsId)).toMatchObject({ available: false, items: [] });
+});

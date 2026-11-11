@@ -52,6 +52,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
     out({ type: 'stream_event', parent_tool_use_id: 'sub', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '하위 에이전트의 글' } } });
     return; // 덩어리가 끝나지 않은 채로 둔다
   }
+  if (text === 'fail') { out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Failed to authenticate' }] } }); out({ type: 'result', subtype: 'success', is_error: true }); return; } // Stop hook 없이 끝난다
   if (text === 'finish') { out({ type: 'assistant', message: { content: [{ type: 'text', text: '안녕하세요' }] } }); hook('Stop'); out({ type: 'result', subtype: 'success' }); return; }
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'echo:' + text }] } });
   hook('Stop'); out({ type: 'result', subtype: 'success' });
@@ -298,4 +299,28 @@ test('워크스페이스를 지우면 에이전트가 꺼진다. 코어를 닫�
   expect(core.service.isAgentRunning(other.id)).toBe(true);
   await core.dispose();
   expect(core.engine.has(other.id)).toBe(false);
+});
+
+test('Stop hook 없이 차례가 끝나도(로그인 만료 같은 오류) 작업 중에 머물지 않는다', async () => {
+  const ws = await started('fail');
+  await core.service.sendUserInput(ws.id, 'fail');
+  await until(() => said(ws.id).length === 1);
+  await until(() => status(ws.id) === 'idle');
+  // 확인된 쉬는 중은 아니다: 두레가 스스로 깨우는 근거로 쓰지 않는다
+  expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
+  expect(core.chatView(ws.id).canSend).toBe(true);
+});
+
+test('대화 기록 폴더는 에이전트가 물려받는 CLAUDE_CONFIG_DIR 를 따른다', async () => {
+  await core.dispose();
+  const profile = join(tempDir(), 'profile');
+  mkdirSync(join(profile, 'projects', 'p'), { recursive: true });
+  const file = join(profile, 'projects', 'p', 's.jsonl');
+  writeFileSync(file, `${JSON.stringify({ type: 'user', uuid: 'u1', timestamp: new Date().toISOString(), message: { content: '프로필 폴더의 기록' } })}\n`);
+  core = await createCore({ dataDir: join(tempDir(), 'd2'), worktreeRoot: join(tempDir(), 'wt2'), baseEnv: { PATH: `${fakeBin}:/usr/bin:/bin`, SHELL: '/bin/sh', HOME: tempDir(), CLAUDE_CONFIG_DIR: profile } });
+  projectId = core.projects.create('p3').id;
+  repoId = (await core.addRepo(projectId, makeRepo('profile'))).id;
+  const ws = await create('profile');
+  core.chat.noteHook(ws.id, 'Stop', { transcript_path: file });
+  expect(core.chatView(ws.id)).toMatchObject({ available: true, items: [expect.objectContaining({ text: '프로필 폴더의 기록' })] });
 });

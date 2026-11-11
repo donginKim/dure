@@ -460,10 +460,10 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 .ask-desc { color: var(--muted); font-size: 12px; }
 .ask-other { width: 100%; }
 .composer { position: relative; }
-.slash-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); padding: 4px; z-index: 3; max-height: 320px; overflow-y: auto; }
+.slash-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); padding: 4px; z-index: 3; max-height: 320px; overflow-y: auto; overflow-x: hidden; }
 .slash-item { display: flex; align-items: baseline; gap: 10px; width: 100%; background: none; border: 0; border-radius: 6px; padding: 5px 9px; cursor: pointer; text-align: left; }
 .slash-item.on { background: var(--panel-2); }
-.slash-name { font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; white-space: nowrap; flex: none; }
+.slash-name { font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; white-space: nowrap; flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; }
 .slash-arg { color: var(--muted); }
 .slash-desc { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .slash-foot { color: var(--muted); font-size: 11px; padding: 4px 9px 2px; border-top: 1px solid var(--line); margin-top: 3px; }

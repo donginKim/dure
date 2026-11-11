@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
 import { groupTodos } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
+import { CleanupList, CompleteDialog } from './CleanupPanel';
 import { ConversationList, type ConversationData } from './ConversationPanel';
 import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
 import { Ticks, TodoList } from './TodoPanel';
@@ -16,6 +17,9 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
   const [justAdded, setJustAdded] = useState<Repo | null>(null);
   const [creatingFor, setCreatingFor] = useState<string | null>(null); // 저장소 id, '' 이면 고르지 않음
   const [removingProject, setRemovingProject] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  // 완료된 프로젝트는 기록만 본다.
+  const done = project.status === 'done';
 
   // 등록된 저장소가 지금도 유효한지 확인해 줄마다 보여준다.
   const repoIds = repos.map((r) => r.id).join(',');
@@ -55,8 +59,18 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
 
   return (
     <div className="page">
-      <h1>{project.name}</h1>
+      <h1>{project.name}{done && <span className="done-badge">완료</span>}</h1>
       <div className="sub">프로젝트 · 저장소 {repos.length}개 · 워크스페이스 {workspaces.length}개</div>
+      {done && (
+        <div className="done-banner">
+          <div>
+            <b>완료 처리한 프로젝트입니다.</b> 기록만 볼 수 있습니다.
+            {project.completedAt && ` (${new Date(project.completedAt).toLocaleDateString('ko-KR')} 완료)`}
+            <div className="muted">다시 열면 워크스페이스를 만들고 에이전트를 시작할 수 있습니다. 완료 처리 때 지운 작업 폴더는 돌아오지 않습니다.</div>
+          </div>
+          <button className="btn primary" onClick={() => { setError(''); window.dure.projects.reopen(project.id).catch((e: Error) => setError(e.message)); }}>다시 열기</button>
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       {justAdded && (
         <div className="notice ok">
@@ -69,7 +83,7 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
       <div className="section">
         <div className="section-head">
           <h2>저장소</h2>
-          <button className="btn" onClick={() => void addRepo()}>저장소 추가</button>
+          {!done && <button className="btn" onClick={() => void addRepo()}>저장소 추가</button>}
         </div>
         <div className="rows">
           {repos.length === 0 && <div className="rows-empty">등록된 저장소가 없습니다. 로컬 git 저장소 폴더를 추가하세요.</div>}
@@ -88,7 +102,7 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
                   </div>
                 </div>
                 <span className={`tag${n === 0 ? ' warn' : ''}`}>{n === 0 ? '워크스페이스 없음' : `워크스페이스 ${n}개`}</span>
-                <button className={`btn${n === 0 ? ' primary' : ''}`} disabled={st ? !st.ok : false} onClick={() => setCreatingFor(r.id)}>워크스페이스 만들기</button>
+                {!done && <button className={`btn${n === 0 ? ' primary' : ''}`} disabled={st ? !st.ok : false} onClick={() => setCreatingFor(r.id)}>워크스페이스 만들기</button>}
                 <button className="btn ghost" title="목록에서 빼기 (폴더는 그대로)" onClick={() => void removeRepo(r.id)}>빼기</button>
               </div>
             );
@@ -100,7 +114,7 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
       <div className="section">
         <div className="section-head">
           <h2>워크스페이스</h2>
-          <button className="btn" disabled={repos.length === 0} onClick={() => setCreatingFor('')}>워크스페이스 만들기</button>
+          {!done && <button className="btn" disabled={repos.length === 0} onClick={() => setCreatingFor('')}>워크스페이스 만들기</button>}
         </div>
         <div className="rows">
           {workspaces.length === 0 && <div className="rows-empty">워크스페이스가 없습니다.</div>}
@@ -166,9 +180,27 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
         <div className="help">프로젝트 항목은 프로젝트 전체의 할 일입니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</div>
       </div>
 
-      <div className="section">
-        <button className="btn danger" onClick={() => setRemovingProject(true)}>프로젝트 지우기</button>
+      <CleanupList project={project} readOnly={done} />
+
+      <div className="section project-end">
+        {!done && (
+          <div className="end-row">
+            <div>
+              <div className="end-title">프로젝트 완료 처리</div>
+              <div className="muted">일이 끝났으면 완료로 옮깁니다. 지울 것(작업 폴더, 정리 대기)을 목록으로 보고 고릅니다. 기록은 남고 다시 열 수 있습니다.</div>
+            </div>
+            <button className="btn primary" onClick={() => setCompleting(true)}>완료 처리</button>
+          </div>
+        )}
+        <div className="end-row">
+          <div>
+            <div className="end-title">완전히 지우기</div>
+            <div className="muted">프로젝트와 그 기록(TODO, 대화, 자료, 정리 대기)을 두레에서 지웁니다. 저장소와 작업 폴더는 지우지 않습니다.</div>
+          </div>
+          <button className="btn danger" onClick={() => setRemovingProject(true)}>완전히 지우기</button>
+        </div>
       </div>
+      {completing && <CompleteDialog project={project} onClose={() => setCompleting(false)} onDone={() => setCompleting(false)} />}
 
       {creatingFor !== null && (
         <NewWorkspaceDialog
@@ -181,8 +213,8 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
       )}
       {removingProject && (
         <ConfirmDialog
-          title="프로젝트 지우기"
-          message={`"${project.name}" 프로젝트와 그 워크스페이스 ${workspaces.length}개를 두레에서 지웁니다. 실행 중인 터미널은 꺼집니다. 저장소와 작업 폴더는 지우지 않습니다.`}
+          title="프로젝트 완전히 지우기"
+          message={`"${project.name}" 프로젝트와 그 워크스페이스 ${workspaces.length}개, TODO·대화·자료 기록, 정리 대기에 옮겨 둔 파일을 두레에서 지웁니다. 실행 중인 에이전트와 터미널은 꺼집니다. 저장소와 작업 폴더는 지우지 않습니다. 되돌릴 수 없습니다.`}
           confirmLabel="지우기"
           onClose={() => setRemovingProject(false)}
           onConfirm={async () => { await window.dure.projects.remove(project.id); setRemovingProject(false); }}

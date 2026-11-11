@@ -52,6 +52,8 @@ export interface WorkspaceServiceDeps {
   settings?: () => Settings;
 }
 
+const DONE_PROJECT = '완료된 프로젝트입니다. 다시 열어야 워크스페이스를 만들거나 에이전트를 시작할 수 있습니다.';
+
 function findExecutable(command: string, pathVar: string | undefined): string | undefined {
   for (const dir of (pathVar ?? '').split(':')) {
     if (!dir) continue;
@@ -170,6 +172,11 @@ export class WorkspaceService extends EventEmitter {
   }
 
   private readonly lastExit = new Map<string, string>();
+
+  /** 에이전트와 그 워크스페이스의 터미널을 모두 끄고 끝날 때까지 기다린다 (프로젝트 완료 처리). */
+  async stopAndWait(id: string): Promise<void> {
+    await this.killTerminals(id);
+  }
 
   /** 에이전트를 끈다 (터미널 방식이든 채팅 방식이든). */
   stopAgent(id: string): void {
@@ -328,6 +335,7 @@ export class WorkspaceService extends EventEmitter {
   async create(i: CreateWorkspaceInput): Promise<Workspace> {
     const project = this.d.projects.get(i.projectId);
     if (!project) throw new Error(`프로젝트가 없습니다: ${i.projectId}`);
+    if (project.status === 'done') throw new Error(DONE_PROJECT);
     const repo = this.d.repos.get(i.repoId);
     if (!repo || repo.projectId !== project.id) throw new Error(`이 프로젝트에 등록된 저장소가 아닙니다: ${i.repoId}`);
 
@@ -414,6 +422,7 @@ export class WorkspaceService extends EventEmitter {
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
+    if (project.status === 'done') throw new Error(DONE_PROJECT);
     const settings = this.settings();
     const executable = this.agentExecutable(ws.agentKind, settings);
     // 저장된 뒤에 규칙이 바뀌었을 수도 있으니 쓰기 직전에 한 번 더 거른다.

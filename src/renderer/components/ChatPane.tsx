@@ -182,8 +182,10 @@ const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, w
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.
  * 입력창의 글과 승인 답은 에이전트의 터미널에 써 넣는다.
  */
-export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentTerminalId, onShowTerminal, onStartAgent }: {
+export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentTerminalId, readOnly = false, onShowTerminal, onStartAgent }: {
   workspace: Workspace; workspaces: Workspace[]; conversation: ConversationData; hasAgent: boolean;
+  /** 완료된 프로젝트다: 지난 대화만 보고 에이전트를 시작하지 않는다 */
+  readOnly?: boolean;
   /** 살아 있는 에이전트 터미널. 고르는 화면이 뜨면 이 터미널을 채팅 안에 끼워 보인다 */
   agentTerminalId?: string;
   onShowTerminal: () => void; onStartAgent: () => void;
@@ -354,8 +356,8 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   if (!hasAgent) {
     composer = (
       <div className="composer-off">
-        <span>{view.lastError ? `에이전트가 오류로 끝났습니다: ${view.lastError}` : '에이전트가 꺼져 있습니다.'}</span>
-        <button className="btn primary" onClick={onStartAgent}>에이전트 시작</button>
+        <span>{readOnly ? '완료된 프로젝트입니다. 프로젝트를 다시 열면 이어서 일할 수 있습니다.' : view.lastError ? `에이전트가 오류로 끝났습니다: ${view.lastError}` : '에이전트가 꺼져 있습니다.'}</span>
+        {!readOnly && <button className="btn primary" onClick={onStartAgent}>에이전트 시작</button>}
       </div>
     );
   } else if (view.question) {

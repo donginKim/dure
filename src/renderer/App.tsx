@@ -72,7 +72,7 @@ export function App() {
     void reload();
     return window.dure.onChanged((topic) => {
       // 채팅 보기의 변화는 그 화면이 스스로 다시 읽는다. 여기서 전부 다시 읽으면 에이전트가 일하는 내내 목록을 다시 받는다.
-      if (topic !== 'terminals' && topic !== 'chat' && topic !== 'settings') void reload();
+      if (topic !== 'terminals' && topic !== 'chat' && topic !== 'settings' && topic !== 'cleanup') void reload();
     });
   }, [reload]);
 
@@ -114,11 +114,12 @@ export function App() {
             repo={repos.find((r) => r.id === workspace.repoId)}
             todos={todos.filter((t) => t.workspaceId === workspace.id)}
             pending={pending[workspace.id]}
+            readOnly={projects.find((p) => p.id === workspace.projectId)?.status === 'done'}
             onSelect={setSelection}
           />
         )}
         {current?.type === 'settings' && <SettingsView />}
-        {!node && !workspace && current?.type !== 'settings' && <ProjectsHome tree={tree} repos={repos} onSelect={setSelection} />}
+        {!node && !workspace && current?.type !== 'settings' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
       </main>
     </div>
   );

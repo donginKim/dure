@@ -114,6 +114,23 @@ const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  // 프로젝트 완료 처리와 "정리 대기" (최종 산출물이 아닌 파일을 지우지 않고 저장소 밖에 옮겨 둔 것).
+  `
+  ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+  ALTER TABLE projects ADD COLUMN completed_at INTEGER;
+  CREATE TABLE cleanup_items (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    workspace_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL,
+    workspace_name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    stored_path TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    is_dir INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

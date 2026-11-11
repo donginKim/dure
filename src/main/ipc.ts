@@ -4,7 +4,7 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CreateWorkspaceInput, Settings, TodoAssignee, TodoPatch } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, Settings, TodoAssignee, TodoPatch } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -33,10 +33,15 @@ export function registerIpc(core: Core): () => void {
       return p;
     },
     'projects.remove': async (id: string) => {
-      // 프로젝트의 워크스페이스는 터미널만 끄고 작업 폴더는 남긴다.
-      for (const ws of core.workspaces.list(id)) await core.service.remove(ws.id, { deleteWorktree: false });
-      core.projects.remove(id);
+      await core.removeProject(id);
       changed('projects');
+    },
+    'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
+    'cleanup.list': (projectId: string) => core.cleanup.list(projectId),
+    'cleanup.restore': (id: string) => core.cleanup.restore(id),
+    'cleanup.plan': (projectId: string) => core.completionPlan(projectId),
+    'cleanup.complete': async (projectId: string, choice: CompletionChoice) => {
+      try { return await core.completeProject(projectId, choice); } finally { changed('projects'); changed('cleanup'); }
     },
     'repos.list': (projectId: string) => core.repos.list(projectId),
     'repos.pickFolder': async () => {
@@ -158,6 +163,7 @@ export function registerIpc(core: Core): () => void {
   // 상태가 바뀌면 전달 방식도 바뀌므로 messages 도 함께 알린다.
   const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
   const onChatChanged = (): void => changed('chat');
+  const onCleanupChanged = (): void => changed('cleanup');
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
   const onSettingsChanged = (): void => { changed('settings'); changed('messages'); };
   const onMessagesChanged = (): void => changed('messages');
@@ -171,6 +177,7 @@ export function registerIpc(core: Core): () => void {
   core.messages.on('changed', onMessagesChanged);
   core.commit.on('changed', onCommitChanged);
   core.chat.on('changed', onChatChanged);
+  core.cleanup.on('changed', onCleanupChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
 
@@ -183,6 +190,7 @@ export function registerIpc(core: Core): () => void {
     core.messages.off('changed', onMessagesChanged);
     core.commit.off('changed', onCommitChanged);
     core.chat.off('changed', onChatChanged);
+    core.cleanup.off('changed', onCleanupChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);
     for (const channel of IPC_CHANNELS) {

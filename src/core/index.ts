@@ -4,9 +4,11 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
+import { CleanupService } from './cleanup';
+import { cleanupTools } from './mcp/tools/cleanup';
 import { SettingsService } from './settings';
 import { ChatEngine } from './chat/engine';
-import type { ChatView, ModelChoice, SlashCommand } from '@shared/types';
+import type { ChatView, CompletionChoice, CompletionPlan, ModelChoice, Project, SlashCommand } from '@shared/types';
 import { CommitDraftStore } from './commitDrafts';
 import { CommitService } from './commitService';
 import { openDatabase } from './db';
@@ -36,6 +38,15 @@ export interface Core {
   chat: ChatService;
   engine: ChatEngine;
   settings: SettingsService;
+  cleanup: CleanupService;
+  /** 프로젝트를 완료 처리하기 전에 보여줄 것: 워크스페이스의 상태와 정리 대기에 있는 것 */
+  completionPlan(projectId: string): Promise<CompletionPlan>;
+  /** 프로젝트를 완료 처리한다: 에이전트를 끄고, 고른 작업 폴더와 정리 대기 항목을 지우고, 프로젝트를 완료로 옮긴다. 기록은 남는다 */
+  completeProject(projectId: string, choice: CompletionChoice): Promise<Project>;
+  /** 완료된 프로젝트를 다시 연다. 지운 작업 폴더는 돌아오지 않는다 */
+  reopenProject(projectId: string): Project;
+  /** 프로젝트를 기록까지 완전히 지운다. 작업 폴더는 남긴다 */
+  removeProject(projectId: string): Promise<void>;
   /** 설정 화면이 고르게 보여줄 모델 목록. 받아 둔 것이 없으면 Claude Code 에게 물어 온다. refresh: 받아 둔 것이 있어도 다시 묻는다 */
   models(refresh?: boolean): Promise<ModelChoice[]>;
   /** 채팅 화면이 받는 것: 대화, 쓰는 중인 글, 승인·질문 대기 */
@@ -80,17 +91,18 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const todos = new TodoService(db);
   const settings = new SettingsService(db);
   const messages = new MessageService(db);
+  const git = createGit(o.baseEnv);
+  const cleanup = new CleanupService({ db, workspaces, git, dir: join(o.dataDir, 'cleanup') });
   messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
   const pty = new PtyManager();
-  const git = createGit(o.baseEnv);
   // hook 으로 상태가 바뀌면 서비스의 'changed' 로 내보낸다. 서비스는 MCP 주소가 정해진 뒤에 만들어지므로 나중에 잇는다.
   let onStatus: (workspaceId: string) => void = () => undefined;
   let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
   const chat = new ChatService({ workspaces, // Claude Code 는 CLAUDE_CONFIG_DIR 가 있으면 그 폴더에 대화 기록을 둔다. 에이전트가 물려받는 환경과 같은 값을 쓴다.
     allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id) });
   const mcp = await startMcpServer({
-    workspaces, projects, repos, todos, messages, commitDrafts,
+    workspaces, projects, repos, todos, messages, commitDrafts, cleanup,
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get delivery() { return delivery; },
     onHook: (workspace, event, payload) => {
@@ -121,7 +133,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -173,7 +185,58 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, commitDrafts, commit,
+    async completionPlan(projectId) {
+      if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
+      const list = await Promise.all(workspaces.list(projectId).map(async (w) => {
+        const exists = existsSync(w.worktreePath);
+        return {
+          id: w.id, name: w.name, branch: w.branch, worktreePath: w.worktreePath, exists,
+          uncommitted: exists ? await git.uncommittedCount(w.worktreePath).catch(() => 0) : 0,
+          unpushed: exists ? await git.aheadCount(w.worktreePath, w.branch).catch(() => null) : null,
+          agentRunning: service.isAgentRunning(w.id),
+        };
+      }));
+      return { workspaces: list, items: cleanup.list(projectId) };
+    },
+    async completeProject(projectId, choice) {
+      const project = projects.get(projectId);
+      if (!project) throw new Error(`프로젝트가 없습니다: ${projectId}`);
+      if (project.status === 'done') return project;
+      const all = workspaces.list(projectId);
+      const removeWorktrees = new Set(Array.isArray(choice?.removeWorktrees) ? choice.removeWorktrees : []);
+      const removeItems = new Set(Array.isArray(choice?.removeItems) ? choice.removeItems : []);
+      // 이 프로젝트의 것이 아닌 id 는 받지 않는다.
+      const items = cleanup.list(projectId).filter((i) => removeItems.has(i.id));
+      // 먼저 에이전트를 모두 끈다: 지우는 폴더에서 돌고 있으면 안 되고, 완료된 프로젝트에서는 일하지 않는다.
+      for (const w of all) await service.stopAndWait(w.id);
+      const failed: string[] = [];
+      for (const w of all) {
+        if (!removeWorktrees.has(w.id) || !existsSync(w.worktreePath)) continue;
+        const repo = repos.get(w.repoId);
+        try {
+          if (repo) await git.removeWorktree({ repoPath: repo.path, worktreePath: w.worktreePath });
+        } catch (e) { failed.push(`${w.name}: ${e instanceof Error ? e.message : String(e)}`); }
+      }
+      cleanup.remove(items.map((i) => i.id));
+      // 지우지 못한 작업 폴더가 있으면 완료로 넘기지 않는다: 사용자가 이유를 보고 다시 정한다.
+      if (failed.length) throw new Error(`작업 폴더를 지우지 못했습니다. ${failed.join(' / ')}`);
+      const done = projects.setStatus(projectId, 'done');
+      service.emit('changed', projectId);
+      return done;
+    },
+    reopenProject(projectId) {
+      if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
+      const p = projects.setStatus(projectId, 'active');
+      service.emit('changed', projectId);
+      return p;
+    },
+    async removeProject(projectId) {
+      // 워크스페이스는 터미널과 에이전트만 끄고 작업 폴더는 남긴다. 정리 대기에 옮겨 둔 것은 함께 지운다.
+      for (const ws of workspaces.list(projectId)) await service.remove(ws.id, { deleteWorktree: false });
+      cleanup.removeProject(projectId);
+      projects.remove(projectId);
+    },
     models: async (refresh) => (engine.models().length > 0 && !refresh ? engine.models() : service.loadModels()),
     chatView(workspaceId) {
       const snap = chat.snapshot(workspaceId);

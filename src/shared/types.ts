@@ -11,10 +11,16 @@ export type AgentEngine = 'chat' | 'terminal';
  */
 export type WorkspaceStatus = 'stopped' | 'starting' | 'idle' | 'working' | 'waiting_user';
 
+/** active: 진행 중. done: 완료 처리됨 (기록만 볼 수 있고, 다시 열 수 있다) */
+export type ProjectStatus = 'active' | 'done';
+
 export interface Project {
   id: string;
   name: string;
   createdAt: number;
+  status: ProjectStatus;
+  /** 완료 처리한 시각. 진행 중이면 null */
+  completedAt: number | null;
 }
 
 export interface Repo {
@@ -319,4 +325,45 @@ export interface ModelChoice {
   description: string;
   /** 이 모델이 받는 effort 단계. 비어 있으면 effort 를 고를 수 없는 모델이다 */
   efforts: string[];
+}
+
+/** "정리 대기" 에 옮겨 둔 것 하나. 최종 산출물이 아닌 파일을 지우지 않고 저장소 밖으로 옮겨 둔 것이다. */
+export interface CleanupItem {
+  id: string;
+  projectId: string;
+  /** 옮긴 워크스페이스. 지워졌으면 null */
+  workspaceId: string | null;
+  /** 그때의 워크스페이스 이름 (워크스페이스가 지워져도 알아볼 수 있게) */
+  workspaceName: string;
+  /** 작업 폴더 기준의 원래 경로 */
+  path: string;
+  /** 왜 옮겼는지 (에이전트가 적은 것) */
+  reason: string;
+  /** 크기 (바이트). 폴더면 안의 것을 모두 더한 값 */
+  size: number;
+  isDir: boolean;
+  createdAt: number;
+}
+
+/** 프로젝트를 완료 처리하기 전에 보여줄 것 */
+export interface CompletionPlan {
+  workspaces: {
+    id: string; name: string; branch: string; worktreePath: string;
+    /** 작업 폴더가 아직 있는가 */
+    exists: boolean;
+    /** 커밋하지 않은 변경 수 */
+    uncommitted: number;
+    /** push 하지 않은 커밋 수. 원격에 이 브랜치가 없으면 null */
+    unpushed: number | null;
+    agentRunning: boolean;
+  }[];
+  items: CleanupItem[];
+}
+
+/** 완료 처리할 때 사용자가 고른 것 */
+export interface CompletionChoice {
+  /** 작업 폴더를 지울 워크스페이스 */
+  removeWorktrees: string[];
+  /** 지울 정리 대기 항목 */
+  removeItems: string[];
 }

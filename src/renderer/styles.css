@@ -501,3 +501,30 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 .set-toggle.on .set-toggle-text { color: var(--text); }
 .set-foot { color: var(--muted); font-size: 12px; margin: -6px 0 30px; line-height: 1.6; }
 @media (prefers-reduced-motion: reduce) { .set-toggle .knob, .set-toggle .knob::after { transition: none; } }
+
+/* 진행 중 / 완료, 정리 대기, 완료 처리 */
+.tree-done-head { display: flex; align-items: center; gap: 7px; width: 100%; margin-top: 12px; padding: 7px 8px 7px 4px; background: none; border: 0; border-top: 1px solid var(--line); color: var(--muted); cursor: pointer; text-align: left; font-weight: 600; }
+.tree-done-head:hover { color: var(--text); }
+.tree-done-head .count { margin-left: auto; }
+.tree-project.done .pname { color: var(--muted); }
+.tree-project.done .folder { opacity: 0.5; }
+.done-badge { margin-left: 10px; font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 1px 9px; vertical-align: 4px; }
+.done-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: -8px 0 22px; padding: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--muted); border-radius: var(--radius); line-height: 1.6; }
+.cleanup-row { align-items: flex-start; }
+.cleanup-path { font: 12px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; word-break: break-all; }
+.cleanup-meta { color: var(--muted); font-size: 11.5px; margin-top: 1px; }
+.project-end { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 0; }
+.end-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 13px 16px; border-top: 1px solid var(--line); }
+.end-row:first-child { border-top: 0; }
+.end-title { font-weight: 600; margin-bottom: 2px; }
+.end-row .muted { font-size: 12px; line-height: 1.55; max-width: 620px; }
+.complete-lead { color: var(--muted); line-height: 1.6; margin-bottom: 12px; }
+.complete-lead b { color: var(--text); }
+.complete-title { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin: 14px 0 6px; }
+.complete-rows { max-height: 220px; overflow-y: auto; }
+.complete-row { cursor: pointer; align-items: flex-start; }
+.complete-row.off { opacity: 0.55; cursor: default; }
+.complete-row input { margin-top: 3px; }
+.complete-risk { color: var(--warn); font-size: 12px; margin-top: 2px; }
+.complete-risk.bad { color: var(--danger); }
+.complete-summary { margin-right: auto; color: var(--muted); font-size: 12px; }

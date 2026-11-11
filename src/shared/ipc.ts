@@ -1,9 +1,9 @@
 import type {
-  AgentEngine, Artifact, ChatView, CommitResult, ModelChoice, Settings, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, ModelChoice, Settings, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -20,7 +20,20 @@ export interface DureApi {
   projects: {
     list(): Promise<Project[]>;
     create(name: string): Promise<Project>;
+    /** 기록까지 완전히 지운다. 작업 폴더는 남긴다 */
     remove(id: string): Promise<void>;
+    /** 완료된 프로젝트를 다시 연다 */
+    reopen(id: string): Promise<Project>;
+  };
+  /** 정리 대기와 프로젝트 완료 처리 */
+  cleanup: {
+    list(projectId: string): Promise<CleanupItem[]>;
+    /** 옮겨 둔 것을 작업 폴더의 원래 자리로 되돌린다 */
+    restore(id: string): Promise<void>;
+    /** 완료 처리하기 전에 보여줄 것 */
+    plan(projectId: string): Promise<CompletionPlan>;
+    /** 고른 것을 지우고 프로젝트를 완료로 옮긴다 */
+    complete(projectId: string, choice: CompletionChoice): Promise<Project>;
   };
   repos: {
     list(projectId: string): Promise<Repo[]>;
@@ -124,7 +137,8 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.create', 'projects.remove',
+  'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
+  'cleanup.list', 'cleanup.restore', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
   'workspaces.stopAgent', 'workspaces.setEngine',

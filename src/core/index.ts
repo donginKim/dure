@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { openDatabase } from './db';
 import { DeliveryService } from './delivery';
-import { handleHook } from './hooks';
+import { handleHook, isPermissionPrompt } from './hooks';
 import { createGit, type Git } from './git';
 import { MessageService } from './messages';
 import { startMcpServer } from './mcp/server';
@@ -77,7 +77,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         // 사용자가 직접 입력했다: 에이전트끼리의 왕복 횟수를 다시 센다
         onUserPrompt: (w) => messages.userIntervened(w.projectId),
       }, workspace, event, payload);
-      noteHook(workspace.id, event, out !== '');
+      // 승인 요청이 아닌 알림(입력을 기다린다는 알림 등)은 에이전트가 일을 시작했다는 뜻이 아니다.
+      // 그런 알림 때문에 '쉬는 중 확인' 을 지우면 쉬는 에이전트에게 메시지를 전달하지 못한다.
+      if (event !== 'Notification' || isPermissionPrompt(payload)) noteHook(workspace.id, event, out !== '');
       return out;
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools]);

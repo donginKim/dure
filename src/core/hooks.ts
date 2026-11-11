@@ -25,7 +25,7 @@ function isUserTyped(payload: unknown): boolean {
 }
 
 // 실험 10 (spikes/10-notification.mjs): 승인 창이 뜨면 notification_type 이 'permission_prompt' 로 온다.
-function isPermissionPrompt(payload: unknown): boolean {
+export function isPermissionPrompt(payload: unknown): boolean {
   return typeof payload === 'object' && payload !== null
     && (payload as { notification_type?: unknown }).notification_type === 'permission_prompt';
 }

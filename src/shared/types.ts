@@ -1,6 +1,9 @@
 export type AgentKind = 'claude' | 'codex';
 export type PermissionMode = 'ask' | 'bypass';
-export type WorkspaceStatus = 'stopped' | 'idle' | 'working' | 'waiting_user';
+/**
+ * starting: 에이전트를 막 띄웠고 아직 첫 신호가 오지 않았다. 폴더 신뢰 창 같은 선택 창이 떠 있을 수 있다.
+ */
+export type WorkspaceStatus = 'stopped' | 'starting' | 'idle' | 'working' | 'waiting_user';
 
 export interface Project {
   id: string;

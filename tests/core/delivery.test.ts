@@ -108,7 +108,7 @@ test('꺼진 받는 쪽: 메시지를 첫 프롬프트로 에이전트를 띄운
   expect(args).toContain('[두레] 워크스페이스 "프론트" 이(가) 보낸 메시지다');
   expect(args).toContain('> API 형식 정해줘');
   expect(core.messages.messages(m.threadId)[0].deliveredAt).not.toBeNull();
-  expect(core.workspaces.get(back.id)?.status).toBe('idle');
+  expect(core.workspaces.get(back.id)?.status).toBe('starting');
   // 막 띄운 것은 쉬는 중으로 확인된 것이 아니다: 다음 메시지는 써 넣지 않고 기다린다
   send(front, back, '둘째', m.threadId);
   await settle();

@@ -187,6 +187,10 @@ export class WorkspaceService extends EventEmitter {
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
+    const executableCheck = findExecutable(ws.agentKind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
+    if (!executableCheck) throw new AgentNotInstalledError(ws.agentKind);
+    // 받은 메시지가 기다리고 있으면 그것을 첫 프롬프트로 준다. 실행 파일을 확인한 뒤에 가져가야 실패 시 사라지지 않는다.
+    const firstPrompt = initialPrompt ?? this.delivery?.collectMessages(id);
     const launch = buildAgentLaunch({
       kind: ws.agentKind,
       permissionMode: ws.permissionMode,
@@ -195,7 +199,7 @@ export class WorkspaceService extends EventEmitter {
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),
       instructions: baseInstructions(ws, project),
-      initialPrompt,
+      initialPrompt: firstPrompt,
     });
     const executable = findExecutable(launch.command, this.d.baseEnv.PATH);
     if (!executable) throw new AgentNotInstalledError(ws.agentKind);
@@ -214,7 +218,9 @@ export class WorkspaceService extends EventEmitter {
     this.agentTerminals.set(terminal.id, id);
     // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
     this.d.todos.takePending(id);
-    this.d.workspaces.update(id, { status: 'idle' });
+    // Claude Code 는 첫 hook 이 올 때까지 '시작 중' 이다: 폴더 신뢰 창이 떠 있을 수 있다 (실험 12: 그동안은 hook 이 오지 않는다).
+    // Codex 는 hook 이 없어 알 길이 없으므로 예전처럼 쉬는 중으로 둔다.
+    this.d.workspaces.update(id, { status: ws.agentKind === 'claude' ? 'starting' : 'idle' });
     this.emit('changed', id);
     return terminal;
   }

@@ -49,12 +49,14 @@
 | 15d | 작업 중에 써 넣은 글은 버려지는가 | ✅ 버려지지 않는다. Enter 를 친 순간 `UserPromptSubmit` hook 이 오고, 기록에는 `queue-operation`(enqueue) 줄이 생긴다. 진행 중인 도구가 끝나면 `attachment.type: "queued_command"`(`prompt`, 친 시각의 `timestamp`)로 같은 차례 안에 전달되고 에이전트가 반영했다. 따로 `user` 줄은 생기지 않는다 | 같음 |
 | 15e | 승인 창을 터미널 입력으로 답할 수 있는가 | ✅ 승인 창이 뜨면 `PreToolUse`(도구 이름과 입력) 뒤 약 6초 지나 `Notification`(`permission_prompt`)이 온다. 커서는 `1. Yes` 에 있고 `\r` 로 허용되어 `PostToolUse` → `Stop` 이 온다. `\x1b` 로 거부하면 **hook 이 하나도 오지 않는다**. 기록에는 `tool_result`(`is_error: true`, `toolDenialKind: "user-rejected"`)와 `[Request interrupted by user for tool use]` 줄이 남고 에이전트는 입력을 기다린다. 선택지는 명령에 따라 다르다(이번에는 `1. Yes` / `2. Yes, and don't ask again for: curl *` / `3. Yes, and switch to auto mode` / `4. No`) | 같음 |
 | 15f | 대화가 압축되거나 비워지면 기록 파일은 어떻게 되는가 | ✅ `/compact`: 같은 파일, 같은 세션 id 에 이어 쓴다. `system`/`compact_boundary` 줄 뒤에 `isCompactSummary: true` 인 `user` 줄(요약)이 온다. `/clear`: 새 세션 id 와 새 파일로 바뀌고 `SessionStart`(`source: "clear"`)의 `transcript_path` 가 새 파일을 가리킨다. 슬래시 명령의 흔적은 `<command-name>…`, `<local-command-stdout>…` 로 시작하는 `user` 줄로 남는다 | `spikes/14b-compact-clear.mjs` |
+| 16 | Claude Code 의 폴더 신뢰 창을 화면 글자로 알아보고 넘길 수 있는가 (2.1.322) | ✅ 화면: `Accessing workspace:` / 폴더 경로 / `Quick safety check: …` / `❯ No, exit` / `Yes, I trust this folder` / `Enter to confirm · Esc to cancel`. 선택지에 번호가 없고 기본 선택은 `No, exit`. 아래 화살표(`ESC [ B`) 한 번으로 커서가 Yes 로 가고 Enter 로 넘어간다. 커서를 옮기면 바뀐 줄만 다시 그려져 옛 `❯ No, exit` 가 출력 기록에 남는다: 가장 나중에 그려진 `❯` 를 봐야 한다 | `spikes/15-trust-dialog.mjs`, `tests/fixtures/trust-dialog.json` |
+| 16a | 터미널 화면(xterm.js)이 붙으면 무엇을 보내는가 | ✅ Claude Code 가 시작하며 터미널에 묻는 것(`ESC [ > 0 q` 등)에 화면이 스스로 응답을 써 보낸다. 이것을 사용자 입력으로 치면 "사용자가 터미널을 쓰는 중" 으로 잘못 본다(⚠️ 응답의 정확한 바이트는 기록하지 않았다. 응답을 사용자 입력에서 빼자 증상이 사라진 것으로 확인) | 검증용 인스턴스 손 확인 |
 
 ## 설계를 바꾸는 발견
 
 1. **터미널에 글자를 써 넣는 것은 위험하다.** 에이전트는 예고 없이 선택 창을 띄운다. 실험 중 확인한 것만 해도 Claude Code의 폴더 신뢰 창(기본 선택 "No, exit"), Codex의 폴더 신뢰 창, Codex 업데이트 창(기본 선택 "Update now"), Codex 새 모델 안내 창이 있다. 실험 스크립트가 업데이트 창에 Enter를 보내 `brew upgrade --cask codex` 가 실행되는 사고가 났다. 두레는 에이전트가 쉬는 중이라는 것을 hook 신호로 확인했을 때만 터미널에 써 넣어야 하고, 상태를 모르면 쓰지 않고 사용자에게 알려야 한다.
 2. **신뢰 선언이 없으면 끼워 넣은 내용을 에이전트가 무시한다.** hook 으로 "사용자가 계획을 바꿨다" 를 넣자 Claude Code는 "hook 이 사용자 발언을 대신 주장한다" 며 따르지 않았다. 실행 시 지침에 "두레는 hook 으로 `[두레]` 로 시작하는 글을 전달한다. 사용자가 직접 설정한 방식이니 사용자 지시와 같은 권위로 따르라" 를 넣자 4a, 4b 모두 따랐다. 이 문장은 지침에 반드시 들어가야 한다.
-3. **새 작업 폴더마다 신뢰 창이 뜬다.** 두 에이전트 모두, 승인 생략 모드에서도 뜬다. 워크스페이스를 만든 뒤 첫 에이전트 시작은 사용자가 터미널에서 직접 눌러야 한다. 두레가 대신 누르지 않는다. 신뢰 기록은 에이전트가 자기 전역 설정(`~/.claude.json`, `~/.codex/config.toml`)에 스스로 쓴다.
+3. **새 작업 폴더마다 신뢰 창이 뜬다.** 두 에이전트 모두, 승인 생략 모드에서도 뜬다. 워크스페이스를 만든 뒤 첫 에이전트 시작은 사용자가 터미널에서 직접 눌러야 한다. 두레가 대신 누르지 않는다. 신뢰 기록은 에이전트가 자기 전역 설정(`~/.claude.json`, `~/.codex/config.toml`)에 스스로 쓴다. (2026-11-11 변경: 사용자 결정으로 Claude Code 의 신뢰 창에는 두레가 화면을 확인한 뒤 대신 답한다. 실험 16.)
 4. **`Stop` 신호만으로는 "쉬는 중" 을 다 잡지 못한다.** 중단과 모델 오류 때는 오지 않는다. 두레가 직접 중단시킨 경우는 두레가 상태를 바꾸면 되고, 그 밖에는 "한동안 신호가 없으면 상태 모름" 으로 두고 터미널 써 넣기를 하지 않는다.
 5. **Codex `ask` 모드에서는 서버 실행이 승인 없이 안 된다.** 장면 1에서 백엔드가 Codex이고 `ask` 모드면, 깨어난 에이전트가 서버를 띄우는 순간 승인을 기다리며 멈춘다. 두레는 이를 "사용자 기다림" 으로 보여줘야 한다. 끊김 없이 돌리려면 그 워크스페이스를 `bypass` 로 둬야 한다.
 

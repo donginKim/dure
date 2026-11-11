@@ -2,6 +2,8 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
+import { CommitDraftStore } from './commitDrafts';
+import { CommitService } from './commitService';
 import { openDatabase } from './db';
 import { DeliveryService } from './delivery';
 import { handleHook, isPermissionPrompt } from './hooks';
@@ -9,6 +11,7 @@ import { createGit, type Git } from './git';
 import { MessageService } from './messages';
 import { startMcpServer } from './mcp/server';
 import { artifactTools } from './mcp/tools/artifact';
+import { commitTools } from './mcp/tools/commit';
 import { messageTools } from './mcp/tools/message';
 import { todoTools } from './mcp/tools/todo';
 import { workspaceTools } from './mcp/tools/workspace';
@@ -25,6 +28,8 @@ export interface Core {
   todos: TodoService;
   messages: MessageService;
   delivery: DeliveryService;
+  commitDrafts: CommitDraftStore;
+  commit: CommitService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -59,13 +64,14 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   const todos = new TodoService(db);
   const messages = new MessageService(db);
+  const commitDrafts = new CommitDraftStore(db);
   const pty = new PtyManager();
   const git = createGit(o.baseEnv);
   // hook 으로 상태가 바뀌면 서비스의 'changed' 로 내보낸다. 서비스는 MCP 주소가 정해진 뒤에 만들어지므로 나중에 잇는다.
   let onStatus: (workspaceId: string) => void = () => undefined;
   let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
   const mcp = await startMcpServer({
-    workspaces, projects, repos, todos, messages,
+    workspaces, projects, repos, todos, messages, commitDrafts,
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get delivery() { return delivery; },
     onHook: (workspace, event, payload) => {
@@ -86,7 +92,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event !== 'Notification' || isPermissionPrompt(payload)) noteHook(workspace.id, event, out !== '');
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });
@@ -113,9 +119,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   onStatus = (id) => service.emit('changed', id);
   noteHook = (id, event, blocked) => service.noteHook(id, event, blocked);
 
+  const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages });
+
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, pty, git, mcpUrl: mcp.url,
+    projects, repos, workspaces, service, todos, messages, delivery, commitDrafts, commit, pty, git, mcpUrl: mcp.url,
     async addRepo(projectId, path) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);

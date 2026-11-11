@@ -90,7 +90,11 @@ export class MessageService extends EventEmitter {
     return { paused: r?.paused === 1, capped: r?.capped === 1, agentStreak: r?.agent_streak ?? 0 };
   }
 
-  send(i: { projectId: string; from: Sender; toWorkspaceId: string; body: string; threadId?: string; artifactIds?: string[] }): Message {
+  send(i: {
+    projectId: string; from: Sender; toWorkspaceId: string; body: string; threadId?: string; artifactIds?: string[];
+    /** 새 스레드의 제목. 안 주면 본문 첫 줄 */
+    title?: string;
+  }): Message {
     const body = clean(i.body).trim();
     if (!body) throw new Error('메시지 내용을 입력하세요.');
     if (body.length > MAX_BODY) throw new Error(`메시지가 너무 깁니다 (최대 ${MAX_BODY}자). 긴 내용은 artifact_publish 로 자료로 올리고 붙여라.`);
@@ -114,7 +118,7 @@ export class MessageService extends EventEmitter {
       this.ensureFlow(i.projectId);
       if (!i.threadId) {
         this.db.prepare('INSERT INTO threads (id, project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-          .run(threadId, i.projectId, body.split('\n')[0].slice(0, 60), now, now);
+          .run(threadId, i.projectId, oneLine(i.title ?? body.split('\n')[0], 60), now, now);
       }
       this.db.prepare(
         `INSERT INTO messages (id, thread_id, project_id, from_workspace_id, to_workspace_id, body, artifact_ids, created_at)

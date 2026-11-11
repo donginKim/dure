@@ -22,7 +22,7 @@ async function setup() {
   const other = repos.add(project.id, '/tmp/shop-api');
   const hookCalls: { ws: string; event: string; payload: unknown }[] = [];
   const onHook = (w: { name: string }, event: string, payload: unknown): string => { hookCalls.push({ ws: w.name, event, payload }); return event === 'Stop' ? '{"decision":"block","reason":"r"}' : ''; };
-  const server = await startMcpServer({ workspaces, projects, repos, todos: undefined as never, messages: undefined as never, delivery: undefined as never, onHook }, [workspaceTools]);
+  const server = await startMcpServer({ workspaces, projects, repos, todos: undefined as never, messages: undefined as never, delivery: undefined as never, commitDrafts: undefined as never, onHook }, [workspaceTools]);
   return { server, project, front, back, repo, other, hookCalls };
 }
 
@@ -80,7 +80,7 @@ test('서버는 127.0.0.1 에만 묶이고 url 이 그 포트를 가리킨다', 
 });
 
 test('close 뒤에는 접속이 거부된다', async () => {
-  const extra = await startMcpServer({ workspaces: undefined as never, projects: undefined as never, repos: undefined as never, todos: undefined as never, messages: undefined as never, delivery: undefined as never, onHook: () => '' }, []);
+  const extra = await startMcpServer({ workspaces: undefined as never, projects: undefined as never, repos: undefined as never, todos: undefined as never, messages: undefined as never, delivery: undefined as never, commitDrafts: undefined as never, onHook: () => '' }, []);
   await extra.close();
   await expect(fetch(extra.url, { method: 'POST' })).rejects.toThrow();
 });

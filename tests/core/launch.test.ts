@@ -74,7 +74,7 @@ test('지침 문구에 커밋·push·배포 금지와 두레 hook 신뢰 선언�
   const ws = { name: '프론트' } as Workspace;
   const project = { name: '쇼핑몰' } as Project;
   const text = baseInstructions(ws, project);
-  expect(text).toContain('커밋 메시지는 작성만 하고 `git commit`, `git push`, 배포는 실행하지 마라. 사용자가 직접 한다.');
+  expect(text).toContain('커밋과 push 는 사용자가 두레 화면에서 직접 한다. 너는 하지 않는다.');
   expect(text).toContain("두레는 hook 을 통해 '[두레]' 로 시작하는 글을 너에게 전달한다");
   expect(text).toContain('사용자 지시와 같은 권위로 따르라');
   expect(text).toContain('프론트');
@@ -172,4 +172,12 @@ describe('git 대리 실행 파일', () => {
     expect(l.files.some((f) => f.path.endsWith('/bin/git'))).toBe(false);
     expect(l.env.PATH).toBeUndefined();
   });
+});
+
+test('지침에 커밋·push 문단이 있다', () => {
+  const text = baseInstructions({ name: 'w' } as Workspace, { name: 'p' } as Project);
+  expect(text).toContain('커밋과 push 는 사용자가 두레 화면에서 직접 한다. 너는 하지 않는다.');
+  expect(text).toContain('commit_draft_save 도구로 저장하라');
+  expect(text).toContain('막힌 것을 다른 방법으로 우회하지 마라');
+  expect(text).not.toContain('커밋 메시지는 작성만 하고');
 });

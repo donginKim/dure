@@ -110,8 +110,8 @@ export interface DureApi {
     update(patch: Partial<Settings>): Promise<Settings>;
     /** 기본값 */
     defaults(): Promise<Settings>;
-    /** 고를 수 있는 모델. 채팅 방식의 에이전트가 한 번이라도 떠야 채워진다 */
-    models(): Promise<ModelChoice[]>;
+    /** 고를 수 있는 모델. 받아 둔 것이 없으면 Claude Code 에게 물어 온다 (몇 초 걸린다). refresh: 다시 묻는다 */
+    models(refresh?: boolean): Promise<ModelChoice[]>;
     /** 폴더를 고르는 창을 띄운다 */
     pickFolder(): Promise<string | null>;
   };

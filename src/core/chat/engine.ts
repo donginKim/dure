@@ -64,6 +64,11 @@ export interface EngineHooks {
 
 const DENIED = '사용자가 거부했습니다.';
 
+function toModels(raw: unknown): ModelChoice[] {
+  return (Array.isArray(raw) ? raw : []).flatMap((m): ModelChoice[] => (isObj(m) && str(m.value)
+    ? [{ value: str(m.value), name: str(m.displayName) || str(m.value), description: str(m.description).slice(0, 200) }] : []));
+}
+
 function questionsOf(input: unknown): ChatQuestion['questions'] {
   const raw = isObj(input) && Array.isArray(input.questions) ? input.questions : [];
   return raw.flatMap((q) => (isObj(q) && str(q.question) ? [{
@@ -86,6 +91,37 @@ export class ChatEngine extends EventEmitter {
 
   models(): ModelChoice[] {
     return this.lastModels;
+  }
+
+  /** 다른 곳(저장해 둔 것)에서 온 목록으로 채운다. 에이전트가 새로 알려 주면 그것으로 바뀐다. */
+  seedModels(models: ModelChoice[]): void {
+    if (this.lastModels.length === 0) this.lastModels = models;
+  }
+
+  private probing: Promise<ModelChoice[]> | null = null;
+
+  /**
+   * 고를 수 있는 모델 목록을 Claude Code 에게 물어 온다. 에이전트를 띄운 적이 없어도 설정 화면이 목록을 보이게 하려는 것이다.
+   * 잠깐 띄워 초기화 정보만 받고 끈다: 말을 걸지 않으므로 모델을 부르지 않는다.
+   */
+  probeModels(spec: SessionSpawn, timeoutMs = 20_000): Promise<ModelChoice[]> {
+    if (this.closed) return Promise.resolve(this.lastModels);
+    this.probing ??= new Promise<ModelChoice[]>((resolve, reject) => {
+      const session = new AgentSession(spec);
+      let done = false;
+      const finish = (fn: () => void): void => { if (done) return; done = true; this.probing = null; session.kill(); fn(); };
+      session.on('exit', (_code: number | null, stderr: string) => finish(() => reject(new Error(stderr.trim().split('\n').pop() || 'Claude Code 가 목록을 주기 전에 끝났습니다.'))));
+      session.control<{ models?: unknown }>({ subtype: 'initialize' }, timeoutMs).then((r) => {
+        const models = toModels(r?.models);
+        finish(() => {
+          if (models.length === 0) { reject(new Error('Claude Code 가 모델 목록을 주지 않았습니다.')); return; }
+          this.lastModels = models;
+          this.emit('models', models);
+          resolve(models);
+        });
+      }).catch((e: Error) => finish(() => reject(e)));
+    });
+    return this.probing;
   }
 
   constructor(private readonly hooks: EngineHooks) {
@@ -119,9 +155,8 @@ export class ChatEngine extends EventEmitter {
     // 쓸 수 있는 슬래시 명령과 그 설명을 받아 둔다. 실패해도 대화에는 지장이 없다.
     session.control<{ commands?: unknown; models?: unknown }>({ subtype: 'initialize' }).then((r) => {
       // 고를 수 있는 모델 목록도 함께 온다. 설정 화면이 쓴다.
-      const models = (Array.isArray(r?.models) ? r.models : []).flatMap((m): ModelChoice[] => (isObj(m) && str(m.value)
-        ? [{ value: str(m.value), name: str(m.displayName) || str(m.value), description: str(m.description).slice(0, 200) }] : []));
-      if (models.length) this.lastModels = models;
+      const models = toModels(r?.models);
+      if (models.length) { this.lastModels = models; this.emit('models', models); }
       const list = Array.isArray(r?.commands) ? r.commands : [];
       l.commands = list.flatMap((c): SlashCommand[] => (isObj(c) && str(c.name) ? [{ name: str(c.name), description: str(c.description).slice(0, 300), argumentHint: str(c.argumentHint) }] : []));
       this.emit('changed', workspaceId);

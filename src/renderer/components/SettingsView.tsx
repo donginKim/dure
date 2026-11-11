@@ -63,20 +63,31 @@ export function SettingsView() {
   const [models, setModels] = useState<ModelChoice[]>([]);
   const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
   const [saved, setSaved] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState('');
+
+  // 모델 목록: 받아 둔 것이 있으면 곧바로 오고, 없으면 Claude Code 에게 물어 오느라 몇 초 걸린다.
+  const loadModels = useCallback((refresh = false) => {
+    setModelsLoading(true);
+    setModelsError('');
+    window.dure.settings.models(refresh)
+      .then((m) => setModels(m))
+      .catch((e: Error) => setModelsError(e.message))
+      .finally(() => setModelsLoading(false));
+  }, []);
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([window.dure.settings.get(), window.dure.settings.defaults(), window.dure.settings.models()]).then(([s, d, m]) => {
+    void Promise.all([window.dure.settings.get(), window.dure.settings.defaults()]).then(([s, d]) => {
       if (!alive) return;
-      setSettings(s); setDefaults(d); setModels(m);
+      setSettings(s); setDefaults(d);
     });
+    loadModels();
     const off = window.dure.onChanged((topic) => {
       if (topic === 'settings') void window.dure.settings.get().then((s) => { if (alive) setSettings(s); });
-      // 채팅 방식의 에이전트가 뜨면 모델 목록이 채워진다.
-      if (topic === 'chat') void window.dure.settings.models().then((m) => { if (alive && m.length) setModels(m); });
     });
     return () => { alive = false; off(); };
-  }, []);
+  }, [loadModels]);
 
   const save = useCallback(<K extends Key>(key: K, value: Settings[K]) => {
     window.dure.settings.update({ [key]: value } as Partial<Settings>).then((s) => {
@@ -135,16 +146,16 @@ export function SettingsView() {
         <div className="set-box">
           <Row
             label="모델" {...row('claudeModel')}
-            help={models.length ? '다음에 시작하는 에이전트부터 적용됩니다. "Claude Code 의 기본" 은 Claude Code 에 정해 둔 모델을 그대로 씁니다.' : '채팅 방식의 에이전트를 한 번 시작하면 고를 수 있는 모델 목록이 여기에 뜹니다. 그 전에는 이름을 직접 쓸 수 있습니다.'}
+            error={errors.claudeModel ?? (modelsError ? `모델 목록을 받아오지 못했습니다: ${modelsError}` : undefined)}
+            help='다음에 시작하는 에이전트부터 적용됩니다. "Claude Code 의 기본" 은 Claude Code 에 정해 둔 모델을 그대로 씁니다.'
           >
-            {models.length > 0 && (
-              <select className="set-select" value={modelKnown ? s.claudeModel : '__other'} onChange={(e) => { if (e.target.value !== '__other') save('claudeModel', e.target.value); }}>
-                <option value="">Claude Code 의 기본</option>
-                {models.filter((m) => m.value !== 'default').map((m) => <option key={m.value} value={m.value}>{m.name}{m.description ? ` — ${m.description}` : ''}</option>)}
-                {!modelKnown && <option value="__other">{s.claudeModel} (직접 쓴 이름)</option>}
-              </select>
-            )}
-            <TextInput value={s.claudeModel} placeholder={models.length ? '이름 직접 쓰기' : '예: opus'} onCommit={(v) => save('claudeModel', v)} />
+            <select className="set-select" value={s.claudeModel} disabled={modelsLoading && models.length === 0} onChange={(e) => save('claudeModel', e.target.value)}>
+              <option value="">{modelsLoading && models.length === 0 ? '목록을 받아오는 중…' : 'Claude Code 의 기본'}</option>
+              {models.filter((m) => m.value !== 'default').map((m) => <option key={m.value} value={m.value}>{m.name}{m.description ? ` — ${m.description}` : ''}</option>)}
+              {/* 저장된 모델이 목록에 없으면(목록이 바뀜) 그대로 보여 준다 */}
+              {!modelKnown && <option value={s.claudeModel}>{s.claudeModel}</option>}
+            </select>
+            <button className="btn ghost" disabled={modelsLoading} onClick={() => loadModels(true)} title="Claude Code 에게 목록을 다시 묻습니다">{modelsLoading ? '받는 중…' : '새로 고침'}</button>
           </Row>
           <Row label="추가 인자" help="에이전트를 띄울 때 더 줄 인자입니다. 예: --effort high. 두레가 직접 정하는 것(권한 모드, 연결 설정, 입출력 방식, 모델)은 넣을 수 없습니다." {...row('claudeArgs')}>
             <TextInput wide value={s.claudeArgs} placeholder="--effort high" onCommit={(v) => save('claudeArgs', v)} />

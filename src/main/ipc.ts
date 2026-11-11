@@ -117,7 +117,7 @@ export function registerIpc(core: Core): () => void {
     'settings.get': () => core.settings.get(),
     'settings.update': (patch: Partial<Settings>) => core.settings.update(patch),
     'settings.defaults': () => ({ ...DEFAULT_SETTINGS }),
-    'settings.models': () => core.models(),
+    'settings.models': (refresh?: boolean) => core.models(refresh === true),
     'settings.pickFolder': async () => {
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       const res = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], title: '폴더 선택' });

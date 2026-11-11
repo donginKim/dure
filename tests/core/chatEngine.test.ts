@@ -23,7 +23,7 @@ let waiting = null; let busy = null; let outstanding = 0;
 require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
   const m = JSON.parse(line);
   if (m.type === 'control_request') {
-    if (m.request.subtype === 'initialize') return out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: { commands: [{ name: 'compact', description: '대화를 줄인다', argumentHint: '' }, { name: 'model', description: '모델을 바꾼다', argumentHint: '<name>' }, { bad: 1 }] } } });
+    if (m.request.subtype === 'initialize') return out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: { commands: [{ name: 'compact', description: '대화를 줄인다', argumentHint: '' }, { name: 'model', description: '모델을 바꾼다', argumentHint: '<name>' }, { bad: 1 }], models: [{ value: 'default', displayName: 'Default (recommended)', description: '기본' }, { value: 'claude-opus-5-5', displayName: 'Opus 5.5', description: '복잡한 일' }, { nope: true }] } } });
     if (m.request.subtype === 'interrupt') {
       out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: { still_queued: [] } } });
       if (busy) { clearTimeout(busy); busy = null; out({ type: 'result', subtype: 'error_during_execution' }); }
@@ -547,9 +547,38 @@ test('"커밋 뒤 알리기" 를 끄면 커밋해도 에이전트에게 메시�
   expect(core.messages.threads(projectId).length).toBe(1);
 });
 
-test('모델 목록: 에이전트가 알려 준 것을 설정 화면용으로 간추린다', async () => {
-  expect(core.models()).toEqual([]);
-  await started('models');
-  // 가짜 에이전트는 모델 목록을 주지 않는다: 빈 목록 그대로다 (던지지 않는다)
-  expect(core.models()).toEqual([]);
+test('모델 목록: 에이전트를 띄운 적이 없어도 Claude Code 에게 물어 받아 오고, 저장해 두었다가 다음에 곧바로 쓴다', async () => {
+  expect(core.engine.models()).toEqual([]);
+  const models = await core.models();
+  expect(models).toEqual([{ value: 'default', name: 'Default (recommended)', description: '기본' }, { value: 'claude-opus-5-5', name: 'Opus 5.5', description: '복잡한 일' }]);
+  // 물어 오느라 띄운 것은 워크스페이스의 에이전트가 아니고, 남아 있지 않다
+  expect(core.workspaces.list(projectId)).toEqual([]);
+  // 두 번째는 받아 둔 것을 쓴다 (다시 띄우지 않는다)
+  expect(await core.models()).toEqual(models);
+  expect(core.settings.savedModels()).toEqual(models);
+  // 다시 켜도 곧바로 있다
+  await core.dispose();
+  await boot();
+  expect(core.engine.models()).toEqual(models);
+  // 설정 값에는 섞이지 않는다
+  expect(Object.keys(core.settings.get())).not.toContain('_models');
+});
+
+test('모델 목록: 동시에 여러 번 물어도 한 번만 띄운다. 새로 고침은 다시 묻는다', async () => {
+  const [a, b] = await Promise.all([core.models(), core.models()]);
+  expect(a).toBe(b);
+  expect((await core.models(true)).length).toBe(2);
+});
+
+test('모델 목록: Claude Code 가 오류로 끝나면 이유를 알려 준다', async () => {
+  await core.dispose();
+  extraEnv = { FAKE_CRASH: '1' };
+  await boot();
+  await expect(core.models()).rejects.toThrow('로그인이 필요합니다');
+});
+
+test('채팅 방식의 에이전트가 뜨면 그때 받은 모델 목록도 저장된다', async () => {
+  await started('models-live');
+  await until(() => core.engine.models().length === 2);
+  expect(core.settings.savedModels().length).toBe(2);
 });

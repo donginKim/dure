@@ -90,7 +90,7 @@ const api: DureApi = {
     get: () => call('settings.get'),
     update: (patch) => call('settings.update', patch),
     defaults: () => call('settings.defaults'),
-    models: () => call('settings.models'),
+    models: (refresh) => call('settings.models', refresh),
     pickFolder: () => call('settings.pickFolder'),
   },
   artifacts: {

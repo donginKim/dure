@@ -117,6 +117,41 @@ export interface ProjectFlow {
 /** 받는 워크스페이스에 메시지가 어떻게 전달될지 */
 export type DeliveryState = 'none' | 'next-hook' | 'waking' | 'starting' | 'waiting-unknown' | 'waiting-codex' | 'held';
 
+/** 작업 폴더에서 바뀐 파일 하나 */
+export interface ChangedFile {
+  /** 저장소 기준 경로 */
+  path: string;
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked';
+  /** 이름이 바뀐 경우 옛 경로 */
+  from?: string;
+  /** 추가·삭제된 줄 수. 이진 파일이나 추적 안 된 파일은 null */
+  added: number | null;
+  removed: number | null;
+}
+
+/** 에이전트가 써 둔 커밋 메시지 초안. 워크스페이스마다 하나다. */
+export interface CommitDraft {
+  workspaceId: string;
+  message: string;
+  updatedAt: number;
+}
+
+export interface CommitResult {
+  hash: string;
+  subject: string;
+}
+
+/** 커밋 창이 보여주는 것 */
+export interface CommitState {
+  branch: string;
+  files: ChangedFile[];
+  draft: CommitDraft | null;
+  /** origin 주소. 없으면 null */
+  remoteUrl: string | null;
+  /** 아직 push 하지 않은 커밋 수. 원격에 이 브랜치가 없으면 null */
+  ahead: number | null;
+}
+
 export interface TerminalInfo {
   id: string;
   workspaceId: string;

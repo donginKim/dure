@@ -9,6 +9,7 @@ import type { Git } from './git';
 import type { PtyManager } from './pty';
 import { slugify, uniqueSlug } from './slug';
 import type { ProjectStore, RepoStore, WorkspaceStore } from './stores';
+import type { TodoService } from './todos';
 
 export type { CreateWorkspaceInput };
 
@@ -33,6 +34,7 @@ export interface WorkspaceServiceDeps {
   repos: RepoStore;
   workspaces: WorkspaceStore;
   pty: PtyManager;
+  todos: TodoService;
   git: Git;
   mcpUrl: string;
   dataDir: string;
@@ -149,6 +151,7 @@ export class WorkspaceService extends EventEmitter {
       if (repo) await this.d.git.removeWorktree({ repoPath: repo.path, worktreePath: ws.worktreePath });
     }
     this.d.pty.forgetExited(id);
+    this.d.todos.removeWorkspace(id);
     this.d.workspaces.remove(id);
     rmSync(this.configDir(id), { recursive: true, force: true });
     this.emit('changed', id);

@@ -248,3 +248,12 @@ test('repoStatus: 정상 저장소는 ok 와 현재 브랜치, 사라진 폴더�
   rmSync(join(plain, '.git'), { recursive: true, force: true });
   expect(await core.repoStatus(plainId)).toEqual({ ok: false, reason: 'git 저장소가 아닙니다.' });
 });
+
+test('워크스페이스를 지우면 서비스가 그 TODO 를 정리한다', async () => {
+  const ws = await create({ name: 'todo-clean' });
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  expect(core.todos.pendingCount(ws.id)).toBe(1);
+  await core.service.remove(ws.id, { deleteWorktree: true });
+  expect(core.todos.listProject(projectId)).toEqual([]);
+  expect(core.todos.pendingCount(ws.id)).toBe(0);
+});

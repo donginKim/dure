@@ -34,6 +34,29 @@ export interface Workspace {
   createdAt: number;
 }
 
+export type TodoStatus = 'todo' | 'doing' | 'done' | 'cancelled';
+export type TodoAssignee = 'agent' | 'user';
+export type Actor = 'agent' | 'user';
+
+export interface Todo {
+  id: string;
+  projectId: string;
+  /** null 이면 프로젝트 범위 항목 */
+  workspaceId: string | null;
+  title: string;
+  detail: string;
+  status: TodoStatus;
+  assignee: TodoAssignee;
+  position: number;
+  /** 값이 바뀔 때마다 1 오른다. 에이전트는 자기가 읽은 rev 를 내야 고칠 수 있다. */
+  rev: number;
+  updatedBy: Actor;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type TodoPatch = Partial<Pick<Todo, 'title' | 'detail' | 'status' | 'assignee'>>;
+
 export interface TerminalInfo {
   id: string;
   workspaceId: string;

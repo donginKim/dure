@@ -8,6 +8,7 @@ import { startMcpServer } from './mcp/server';
 import { workspaceTools } from './mcp/tools/workspace';
 import { PtyManager } from './pty';
 import { ProjectStore, RepoStore, WorkspaceStore } from './stores';
+import { TodoService } from './todos';
 import { WorkspaceService } from './workspaceService';
 
 export interface Core {
@@ -15,6 +16,7 @@ export interface Core {
   repos: RepoStore;
   workspaces: WorkspaceStore;
   service: WorkspaceService;
+  todos: TodoService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -47,16 +49,17 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     }
   }
 
+  const todos = new TodoService(db);
   const pty = new PtyManager();
   const git = createGit(o.baseEnv);
   const mcp = await startMcpServer({ workspaces, projects, repos }, [workspaceTools]);
   const service = new WorkspaceService({
-    projects, repos, workspaces, pty, git, mcpUrl: mcp.url, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
+    projects, repos, workspaces, pty, todos, git, mcpUrl: mcp.url, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, pty, git, mcpUrl: mcp.url,
+    projects, repos, workspaces, service, todos, pty, git, mcpUrl: mcp.url,
     async addRepo(projectId, path) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);

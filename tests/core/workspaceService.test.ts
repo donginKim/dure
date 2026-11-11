@@ -583,12 +583,45 @@ describe('채팅에서 보내기와 승인 응답', () => {
     await until(() => core.pty.buffer(terminal.id).split('make login page').length === 3);
   });
 
-  test('sendUserInput: 작업 중에도 보낼 수 있다', async () => {
+  test('sendUserInput: 작업 중에는 터미널에 쓰지 않고 맡아 두었다가 다음 hook 응답에 싣는다', async () => {
+    // 승인 창이 떴다는 알림은 창이 뜨고 몇 초 뒤에 온다. 그 틈에 써 넣으면 Enter 가 "허용" 으로 들어간다.
     const { ws, terminal } = await agent('chat-send-working');
-    await runHook(hookOf(ws.id), 'PreToolUse');
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'rm -rf x' } }));
     expect(core.workspaces.get(ws.id)?.status).toBe('working');
-    await core.service.sendUserInput(ws.id, '이것도');
-    await until(() => core.pty.buffer(terminal.id).includes('이것도'));
+    const before = core.pty.buffer(terminal.id);
+    let intervened = 0;
+    const original = core.messages.userIntervened.bind(core.messages);
+    core.messages.userIntervened = (id: string) => { intervened++; return original(id); };
+    await core.service.sendUserInput(ws.id, 'also this');
+    await quiet();
+    expect(core.pty.buffer(terminal.id)).toBe(before); // 글자도 Enter 도 들어가지 않았다
+    expect(core.chat.snapshot(ws.id).queued.map((q) => q.text)).toEqual(['also this']);
+    expect(intervened).toBe(1);
+    const out = await runHook(hookOf(ws.id), 'PostToolUse');
+    expect(JSON.parse(out).hookSpecificOutput.additionalContext).toBe('[두레] 사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:\n> also this');
+    expect(core.chat.snapshot(ws.id).queued).toEqual([]);
+  });
+
+  test('sendUserInput: 전달되지 못하고 남은 글은 쉬는 중에 보내는 글 앞에 붙어 나간다', async () => {
+    const { ws, terminal } = await agent('chat-send-leftover');
+    await runHook(hookOf(ws.id), 'PreToolUse');
+    await core.service.sendUserInput(ws.id, 'left over');
+    core.service.interrupt(ws.id); // 중단하면 hook 이 오지 않아 전달되지 못한다
+    expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+    expect(core.chat.snapshot(ws.id).queued.length).toBe(1);
+    await core.service.sendUserInput(ws.id, 'new one');
+    await until(() => core.pty.buffer(terminal.id).includes('left over'));
+    expect(core.pty.buffer(terminal.id)).toMatch(/\^\[\[200~left over/);
+    expect(core.chat.snapshot(ws.id).queued).toEqual([]);
+  });
+
+  test('sendUserInput: 쉬는 중에 보내면 곧바로 작업 중이 되어 같은 입력칸에 겹쳐 쓰지 못한다', async () => {
+    const { ws } = await agent('chat-send-serial');
+    await runHook(hookOf(ws.id), 'Stop');
+    const first = core.service.sendUserInput(ws.id, 'one');
+    expect(core.workspaces.get(ws.id)?.status).toBe('working');
+    expect(core.service.isConfirmedIdle(ws.id)).toBe(false); // 깨우기도 끼어들지 못한다
+    await first;
   });
 
   test('sendUserInput: 여러 줄은 붙여넣기 묶음으로 들어간다', async () => {

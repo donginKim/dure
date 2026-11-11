@@ -74,3 +74,8 @@ test('isTerminalReply: 사람이 누른 키와 붙여 넣은 글은 거짓', () 
     expect(isTerminalReply(key)).toBe(false);
   }
 });
+
+test('이름이 이 폴더로 시작하는 다른 폴더를 묻는 창에는 답하지 않는다', () => {
+  expect(trustPrompt(dialog('no', `${FOLDER}-2`), [FOLDER])).toBe('none');
+  expect(trustPrompt(dialog('no', `${FOLDER}/sub`), [FOLDER])).toBe('none');
+});

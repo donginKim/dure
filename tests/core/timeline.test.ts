@@ -105,3 +105,9 @@ test('표본 파일로 만든 대화의 흐름', () => {
   expect(steps.map((s) => s.status)).toEqual(['done', 'done', 'done', 'done', 'denied']);
   expect(steps[0]!.summary).toBe('README.md 읽음');
 });
+
+test('채팅으로 보낸 글의 전달 꼭지는 내 말풍선이 된다', () => {
+  const t = new Timeline();
+  t.push([{ type: 'hook-context', id: 'h', at: 1, text: '[두레] 사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:\n> 이것도\n> 해줘' }]);
+  expect(t.items()).toEqual([{ kind: 'user', id: 'h', at: 1, text: '이것도\n해줘' }]);
+});

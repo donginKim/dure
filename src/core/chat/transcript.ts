@@ -13,6 +13,13 @@ export type Piece =
 
 export const DURE_PREFIX = '[두레]';
 export const MAX_RAW = 20_000;
+/** 작업 중에 채팅으로 보낸 글을 두레가 hook 으로 전달할 때 붙이는 머리줄 */
+export const CHAT_RELAY_TITLE = '사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:';
+
+/** 채팅으로 보낸 글을 에이전트에게 전달할 글로 만든다. 본문은 줄마다 인용해 [두레] 머리줄을 흉내 낼 수 없게 한다. */
+export function formatChatRelay(texts: string[]): string {
+  return texts.map((t) => [`${DURE_PREFIX} ${CHAT_RELAY_TITLE}`, ...t.split('\n').map((l) => `> ${l}`)].join('\n')).join('\n\n');
+}
 
 /** 긴 글을 자르고 얼마나 뺐는지 붙인다. */
 export function clip(text: string, max = MAX_RAW): string {

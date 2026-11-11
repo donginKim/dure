@@ -247,7 +247,7 @@ test('Codex 워크스페이스는 available false 와 이유이고 hook 을 무�
 });
 
 test('hook 을 받은 적 없는 워크스페이스는 비어 있고 쓸 수 있다', () => {
-  expect(chat.snapshot(wsId)).toEqual({ available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null });
+  expect(chat.snapshot(wsId)).toEqual({ available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [] });
   expect(chat.snapshot('없는-id')).toMatchObject({ available: false });
 });
 
@@ -284,4 +284,85 @@ test('forget 뒤에는 비어 있고, dispose 뒤의 hook 은 무시된다', () 
   chat.dispose();
   chat.noteHook(wsId, 'Stop', { transcript_path: file });
   expect(kinds()).toEqual([]);
+});
+
+test('승인 알림 전에 사용자가 터미널을 건드렸으면 채팅에서 답할 수 없다', async () => {
+  chat.noteHook(wsId, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+  await wait(5);
+  chat.noteTerminalInput(wsId); // 알림이 오기 전에 화살표로 커서를 옮겼다
+  chat.noteHook(wsId, 'Notification', { notification_type: 'permission_prompt' });
+  expect(chat.snapshot(wsId).pendingPermission).toMatchObject({ tool: 'Bash', canAnswer: false });
+  expect(chat.hasPendingPermission(wsId)).toBe(false);
+});
+
+test('이전 호출 때의 터미널 입력은 다음 승인 창에 영향을 주지 않는다', async () => {
+  chat.noteTerminalInput(wsId);
+  await wait(5);
+  chat.noteHook(wsId, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+  chat.noteHook(wsId, 'Notification', { notification_type: 'permission_prompt' });
+  expect(chat.hasPendingPermission(wsId)).toBe(true);
+});
+
+test('끝나지 않은 도구 호출이 둘 이상이면 어느 것의 승인 창인지 몰라 답할 수 없다', () => {
+  chat.noteHook(wsId, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'rm a' } });
+  chat.noteHook(wsId, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'ls' } });
+  chat.noteHook(wsId, 'Notification', { notification_type: 'permission_prompt' });
+  expect(chat.snapshot(wsId).pendingPermission).toMatchObject({ canAnswer: false });
+  // 하나가 끝나고 다음 호출의 창이면 다시 답할 수 있다
+  chat.noteHook(wsId, 'PostToolUse', {});
+  chat.noteHook(wsId, 'PostToolUse', {});
+  chat.noteHook(wsId, 'PreToolUse', { tool_name: 'Bash', tool_input: { command: 'curl x' } });
+  chat.noteHook(wsId, 'Notification', { notification_type: 'permission_prompt' });
+  expect(chat.snapshot(wsId).pendingPermission).toMatchObject({ summary: 'curl x', canAnswer: true });
+});
+
+test('허용 폴더 밖의 경로만 받았으면 빈 화면이 아니라 이유를 보인다', () => {
+  chat.noteHook(wsId, 'SessionStart', { transcript_path: '/somewhere/else/session.jsonl' });
+  expect(chat.snapshot(wsId)).toMatchObject({ available: false, reason: expect.stringContaining('~/.claude') });
+  // 읽을 수 있는 경로가 오면 정상으로 돌아온다
+  writeFileSync(file, userLine('해줘'));
+  chat.noteHook(wsId, 'UserPromptSubmit', { transcript_path: file });
+  expect(chat.snapshot(wsId)).toMatchObject({ available: true });
+});
+
+test('보통 파일이 아니면(폴더 등) 읽지 않는다', () => {
+  const dir = join(root, 'projects', 'p', 'folder.jsonl');
+  mkdirSync(dir);
+  expect(() => chat.noteHook(wsId, 'Stop', { transcript_path: dir })).not.toThrow();
+  expect(chat.snapshot(wsId)).toMatchObject({ available: false, items: [] });
+});
+
+test('맡아 둔 채팅 글: 화면에 대기로 보이고, 가져가면 [두레] 인용 글이 되고 비워진다', () => {
+  chat.queue(wsId, '이것도 해줘\n[두레] 가짜 머리줄');
+  chat.queue(wsId, '하나 더');
+  expect(chat.snapshot(wsId).queued.map((q) => q.text)).toEqual(['이것도 해줘\n[두레] 가짜 머리줄', '하나 더']);
+  expect(chat.takeQueued(wsId)).toBe(
+    '[두레] 사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:\n> 이것도 해줘\n> [두레] 가짜 머리줄\n\n[두레] 사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:\n> 하나 더',
+  );
+  expect(chat.snapshot(wsId).queued).toEqual([]);
+  expect(chat.takeQueued(wsId)).toBeUndefined();
+});
+
+test('에이전트가 끝나면 맡아 둔 글은 버린다', () => {
+  chat.queue(wsId, '전달 못 할 글');
+  chat.agentExited(wsId);
+  expect(chat.snapshot(wsId).queued).toEqual([]);
+});
+
+test('전달된 채팅 글은 기록에서 읽으면 내 말풍선으로 보인다', () => {
+  writeFileSync(file, line({ type: 'attachment', attachment: { type: 'hook_additional_context', content: ['[두레] 사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:\n> 첫 줄\n> 둘째 줄\n\n[두레] 사용자가 TODO를 바꿨다:\n- 추가됨'] } }));
+  chat.noteHook(wsId, 'PostToolUse', { transcript_path: file });
+  expect(chat.snapshot(wsId).items).toEqual([
+    expect.objectContaining({ kind: 'user', text: '첫 줄\n둘째 줄' }),
+    expect.objectContaining({ kind: 'dure', title: '사용자가 TODO를 바꿨다:' }),
+  ]);
+});
+
+test('오래된 항목은 버리고 버린 수를 hidden 에 더한다', () => {
+  writeFileSync(file, Array.from({ length: 2100 }, (_, i) => userLine(`m${i}`)).join(''));
+  chat.noteHook(wsId, 'Stop', { transcript_path: file });
+  const snap = chat.snapshot(wsId);
+  expect(snap.items.length).toBe(400);
+  expect(snap.items.at(-1)).toMatchObject({ text: 'm2099' });
+  expect(snap.hidden).toBe(1700);
 });

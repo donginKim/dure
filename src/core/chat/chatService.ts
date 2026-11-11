@@ -1,10 +1,10 @@
 import { EventEmitter } from 'node:events';
-import { closeSync, fstatSync, openSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import type { ChatItem, ChatPermission, ChatSnapshot } from '@shared/types';
 import type { WorkspaceStore } from '../stores';
 import { Timeline } from './timeline';
-import { parseLine, stepInput, stepSummary, type Piece } from './transcript';
+import { formatChatRelay, parseLine, stepInput, stepSummary, type Piece } from './transcript';
 
 export interface ChatDeps {
   workspaces: WorkspaceStore;
@@ -30,12 +30,29 @@ interface State {
   lastWorkSignalAt: number;
   error: boolean;
   timers: Set<NodeJS.Timeout>;
+  /** 끝나지 않은 도구 호출 수 (PreToolUse 는 왔고 PostToolUse 는 아직) */
+  inFlight: number;
+  /** 마지막 PreToolUse 의 시각 */
+  lastPreToolAt: number;
+  /** 사용자가 에이전트 터미널에 마지막으로 입력한 시각 */
+  terminalInputAt: number;
+  /** hook 이 알려준 기록 경로가 읽어도 되는 곳이 아니었다 */
+  rejectedPath: boolean;
+  /** 처음 붙을 때 파일이 너무 커서 앞부분을 건너뛰었다 */
+  skippedHead: boolean;
+  /** 채팅으로 보냈지만 아직 전달되지 않은 글 */
+  queue: { id: string; at: number; text: string }[];
 }
 
 const MAX_ITEMS = 400;
 const READ_CHUNK = 1 << 20;
+/** 한 번에 읽는 양의 상한. 넘으면 나머지는 조금 뒤에 이어 읽는다 (메인 프로세스를 오래 막지 않는다) */
+const READ_BUDGET = 8 << 20;
+/** 처음 붙을 때 이보다 큰 기록은 끝쪽만 읽는다 */
+const ATTACH_TAIL = 16 << 20;
 const CODEX = 'Codex 는 아직 채팅 보기를 지원하지 않습니다. 터미널 보기를 쓰세요.';
 const UNREADABLE = '대화 기록을 읽을 수 없습니다. 터미널 보기를 쓰세요.';
+const OUTSIDE = '대화 기록이 예상한 위치(~/.claude) 밖에 있어 읽지 않습니다. 터미널 보기를 쓰세요.';
 // 선택지가 여럿인 창을 띄우는 도구. Enter 가 "허용" 을 뜻하지 않는다.
 const NOT_A_YES_NO = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
@@ -63,7 +80,8 @@ export class ChatService extends EventEmitter {
     let s = this.states.get(id);
     if (!s) {
       s = { path: null, offset: 0, carry: Buffer.alloc(0), timeline: new Timeline(), workingSince: null, lastTool: null,
-        pendingPermission: null, lastWorkSignalAt: 0, error: false, timers: new Set() };
+        pendingPermission: null, lastWorkSignalAt: 0, error: false, timers: new Set(),
+        inFlight: 0, lastPreToolAt: 0, terminalInputAt: 0, rejectedPath: false, skippedHead: false, queue: [] };
       this.states.set(id, s);
     }
     return s;
@@ -91,6 +109,10 @@ export class ChatService extends EventEmitter {
     if (this.acceptable(path)) {
       const full = resolve(path);
       if (full !== s.path) this.reset(s, full); // 새 대화 (다시 시작했거나 /clear)
+      s.rejectedPath = false;
+    } else if (typeof path === 'string' && path) {
+      // 예: CLAUDE_CONFIG_DIR 로 기록 위치를 옮긴 환경. 빈 화면으로 두지 않고 이유를 보인다.
+      s.rejectedPath = true;
     }
 
     const now = Date.now();
@@ -103,29 +125,37 @@ export class ChatService extends EventEmitter {
       case 'PreToolUse':
         s.workingSince ??= now;
         s.lastWorkSignalAt = now;
+        s.inFlight++;
+        s.lastPreToolAt = now;
         s.lastTool = { tool: String(field(payload, 'tool_name') ?? ''), input: field(payload, 'tool_input') };
         s.pendingPermission = null;
         break;
       case 'PostToolUse':
         s.lastWorkSignalAt = now;
+        s.inFlight = Math.max(0, s.inFlight - 1);
         s.lastTool = null;
         s.pendingPermission = null;
         break;
       case 'Notification':
         if (field(payload, 'notification_type') === 'permission_prompt') {
           const t = s.lastTool;
+          // 채팅에서 답해도 되는 것은 창이 어느 호출의 것인지 분명하고(끝나지 않은 호출이 하나뿐),
+          // 그 호출 뒤로 사용자가 터미널을 건드리지 않았을 때뿐이다 (알림은 창이 뜨고 몇 초 뒤에 온다, 실험 15e).
+          const sure = s.inFlight === 1 && s.terminalInputAt < s.lastPreToolAt;
           s.pendingPermission = t
-            ? { tool: t.tool, summary: stepSummary(t.tool, t.input), input: stepInput(t.tool, t.input), canAnswer: !NOT_A_YES_NO.has(t.tool) }
+            ? { tool: t.tool, summary: stepSummary(t.tool, t.input), input: stepInput(t.tool, t.input), canAnswer: sure && !NOT_A_YES_NO.has(t.tool) }
             : { tool: '', summary: '승인 요청', input: '', canAnswer: false };
         }
         break;
       case 'Stop':
         s.pendingPermission = null;
         s.lastTool = null;
+        s.inFlight = 0;
         if (!blocked) s.workingSince = null;
         else s.lastWorkSignalAt = now;
         break;
       case 'SessionStart':
+        s.inFlight = 0;
         s.workingSince = null;
         s.pendingPermission = null;
         s.lastTool = null;
@@ -149,7 +179,7 @@ export class ChatService extends EventEmitter {
   }
 
   private fingerprint(s: State): string {
-    return `${s.path}|${s.timeline.version}|${s.workingSince}|${s.pendingPermission ? `${s.pendingPermission.summary}:${s.pendingPermission.canAnswer}` : ''}|${s.error}`;
+    return `${s.path}|${s.timeline.version}|${s.workingSince}|${s.pendingPermission ? `${s.pendingPermission.summary}:${s.pendingPermission.canAnswer}` : ''}|${s.error}|${s.rejectedPath}|${s.queue.map((q) => q.id).join(',')}`;
   }
 
   private reset(s: State, path: string | null): void {
@@ -158,6 +188,7 @@ export class ChatService extends EventEmitter {
     s.carry = Buffer.alloc(0);
     s.timeline.reset();
     s.error = false;
+    s.skippedHead = false;
   }
 
   private readAndEmit(workspaceId: string, s: State): void {
@@ -185,23 +216,28 @@ export class ChatService extends EventEmitter {
     if (!s.path) return;
     let fd: number | undefined;
     try {
+      let real: string;
       try {
-        fd = openSync(s.path, 'r');
+        // 링크를 따라간 실제 위치도 허용된 폴더 안이어야 한다. 여는 것은 그 뒤다.
+        real = realpathSync(s.path);
       } catch (e) {
         // 대화를 막 시작해 아직 파일이 없는 것은 오류가 아니다.
         if ((e as NodeJS.ErrnoException).code === 'ENOENT') { s.error = s.offset > 0; return; }
         throw e;
       }
-      // 링크를 따라간 실제 위치도 허용된 폴더 안이어야 한다.
-      const real = realpathSync(s.path);
-      if (!real.startsWith(this.root + sep)) { s.error = true; return; }
+      // 보통 파일만 읽는다: 파이프 같은 것을 열면 메인 프로세스가 멈춘다.
+      if (!real.startsWith(this.root + sep) || !lstatSync(real).isFile()) { s.error = true; return; }
+      fd = openSync(real, 'r');
       const size = fstatSync(fd).size;
       if (size < s.offset) { // 파일이 줄었다: 처음부터 다시 읽는다
         s.offset = 0; s.carry = Buffer.alloc(0); s.timeline.reset();
       }
+      // 처음 붙는데 기록이 아주 크면(예: 큰 세션을 /resume) 끝쪽만 읽는다. 첫 줄은 잘려 있을 수 있어 parseLine 이 버린다.
+      if (s.offset === 0 && size > ATTACH_TAIL) { s.offset = size - ATTACH_TAIL; s.skippedHead = true; }
       const pieces: Piece[] = [];
-      while (s.offset < size) {
-        const buf = Buffer.allocUnsafe(Math.min(READ_CHUNK, size - s.offset));
+      const stopAt = Math.min(size, s.offset + READ_BUDGET);
+      while (s.offset < stopAt) {
+        const buf = Buffer.allocUnsafe(Math.min(READ_CHUNK, stopAt - s.offset));
         const n = readSync(fd, buf, 0, buf.length, s.offset);
         if (n <= 0) break;
         s.offset += n;
@@ -215,11 +251,12 @@ export class ChatService extends EventEmitter {
         }
       }
       s.error = false;
+      if (s.offset < size) this.later(workspaceId, s, 30); // 남은 것은 곧 이어 읽는다
       if (!pieces.length) return;
       s.timeline.push(pieces);
       const last = pieces[pieces.length - 1]!;
       // 방금 읽은 것의 끝이 "중단됨" 이고 그 뒤로 일한다는 신호가 없었다면 에이전트는 입력을 기다리고 있다.
-      if (last.type === 'interrupted' && last.at >= s.lastWorkSignalAt - 1000) {
+      if (last.type === 'interrupted' && last.at >= s.lastWorkSignalAt && s.offset >= size) {
         s.workingSince = null;
         s.pendingPermission = null;
         s.lastTool = null;
@@ -235,17 +272,19 @@ export class ChatService extends EventEmitter {
 
   snapshot(workspaceId: string): ChatSnapshot {
     const ws = this.d.workspaces.get(workspaceId);
-    const empty = { items: [], hidden: 0, workingSince: null, pendingPermission: null };
+    const empty = { items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [] };
     if (!ws) return { available: false, reason: '워크스페이스가 없습니다.', ...empty };
     if (ws.agentKind !== 'claude') return { available: false, reason: CODEX, ...empty };
     const s = this.states.get(workspaceId);
     if (!s) return { available: true, reason: null, ...empty };
     if (s.error) return { available: false, reason: UNREADABLE, ...empty };
+    if (s.rejectedPath && !s.path) return { available: false, reason: OUTSIDE, ...empty };
     const all = s.timeline.items();
-    const hidden = Math.max(0, all.length - MAX_ITEMS);
+    const cut = Math.max(0, all.length - MAX_ITEMS);
+    const hidden = cut + s.timeline.dropped + (s.skippedHead ? 1 : 0);
     // 원문은 펼칠 때 step() 으로 따로 가져간다: 긴 대화에서 매번 다 보내면 느리다.
-    const items = all.slice(hidden).map((i): ChatItem => (i.kind === 'steps' ? { ...i, steps: i.steps.map((st) => ({ ...st, input: '', output: null })) } : i));
-    return { available: true, reason: null, items, hidden, workingSince: s.workingSince, pendingPermission: s.pendingPermission };
+    const items = all.slice(cut).map((i): ChatItem => (i.kind === 'steps' ? { ...i, steps: i.steps.map((st) => ({ ...st, input: '', output: null })) } : i));
+    return { available: true, reason: null, items, hidden, workingSince: s.workingSince, pendingPermission: s.pendingPermission, queued: [...s.queue] };
   }
 
   /** 단계 하나의 입력·출력 원문 */
@@ -266,9 +305,36 @@ export class ChatService extends EventEmitter {
     this.emit('changed', workspaceId);
   }
 
+  /**
+   * 작업 중에 채팅으로 보낸 글을 맡아 둔다. 터미널에 쓰지 않고 다음 hook 응답에 실어 전달한다:
+   * 작업 중인 터미널에는 승인 창이 떠 있을 수 있고, 창이 떴다는 알림은 몇 초 늦게 온다 (실험 15e).
+   */
+  queue(workspaceId: string, text: string): void {
+    const s = this.state(workspaceId);
+    s.queue.push({ id: crypto.randomUUID(), at: Date.now(), text });
+    this.emit('changed', workspaceId);
+  }
+
+  /** 맡아 둔 글을 에이전트에게 전달할 글로 만들어 가져간다 (hook 응답용). 없으면 undefined */
+  takeQueued(workspaceId: string): string | undefined {
+    const texts = this.takeQueuedTexts(workspaceId);
+    return texts.length ? formatChatRelay(texts) : undefined;
+  }
+
+  /** 맡아 둔 글을 원문 그대로 가져간다 (쉬는 에이전트에게 직접 보낼 때 앞에 붙인다). */
+  takeQueuedTexts(workspaceId: string): string[] {
+    const s = this.states.get(workspaceId);
+    if (!s || !s.queue.length) return [];
+    const texts = s.queue.map((q) => q.text);
+    s.queue = [];
+    this.emit('changed', workspaceId);
+    return texts;
+  }
+
   /** 사용자가 에이전트 터미널에 직접 입력했다. 승인 창의 커서가 옮겨졌을 수 있으니 채팅에서는 답하지 못하게 한다. */
   noteTerminalInput(workspaceId: string): void {
     const s = this.states.get(workspaceId);
+    if (s) s.terminalInputAt = Date.now();
     if (!s?.pendingPermission?.canAnswer) return;
     s.pendingPermission = { ...s.pendingPermission, canAnswer: false };
     this.emit('changed', workspaceId);
@@ -295,6 +361,8 @@ export class ChatService extends EventEmitter {
     s.workingSince = null;
     s.pendingPermission = null;
     s.lastTool = null;
+    s.inFlight = 0;
+    s.queue = []; // 끝난 에이전트에게는 전달할 수 없다
     s.timeline.endRunning(Date.now());
     s.timeline.version++;
     this.schedule();

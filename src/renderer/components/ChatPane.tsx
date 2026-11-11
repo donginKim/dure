@@ -123,7 +123,7 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
   }
 });
 
-const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, canSend: false };
+const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [], canSend: false };
 
 /**
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.
@@ -170,7 +170,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
     if (stick.current) el.scrollTop = el.scrollHeight;
     else if (el.scrollHeight - el.scrollTop - el.clientHeight >= 60) setBehind(true);
     else stick.current = true; // 내용이 다 보이면 맨 아래에 있는 것이다
-  }, [entries, view.pendingPermission]);
+  }, [entries, view.pendingPermission, view.queued]);
 
   const onScroll = (): void => {
     const el = scroller.current;
@@ -272,7 +272,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
           ref={input}
           value={draft}
           rows={Math.min(8, Math.max(1, draft.split('\n').length))}
-          placeholder={working ? '작업 중에 보내면 다음 차례에 읽습니다' : '에이전트에게 시킬 일을 쓰세요'}
+          placeholder={status === 'working' ? '작업 중에 보내면 에이전트가 다음 단계에서 읽습니다' : '에이전트에게 시킬 일을 쓰세요'}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
         />
@@ -293,7 +293,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
       <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
         <div className="chat-col">
           {view.hidden > 0 && <div className="chat-notice"><span>앞쪽 {view.hidden}개 항목은 줄였습니다. 전부 보려면 터미널 보기를 쓰세요.</span></div>}
-          {loaded && entries.length === 0 && (
+          {loaded && entries.length === 0 && view.queued.length === 0 && (
             <div className="chat-blank">
               <div className="chat-blank-title">아직 대화가 없습니다</div>
               <div>{hasAgent ? '아래에 시킬 일을 쓰면 여기에 대화가 쌓입니다.' : '에이전트를 시작하면 여기에 대화가 쌓입니다.'}</div>
@@ -301,6 +301,12 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
             </div>
           )}
           {entries.map((e) => <EntryView key={e.id} entry={e} workspaceId={workspace.id} workspaces={workspaces} conversation={conversation} />)}
+          {view.queued.map((q) => (
+            <div key={q.id} className="bubble-row queued">
+              <div className="bubble">{q.text}</div>
+              <div className="bubble-note">{status === 'working' ? '에이전트가 다음 단계에서 읽습니다' : '아직 전달되지 않았습니다. 다음에 보내는 글과 함께 전달됩니다'}</div>
+            </div>
+          ))}
         </div>
       </div>
       {behind && <button className="chat-jump" onClick={toBottom}>새 내용 ↓</button>}

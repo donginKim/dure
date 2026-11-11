@@ -350,6 +350,9 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 
 /* 내 말 */
 .bubble-row { display: flex; justify-content: flex-end; }
+.bubble-row.queued { flex-direction: column; align-items: flex-end; gap: 3px; }
+.bubble-row.queued .bubble { border-style: dashed; opacity: 0.75; }
+.bubble-note { font-size: 11px; color: var(--muted); }
 .bubble { max-width: 78%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 14px 14px 4px 14px; padding: 9px 13px; white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
 
 /* 에이전트의 말 */

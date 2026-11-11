@@ -222,6 +222,8 @@ export interface ChatSnapshot {
   workingSince: number | null;
   /** 승인을 기다리는 도구 호출 */
   pendingPermission: ChatPermission | null;
+  /** 채팅으로 보냈지만 아직 에이전트에게 전달되지 않은 글 (작업 중에 보낸 글은 다음 단계에 전달된다) */
+  queued: { id: string; at: number; text: string }[];
 }
 
 /** 채팅 화면이 받는 것: 대화와, 지금 입력창으로 보낼 수 있는지 */

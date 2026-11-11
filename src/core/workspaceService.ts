@@ -436,8 +436,8 @@ export class WorkspaceService extends EventEmitter {
 
   /**
    * 채팅 입력창의 글을 지금 에이전트에게 보낼 수 있는가.
-   * 쉬는 중이거나 작업 중인 Claude Code 에서만 된다. 작업 중에 보낸 글은 다음 차례에 읽힌다 (실험 15d).
-   * 시작 중(폴더 신뢰 창)이나 승인 대기 중에는 선택 창이 떠 있어 글이 그 창에 들어간다.
+   * 쉬는 중이면 터미널에 써 넣고, 작업 중이면 두레가 맡아 두었다가 다음 hook 응답에 실어 전달한다.
+   * 시작 중(폴더 신뢰 창)이나 승인 대기 중에는 받지 않는다.
    */
   canSendInput(id: string): boolean {
     const ws = this.d.workspaces.get(id);
@@ -452,17 +452,28 @@ export class WorkspaceService extends EventEmitter {
     const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
     if (!message) throw new Error('보낼 글을 입력하세요.');
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
-    if (!this.canSendInput(id) || !terminal) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
-    // 사용자의 입력이다: 두레가 넣은 프롬프트로 치지 않고, 쉬는 중 확인을 지운다.
+    const before = this.d.workspaces.get(id);
+    if (!this.canSendInput(id) || !terminal || !before) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
+    if (before.status === 'working') {
+      // 작업 중인 터미널에는 쓰지 않는다: 승인 창이 떠 있을 수 있고, 떴다는 알림은 몇 초 늦게 온다 (실험 15e).
+      // 그 틈에 글과 Enter 를 써 넣으면 Enter 가 "허용" 으로 들어간다. 두레가 맡아 두었다가 다음 hook 응답에 싣는다.
+      if (!this.chat) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
+      this.chat.queue(id, message);
+      // 사용자가 끼어든 것이다: 에이전트끼리의 왕복 횟수를 다시 센다 (이 길로는 UserPromptSubmit 이 오지 않는다).
+      this.d.messages.userIntervened(before.projectId);
+      return;
+    }
+    // 쉬는 중: 입력칸에 써 넣는다. 사용자의 입력이므로 두레가 넣은 프롬프트로 치지 않고, 쉬는 중 확인을 지운다.
+    // 앞서 맡아 두고 전달하지 못한 글(중단 등으로)이 있으면 함께 보낸다.
+    const full = [...(this.chat?.takeQueuedTexts(id) ?? []), message].join('\n\n');
     this.confirmedIdle.delete(id);
     this.synthetic.delete(id);
-    this.d.pty.write(terminal.id, message.includes('\n') ? `\x1b[200~${message}\x1b[201~` : message);
+    // 쓰기 전에 상태를 바꿔, 400ms 사이에 다른 것(깨우기, 또 한 번의 보내기)이 같은 입력칸에 쓰지 못하게 한다.
+    this.d.workspaces.update(id, { status: 'working' });
+    this.emit('changed', id);
+    this.d.pty.write(terminal.id, full.includes('\n') ? `\x1b[200~${full}\x1b[201~` : full);
     await new Promise((r) => setTimeout(r, 400));
-    const ws = this.d.workspaces.get(id);
-    // 그 사이에 선택 창이 떴다면 Enter 를 보내지 않는다. 글은 입력칸에 남는다.
-    if (!ws || (ws.status !== 'idle' && ws.status !== 'working') || !this.d.pty.list(id).some((t) => t.id === terminal.id)) {
-      throw new Error('보내는 도중에 에이전트의 상태가 바뀌었습니다. 터미널을 확인하세요.');
-    }
+    if (!this.d.pty.list(id).some((t) => t.id === terminal.id)) throw new Error('에이전트가 종료되어 보내지 못했습니다.');
     this.d.pty.write(terminal.id, '\r');
   }
 

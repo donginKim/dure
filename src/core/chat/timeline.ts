@@ -1,6 +1,8 @@
 import type { ChatItem, ChatStep } from '@shared/types';
-import { DURE_PREFIX, stepInput, stepSummary, type Piece } from './transcript';
+import { CHAT_RELAY_TITLE, DURE_PREFIX, stepInput, stepSummary, type Piece } from './transcript';
 
+const MAX_KEPT = 1500;
+const TRIM = 500;
 const COMPACTED = '대화가 압축됨. 이 위의 내용은 에이전트가 요약해서 기억합니다.';
 
 /** 조각을 차례로 받아 대화 항목 목록을 유지한다. */
@@ -12,6 +14,8 @@ export class Timeline {
   private open: Extract<ChatItem, { kind: 'steps' }> | null = null;
   /** 항목이 바뀔 때마다 오른다 */
   version = 0;
+  /** 너무 오래되어 버린 항목 수 */
+  dropped = 0;
 
   push(pieces: Piece[]): void {
     for (const p of pieces) {
@@ -26,6 +30,13 @@ export class Timeline {
   private add(item: ChatItem): void {
     this.list.push(item);
     this.open = item.kind === 'steps' ? item : null;
+    // 아주 긴 대화에서 메모리가 끝없이 늘지 않게 오래된 항목은 버린다 (터미널 보기에는 남아 있다).
+    if (this.list.length > MAX_KEPT + TRIM) {
+      for (const old of this.list.splice(0, TRIM)) {
+        if (old.kind === 'steps') for (const st of old.steps) this.steps.delete(st.id);
+      }
+      this.dropped += TRIM;
+    }
   }
 
   private apply(p: Piece): void {
@@ -73,7 +84,14 @@ export class Timeline {
   private addDure(id: string, at: number, text: string): void {
     text.split(/\n\s*\n(?=\[두레\])/).forEach((part, i) => {
       const [first = '', ...rest] = part.split('\n');
-      this.add({ kind: 'dure', id: i === 0 ? id : `${id}#${i}`, at, title: first.slice(DURE_PREFIX.length).trim(), text: rest.join('\n').trim() });
+      const itemId = i === 0 ? id : `${id}#${i}`;
+      const title = first.slice(DURE_PREFIX.length).trim();
+      // 작업 중에 채팅으로 보낸 글은 두레가 대신 전달했을 뿐 사용자의 말이다. 내 말풍선으로 보인다.
+      if (title === CHAT_RELAY_TITLE) {
+        this.add({ kind: 'user', id: itemId, at, text: rest.filter((l) => l.startsWith('>')).map((l) => l.replace(/^> ?/, '')).join('\n') });
+        return;
+      }
+      this.add({ kind: 'dure', id: itemId, at, title, text: rest.join('\n').trim() });
     });
   }
 
@@ -97,6 +115,7 @@ export class Timeline {
     this.seen.clear();
     this.steps.clear();
     this.open = null;
+    this.dropped = 0;
     this.version++;
   }
 }

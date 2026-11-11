@@ -39,7 +39,8 @@ export function toBlocks(markdown: string): Block[] {
     const heading = HEADING.exec(line);
     if (heading) { flush(); out.push({ type: 'heading', level: heading[1]!.length, text: heading[2]!.trim() }); continue; }
     if (RULE.test(line)) { flush(); out.push({ type: 'rule' }); continue; }
-    if (line.includes('|') && i + 1 < lines.length && TABLE_SEP.test(lines[i + 1]!) && lines[i + 1]!.includes('-')) {
+    // 구분 줄 판정은 긴 줄에서 느리다. 표의 구분 줄은 짧다.
+    if (line.includes('|') && i + 1 < lines.length && lines[i + 1]!.length < 400 && lines[i + 1]!.includes('-') && TABLE_SEP.test(lines[i + 1]!)) {
       flush();
       const rows = [cells(line)];
       i += 2;

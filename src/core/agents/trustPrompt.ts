@@ -41,7 +41,8 @@ export function trustPrompt(screen: string, folders: string[]): TrustPrompt {
   if (!/Yes, I trust this folder/.test(dialog) || !/No, exit/.test(dialog) || !/Enter to confirm/.test(dialog)) return 'none';
   // 경로는 화면 폭에 따라 줄이 나뉜다. 공백을 모두 빼고 견준다.
   const flat = squeeze(dialog);
-  if (!folders.some((f) => f && flat.includes(squeeze(f)))) return 'none';
+  // 경로 바로 뒤에 안내문이 온다. 그것까지 견줘 "/a/foo" 가 "/a/foo-2" 를 묻는 창에 맞지 않게 한다.
+  if (!folders.some((f) => f && flat.includes(`${squeeze(f)}Quicksafetycheck`))) return 'none';
   // 화면은 바뀐 줄만 다시 그려진다 (실험 15: 커서를 옮기면 옛 표시가 기록에 남는다). 가장 나중에 그려진 커서를 본다.
   const cursor = dialog.lastIndexOf('❯');
   if (cursor < 0) return 'none';

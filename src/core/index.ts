@@ -84,7 +84,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       const out = handleHook({
         workspaces, todos,
         onStatus: (id) => onStatus(id),
-        collect: (id) => delivery.collect(id),
+        // 작업 중에 채팅으로 보낸 글이 먼저다. TODO 변경과 메시지가 그 뒤에 붙는다.
+        collect: (id) => {
+          const parts = [chat.takeQueued(id), delivery.collect(id)].filter((x): x is string => Boolean(x));
+          return parts.length ? parts.join('\n\n') : undefined;
+        },
         collectMessages: (id) => delivery.collectMessages(id),
         onUserPrompt: (w) => {
           // 첫 프롬프트로 건넨 메시지는 에이전트가 프롬프트를 받은 지금 전달이 확정된다.

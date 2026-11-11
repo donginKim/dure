@@ -1,10 +1,10 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
 import { isTerminalReply } from '@core/agents/trustPrompt';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -51,6 +51,16 @@ export function registerIpc(core: Core): () => void {
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'db.list': (projectId: string) => core.dbs.list(projectId),
+    'db.canStoreSecrets': () => safeStorage.isEncryptionAvailable(),
+    'db.save': (input: DbConnectionInput) => core.dbs.save(input),
+    'db.remove': (id: string) => core.dbs.remove(id),
+    'db.test': (id: string) => core.dbs.test(id),
+    'db.tables': (id: string) => core.dbs.tables(id),
+    'db.columns': (id: string, schema: string, table: string) => core.dbs.columns(id, schema, table),
+    'db.query': (id: string, sql: string) => core.dbs.query(id, sql),
+    'db.requests': (projectId: string) => core.dbs.pending(projectId),
+    'db.decide': (requestId: string, allow: boolean, always?: boolean) => core.dbs.decide(requestId, allow === true, { always: always === true }),
     'cleanup.list': (projectId: string) => core.cleanup.list(projectId),
     'cleanup.restore': (id: string) => core.cleanup.restore(id),
     'cleanup.export': async (id: string) => {
@@ -184,6 +194,7 @@ export function registerIpc(core: Core): () => void {
   const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
   const onChatChanged = (): void => changed('chat');
   const onCleanupChanged = (): void => changed('cleanup');
+  const onDbChanged = (): void => changed('db');
   // 승인으로 새 저장소가 등록될 수 있다.
   const onCoordinatorChanged = (): void => { changed('coordinator'); changed('repos'); };
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
@@ -200,6 +211,7 @@ export function registerIpc(core: Core): () => void {
   core.commit.on('changed', onCommitChanged);
   core.chat.on('changed', onChatChanged);
   core.cleanup.on('changed', onCleanupChanged);
+  core.dbs.on('changed', onDbChanged);
   core.coordinator.on('changed', onCoordinatorChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
@@ -214,6 +226,7 @@ export function registerIpc(core: Core): () => void {
     core.commit.off('changed', onCommitChanged);
     core.chat.off('changed', onChatChanged);
     core.cleanup.off('changed', onCleanupChanged);
+    core.dbs.off('changed', onDbChanged);
     core.coordinator.off('changed', onCoordinatorChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);

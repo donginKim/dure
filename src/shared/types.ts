@@ -462,3 +462,34 @@ export interface CoordinatorInfo {
   /** 새 저장소가 만들어질 폴더 (그 아래에 저장소 이름의 폴더가 생긴다) */
   newRepoDir: string;
 }
+
+// ---- DB 조회 (5단계) ----
+export type DbKind = 'postgres' | 'mysql';
+/**
+ * 에이전트가 이 연결을 쓰는 방식.
+ * ask: 표 목록과 스키마는 바로 보고, 데이터 조회는 사용자의 승인을 받는다. auto: 바로 조회한다. off: 에이전트는 쓸 수 없다.
+ */
+export type DbAccess = 'ask' | 'auto' | 'off';
+/** 프로젝트에 등록한 DB 연결. 비밀번호는 화면에도 에이전트에게도 나가지 않는다 */
+export interface DbConnection {
+  id: string; projectId: string; name: string; kind: DbKind;
+  host: string; port: number; database: string; user: string; ssl: boolean;
+  agentAccess: DbAccess; hasPassword: boolean; createdAt: number;
+}
+export interface DbConnectionInput {
+  /** 있으면 그 연결을 고친다 */
+  id?: string;
+  projectId: string; name: string; kind: DbKind;
+  host: string; port: number; database: string; user: string; ssl: boolean; agentAccess: DbAccess;
+  /** 고칠 때 비우면(undefined) 저장된 비밀번호를 그대로 둔다 */
+  password?: string;
+}
+export interface DbTable { schema: string; name: string; type: 'table' | 'view' }
+export interface DbColumn { name: string; type: string; nullable: boolean; default: string | null; key: string }
+export type DbCell = string | number | boolean | null;
+export interface DbResult { columns: string[]; rows: DbCell[][]; /** 상한에 걸려 뒤가 잘렸다 */ truncated: boolean; ms: number }
+/** 에이전트의 조회 요청 (승인을 받는 연결). 두레를 다시 켜면 사라진다 */
+export interface DbRequest {
+  id: string; projectId: string; workspaceId: string; connectionId: string; connectionName: string;
+  sql: string; status: 'pending' | 'approved' | 'denied' | 'failed'; error?: string; createdAt: number;
+}

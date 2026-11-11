@@ -7,6 +7,8 @@ import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { CoordinatorService } from './coordinator';
 import { coordinatorTools } from './mcp/tools/coordinator';
+import { dbTools } from './mcp/tools/db';
+import { DbService, noSecrets, type SecretBox } from './dbService';
 import { cleanupTools } from './mcp/tools/cleanup';
 import { SettingsService } from './settings';
 import { ChatEngine } from './chat/engine';
@@ -42,6 +44,7 @@ export interface Core {
   settings: SettingsService;
   cleanup: CleanupService;
   coordinator: CoordinatorService;
+  dbs: DbService;
   /** 프로젝트를 완료 처리하기 전에 보여줄 것: 워크스페이스의 상태와 정리 대기에 있는 것 */
   completionPlan(projectId: string): Promise<CompletionPlan>;
   /** 프로젝트를 완료 처리한다: 에이전트를 끄고, 고른 작업 폴더와 정리 대기 항목을 지우고, 프로젝트를 완료로 옮긴다. 기록은 남는다 */
@@ -70,6 +73,11 @@ export interface CoreOptions {
   dataDir: string;
   /** worktree 를 만드는 상위 폴더 */
   worktreeRoot: string;
+  /** DB 비밀번호를 암호화해 보관하는 방법 (앱은 macOS 키체인). 없으면 비밀번호가 있는 연결을 저장할 수 없다 */
+  secrets?: SecretBox;
+  /** 시험용: DB 실행기를 가짜로 바꾸고, 승인을 기다리는 시간을 줄인다 */
+  dbRunner?: ConstructorParameters<typeof DbService>[0]['runner'];
+  dbWaitMs?: number;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
   repoRoot?: string;
   /** 터미널과 에이전트에 물려줄 환경 (로그인 셸 환경) */
@@ -110,6 +118,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     workspaces, projects, repos, todos, messages, commitDrafts, cleanup, git,
     // 조율 서비스는 워크스페이스 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get coordinator() { return coordinator; },
+    get dbs() { return dbs; },
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get delivery() { return delivery; },
     onHook: (workspace, event, payload) => {
@@ -140,7 +149,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -159,6 +168,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
   });
   const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos') });
+  const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
+  service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
   service.attachDelivery(delivery);
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
@@ -194,7 +206,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

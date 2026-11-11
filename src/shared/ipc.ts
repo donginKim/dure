@@ -1,9 +1,9 @@
 import type {
   AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
-  SlashCommand, TodoAssignee, TodoPatch, Workspace,
+  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -36,6 +36,22 @@ export interface DureApi {
     pickSpec(): Promise<SpecFile | null>;
   };
   /** 정리 대기와 프로젝트 완료 처리 */
+  db: {
+    list(projectId: string): Promise<DbConnection[]>;
+    /** 비밀번호를 안전하게 저장할 수 있는 환경인가 (macOS 키체인) */
+    canStoreSecrets(): Promise<boolean>;
+    save(input: DbConnectionInput): Promise<DbConnection>;
+    remove(id: string): Promise<void>;
+    /** 접속해 본다. 걸린 시간(ms) */
+    test(id: string): Promise<number>;
+    tables(id: string): Promise<DbTable[]>;
+    columns(id: string, schema: string, table: string): Promise<DbColumn[]>;
+    /** 조회 전용. 1000행, 30초까지 */
+    query(id: string, sql: string): Promise<DbResult>;
+    /** 에이전트가 올린, 결정을 기다리는 조회 요청 */
+    requests(projectId: string): Promise<DbRequest[]>;
+    decide(requestId: string, allow: boolean, always?: boolean): Promise<void>;
+  };
   cleanup: {
     list(projectId: string): Promise<CleanupItem[]>;
     /** 옮겨 둔 것을 작업 폴더의 원래 자리로 되돌린다 */
@@ -151,6 +167,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',

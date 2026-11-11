@@ -171,3 +171,47 @@ export interface CreateWorkspaceInput {
   agentKind: AgentKind;
   permissionMode?: PermissionMode;
 }
+
+/** 채팅 보기: 에이전트가 한 일 하나 (도구 호출 하나) */
+export interface ChatStep {
+  /** 도구 호출 id */
+  id: string;
+  tool: string;
+  /** 한 줄 요약 (예: "git status", "LoginForm.tsx 수정") */
+  summary: string;
+  /** 입력 원문 (명령, 파일 경로와 바뀐 내용 등) */
+  input: string;
+  /** 결과 원문. 아직 없으면 null */
+  output: string | null;
+  status: 'running' | 'done' | 'error' | 'denied';
+  startedAt: number;
+  endedAt: number | null;
+}
+
+/** 채팅 보기의 대화 항목 */
+export type ChatItem =
+  | { kind: 'user'; id: string; at: number; text: string }
+  | { kind: 'assistant'; id: string; at: number; text: string }
+  | { kind: 'steps'; id: string; at: number; steps: ChatStep[] }
+  /** 두레가 넣은 글 (TODO 변경, 다른 워크스페이스의 메시지, 알림) */
+  | { kind: 'dure'; id: string; at: number; title: string; text: string }
+  /** 중단됨, 대화가 압축됨 등 */
+  | { kind: 'notice'; id: string; at: number; text: string };
+
+export interface ChatPermission {
+  tool: string;
+  summary: string;
+  input: string;
+}
+
+export interface ChatSnapshot {
+  /** 이 워크스페이스에 채팅 보기를 쓸 수 있는가 */
+  available: boolean;
+  /** 쓸 수 없으면 이유 */
+  reason: string | null;
+  items: ChatItem[];
+  /** 지금 차례가 시작된 시각 (작업 중일 때) */
+  workingSince: number | null;
+  /** 승인을 기다리는 도구 호출 */
+  pendingPermission: ChatPermission | null;
+}

@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import type { Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
 import { groupTodos } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
+import { ConversationList, type ConversationData } from './ConversationPanel';
 import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
 import { Ticks, TodoList } from './TodoPanel';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
-export function ProjectView({ project, repos, workspaces, todos, onSelect }: {
-  project: Project; repos: Repo[]; workspaces: Workspace[]; todos: Todo[]; onSelect: (s: Selection) => void;
+export function ProjectView({ project, repos, workspaces, todos, conversation, onSelect }: {
+  project: Project; repos: Repo[]; workspaces: Workspace[]; todos: Todo[]; conversation: ConversationData; onSelect: (s: Selection) => void;
 }) {
   const [statuses, setStatuses] = useState<Record<string, RepoStatus>>({});
   const [error, setError] = useState('');
@@ -115,6 +116,34 @@ export function ProjectView({ project, repos, workspaces, todos, onSelect }: {
               <span className="tag">{STATUS_LABEL[w.status]}</span>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head">
+          <h2>대화</h2>
+          {(conversation.threads.length > 0 || conversation.flow.paused) && (
+            <button
+              className="btn"
+              title={conversation.flow.paused ? '멈춘 동안 쌓인 메시지를 전달하고 대화를 이어갑니다' : '모든 에이전트가 하던 일을 멈추고, 메시지 전달도 멈춥니다'}
+              onClick={() => { window.dure.messages.pauseProject(project.id, !conversation.flow.paused).catch((e: Error) => setError(e.message)); }}
+            >{conversation.flow.paused ? '전체 재개' : '전체 멈춤'}</button>
+          )}
+        </div>
+        {conversation.flow.capped && (
+          <div className="thread-notice standalone">
+            <span className="grow">이 프로젝트에서 에이전트끼리 50번 주고받아 멈췄습니다. 내용을 확인하고 계속할지 정하세요.</span>
+            <button className="btn accent" onClick={() => { window.dure.messages.resume(project.id).catch((e: Error) => setError(e.message)); }}>계속</button>
+          </div>
+        )}
+        <div className="conv-wide">
+          <ConversationList
+            projectId={project.id}
+            threads={conversation.threads}
+            data={conversation}
+            workspaces={workspaces}
+            empty="아직 오간 대화가 없습니다. 에이전트가 다른 워크스페이스에 메시지를 보내면 여기에 모두 보입니다."
+          />
         </div>
       </div>
 

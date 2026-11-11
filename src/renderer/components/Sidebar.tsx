@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import type { Repo, Todo } from '@shared/types';
+import { deliveryLabel, needsAttention } from '../conversationView';
 import { progress } from '../todoView';
+import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, todos, selection, onSelect, onCreateProject }: {
-  tree: TreeNode[]; repos: Repo[]; todos: Todo[]; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
+export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject }: {
+  tree: TreeNode[]; repos: Repo[]; todos: Todo[]; talk: Record<string, ConversationData>; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -64,6 +66,9 @@ export function Sidebar({ tree, repos, todos, selection, onSelect, onCreateProje
                 >{closed ? '▸' : '▾'}</span>
                 <span className="folder" />
                 <span className="pname">{project.name}</span>
+                {(talk[project.id]?.flow.paused || talk[project.id]?.flow.capped) && (
+                  <span className="flag" title={talk[project.id]?.flow.capped ? '에이전트끼리 너무 많이 주고받아 멈췄습니다' : '프로젝트 전체가 멈춰 있습니다'}>멈춤</span>
+                )}
                 <span className="count" title="워크스페이스 수">{workspaces.length}</span>
               </div>
               {!closed && workspaces.length === 0 && <div className="tree-empty">워크스페이스 없음 · 프로젝트를 눌러 만드세요</div>}
@@ -78,6 +83,12 @@ export function Sidebar({ tree, repos, todos, selection, onSelect, onCreateProje
                   <div style={{ minWidth: 0 }}>
                     <div className="ws-name">{w.name}{progressOf(w.id) && <span className="ws-progress" title="TODO 진행도">{progressOf(w.id)}</span>}</div>
                     <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
+                    {(() => {
+                      const info = talk[project.id]?.delivery[w.id];
+                      return info && needsAttention(info.state) && (info.waiting > 0 || info.held > 0)
+                        ? <div className="ws-wait" title={deliveryLabel(info.state)}>메시지 {info.waiting + info.held}건 전달 대기</div>
+                        : null;
+                    })()}
                   </div>
                 </div>
               ))}

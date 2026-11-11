@@ -94,7 +94,7 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
             );
           })}
         </div>
-        <div className="help">저장소를 등록하는 것만으로는 에이전트가 일하지 않습니다. 저장소마다 워크스페이스를 만들면 그 저장소의 작업 폴더에서 에이전트가 일합니다.</div>
+        <div className="help">저장소를 등록하는 것만으로는 에이전트가 일하지 않습니다. 저장소마다 워크스페이스를 만들면 그 저장소의 작업 폴더에서 에이전트가 일합니다. 등록한 저장소는 신뢰하는 것으로 보고, 에이전트가 처음 묻는 “이 폴더를 신뢰하는가” 에 두레가 대신 “신뢰함” 으로 답합니다. 내용을 모르는 저장소는 등록하기 전에 살펴보세요.</div>
       </div>
 
       <div className="section">

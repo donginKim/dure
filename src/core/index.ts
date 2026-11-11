@@ -1,7 +1,9 @@
 import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
+import { ChatService } from './chat/chatService';
 import { CommitDraftStore } from './commitDrafts';
 import { CommitService } from './commitService';
 import { openDatabase } from './db';
@@ -28,6 +30,7 @@ export interface Core {
   todos: TodoService;
   messages: MessageService;
   delivery: DeliveryService;
+  chat: ChatService;
   commitDrafts: CommitDraftStore;
   commit: CommitService;
   pty: PtyManager;
@@ -45,6 +48,8 @@ export interface CoreOptions {
   worktreeRoot: string;
   /** 터미널과 에이전트에 물려줄 환경 (로그인 셸 환경) */
   baseEnv: Record<string, string>;
+  /** Claude Code 가 대화 기록을 두는 폴더. 기본 ~/.claude */
+  claudeDir?: string;
 }
 
 /** 두레 코어를 만든다. 모든 상태의 원본이다. Electron 에 의존하지 않는다. */
@@ -70,6 +75,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // hook 으로 상태가 바뀌면 서비스의 'changed' 로 내보낸다. 서비스는 MCP 주소가 정해진 뒤에 만들어지므로 나중에 잇는다.
   let onStatus: (workspaceId: string) => void = () => undefined;
   let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
+  const chat = new ChatService({ workspaces, allowedRoot: o.claudeDir ?? join(homedir(), '.claude'), onInterrupted: (id) => service.noteInterrupted(id) });
   const mcp = await startMcpServer({
     workspaces, projects, repos, todos, messages, commitDrafts,
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
@@ -78,7 +84,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       const out = handleHook({
         workspaces, todos,
         onStatus: (id) => onStatus(id),
-        collect: (id) => delivery.collect(id),
+        // 작업 중에 채팅으로 보낸 글이 먼저다. TODO 변경과 메시지가 그 뒤에 붙는다.
+        collect: (id) => {
+          const parts = [chat.takeQueued(id), delivery.collect(id)].filter((x): x is string => Boolean(x));
+          return parts.length ? parts.join('\n\n') : undefined;
+        },
         collectMessages: (id) => delivery.collectMessages(id),
         onUserPrompt: (w) => {
           // 첫 프롬프트로 건넨 메시지는 에이전트가 프롬프트를 받은 지금 전달이 확정된다.
@@ -90,6 +100,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       // 승인 요청이 아닌 알림(입력을 기다린다는 알림 등)은 에이전트가 일을 시작했다는 뜻이 아니다.
       // 그런 알림 때문에 '쉬는 중 확인' 을 지우면 쉬는 에이전트에게 메시지를 전달하지 못한다.
       if (event !== 'Notification' || isPermissionPrompt(payload)) noteHook(workspace.id, event, out !== '');
+      // 채팅 보기는 터미널 보기 위에 얹힌 화면이다. 여기서 문제가 나도 hook 응답은 나가야 한다.
+      try { chat.noteHook(workspace.id, event, payload, event === 'Stop' && out !== ''); } catch { /* 채팅 보기만 영향받는다 */ }
       return out;
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools]);
@@ -109,6 +121,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
   });
   service.attachDelivery(delivery);
+  service.attachChat(chat);
   // 전달이 실패하면 메시지는 미전달로 되돌아가고 이유가 delivery.error 에 남아 화면에 보인다. 여기서는 오류를 삼킨다.
   const kick = (workspaceId: string): void => { delivery.kick(workspaceId).catch(() => undefined); };
   const onSent = (m: { toWorkspaceId: string }): void => kick(m.toWorkspaceId);
@@ -123,7 +136,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, commitDrafts, commit, pty, git, mcpUrl: mcp.url,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, commitDrafts, commit, pty, git, mcpUrl: mcp.url,
     async addRepo(projectId, path) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);
@@ -142,6 +155,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       messages.off('sent', onSent);
       messages.off('released', onReleased);
       service.detach();
+      chat.dispose();
       await pty.killAll();
       await mcp.close();
       db.close();

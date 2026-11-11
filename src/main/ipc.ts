@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { isTerminalReply } from '@core/agents/trustPrompt';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
@@ -71,7 +72,8 @@ export function registerIpc(core: Core): () => void {
     'terminals.openShell': (workspaceId: string, size: TerminalSize) => core.service.openShell(workspaceId, size),
     'terminals.write': (id: string, data: string) => {
       // 사용자가 에이전트 터미널에 입력하고 있다: 두레가 그 터미널에 글을 써 넣으면 안 된다.
-      core.service.noteTerminalInput(id);
+      // 화면이 스스로 돌려보내는 응답(터미널 버전, 커서 위치 등)은 사용자가 누른 키가 아니다.
+      if (!isTerminalReply(data)) core.service.noteTerminalInput(id);
       core.pty.write(id, data);
     },
     'terminals.resize': (id: string, cols: number, rows: number) => core.pty.resize(id, cols, rows),
@@ -109,6 +111,10 @@ export function registerIpc(core: Core): () => void {
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
     'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
+    'chat.get': (workspaceId: string) => ({ ...core.chat.snapshot(workspaceId), canSend: core.service.canSendInput(workspaceId) }),
+    'chat.step': (workspaceId: string, stepId: string) => core.chat.step(workspaceId, stepId),
+    'chat.send': (workspaceId: string, text: string) => core.service.sendUserInput(workspaceId, text),
+    'chat.answerPermission': (workspaceId: string, answer: 'allow' | 'deny') => core.service.answerPermission(workspaceId, answer),
     'artifacts.list': (projectId: string) => core.messages.artifacts(projectId),
     'artifacts.get': (id: string) => core.messages.artifact(id) ?? null,
   };
@@ -135,7 +141,8 @@ export function registerIpc(core: Core): () => void {
   };
   // 상태가 바뀌면 '알리기' 가능 여부도 바뀌므로 todos 도 함께 알린다.
   // 상태가 바뀌면 전달 방식도 바뀌므로 messages 도 함께 알린다.
-  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); };
+  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
+  const onChatChanged = (): void => changed('chat');
   const onMessagesChanged = (): void => changed('messages');
   const onCommitChanged = (): void => changed('commit');
   const onTodosChanged = (): void => changed('todos');
@@ -146,6 +153,7 @@ export function registerIpc(core: Core): () => void {
   core.todos.on('delivered', onTodosChanged);
   core.messages.on('changed', onMessagesChanged);
   core.commit.on('changed', onCommitChanged);
+  core.chat.on('changed', onChatChanged);
 
   return () => {
     core.pty.off('data', onData);
@@ -155,6 +163,7 @@ export function registerIpc(core: Core): () => void {
     core.todos.off('delivered', onTodosChanged);
     core.messages.off('changed', onMessagesChanged);
     core.commit.off('changed', onCommitChanged);
+    core.chat.off('changed', onChatChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));
       else ipcMain.removeHandler(ipcName(channel));

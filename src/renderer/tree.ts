@@ -13,7 +13,7 @@ export interface TreeNode {
 
 export const STATUS_LABEL: Record<WorkspaceStatus, string> = {
   stopped: '꺼짐',
-  starting: '시작 중 · 터미널 확인',
+  starting: '시작 중',
   idle: '쉬는 중',
   working: '작업 중',
   waiting_user: '사용자 기다림',

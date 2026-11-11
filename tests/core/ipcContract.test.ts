@@ -11,6 +11,7 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
     'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
     'messages.resume', 'messages.delivery', 'workspaces.interrupt', 'artifacts.list', 'artifacts.get',
     'commit.state', 'commit.run', 'commit.push',
+    'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission',
   ].sort());
   expect(new Set(IPC_CHANNELS).size).toBe(IPC_CHANNELS.length);
 });

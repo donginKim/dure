@@ -36,7 +36,7 @@ test('reconcileSelection: 프로젝트도 사라지면 null', () => {
 });
 
 test('상태 글자', () => {
-  expect(STATUS_LABEL).toEqual({ stopped: '꺼짐', starting: '시작 중 · 터미널 확인', idle: '쉬는 중', working: '작업 중', waiting_user: '사용자 기다림' });
+  expect(STATUS_LABEL).toEqual({ stopped: '꺼짐', starting: '시작 중', idle: '쉬는 중', working: '작업 중', waiting_user: '사용자 기다림' });
 });
 
 test('countByRepo 는 저장소별 워크스페이스 수를 센다', async () => {

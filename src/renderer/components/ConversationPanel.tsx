@@ -13,7 +13,7 @@ export interface ConversationData {
 
 const KIND_LABEL: Record<Artifact['kind'], string> = { result: '결과', decision: '결정', 'api-spec': 'API 형식', note: '메모' };
 
-function Attachment({ artifact }: { artifact: Artifact }) {
+export function Attachment({ artifact }: { artifact: Artifact }) {
   const [open, setOpen] = useState(false);
   if (artifact.path) {
     return <div className="att"><span className="att-kind">{KIND_LABEL[artifact.kind]}</span>{artifact.title}<code className="att-path">{artifact.path}</code></div>;

@@ -1,10 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
 import { buildAgentLaunch } from './agents/launch';
+import { trustPrompt } from './agents/trustPrompt';
+import type { ChatService } from './chat/chatService';
 import type { DeliveryService } from './delivery';
 import type { Git } from './git';
 import type { MessageService } from './messages';
@@ -78,6 +80,15 @@ export class WorkspaceService extends EventEmitter {
   /** 마지막으로 hook 을 받은 시각 */
   private readonly lastActivity = new Map<string, number>();
 
+  private chat?: ChatService;
+  /** 폴더 신뢰 창을 지켜보는 중인 워크스페이스 → 그만두는 함수 */
+  private readonly trustWatchers = new Map<string, () => void>();
+
+  /** 대화 서비스를 이어 준다: 승인 창 상태를 묻고, 중단·종료·삭제를 알린다. */
+  attachChat(chat: ChatService): void {
+    this.chat = chat;
+  }
+
   /** 전달 엔진은 이 서비스를 쓰므로 만든 뒤에 이어 준다. */
   attachDelivery(delivery: DeliveryService): void {
     this.delivery = delivery;
@@ -109,18 +120,23 @@ export class WorkspaceService extends EventEmitter {
    */
   noteTerminalInput(terminalId: string): void {
     const workspaceId = this.agentTerminals.get(terminalId);
-    if (workspaceId) this.confirmedIdle.delete(workspaceId);
+    if (!workspaceId) return;
+    this.confirmedIdle.delete(workspaceId);
+    this.trustWatchers.get(workspaceId)?.(); // 사용자가 직접 답하고 있다
+    this.chat?.noteTerminalInput(workspaceId);
   }
 
   private readonly onTerminalExit = (terminalId: string): void => {
     const workspaceId = this.agentTerminals.get(terminalId);
     if (!workspaceId) return;
     this.agentTerminals.delete(terminalId);
+    this.trustWatchers.get(workspaceId)?.();
     this.confirmedIdle.delete(workspaceId);
     this.synthetic.delete(workspaceId);
     this.lastActivity.delete(workspaceId);
     // 첫 프롬프트를 받기 전에 끝났다면 건넨 메시지를 되돌린다.
     this.delivery?.agentExited(workspaceId);
+    this.chat?.agentExited(workspaceId);
     if (this.d.workspaces.get(workspaceId)) {
       this.d.workspaces.update(workspaceId, { status: 'stopped' });
       this.emit('changed', workspaceId);
@@ -134,6 +150,7 @@ export class WorkspaceService extends EventEmitter {
 
   /** 코어를 닫을 때 부른다. 이후의 터미널 종료는 상태 저장소를 건드리지 않는다. */
   detach(): void {
+    for (const stop of [...this.trustWatchers.values()]) stop();
     this.d.pty.off('exit', this.onTerminalExit);
   }
 
@@ -206,6 +223,7 @@ export class WorkspaceService extends EventEmitter {
     } finally {
       this.removing.delete(id);
       this.delivery?.forget(id);
+      this.chat?.forget(id);
     }
   }
 
@@ -281,11 +299,58 @@ export class WorkspaceService extends EventEmitter {
     this.agentTerminals.set(terminal.id, id);
     // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
     this.d.todos.takePending(id);
+    if (ws.agentKind === 'claude') this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
     // Claude Code 는 첫 hook 이 올 때까지 '시작 중' 이다: 폴더 신뢰 창이 떠 있을 수 있다 (실험 12: 그동안은 hook 이 오지 않는다).
     // Codex 는 hook 이 없어 알 길이 없으므로 예전처럼 쉬는 중으로 둔다.
     this.d.workspaces.update(id, { status: ws.agentKind === 'claude' ? 'starting' : 'idle' });
     this.emit('changed', id);
     return terminal;
+  }
+
+  /**
+   * Claude Code 가 처음 보는 폴더에서 묻는 "이 폴더를 신뢰하는가" 창에 두레가 대신 "신뢰함" 으로 답한다. [사용자 결정, 2026-11-11]
+   * 작업 폴더는 사용자가 직접 등록한 저장소에서 두레가 만든 것이다.
+   * 화면이 그 창이고, 묻는 폴더가 이 작업 폴더이고, 커서가 "Yes" 에 있는 것을 확인한 뒤에만 Enter 를 보낸다.
+   * 조금이라도 다르면 아무것도 누르지 않는다: 사용자가 터미널에서 직접 답하면 된다.
+   */
+  private answerTrustPrompt(workspaceId: string, terminalId: string, worktreePath: string): void {
+    let folders = [worktreePath];
+    try { folders = [...new Set([worktreePath, realpathSync(worktreePath)])]; } catch { /* 경로 그대로 쓴다 */ }
+    let moves = 0;
+    let timer: NodeJS.Timeout | undefined;
+    const stop = (): void => {
+      if (timer) clearTimeout(timer);
+      clearTimeout(giveUp);
+      this.d.pty.off('data', onData);
+      this.trustWatchers.delete(workspaceId);
+    };
+    const check = (): void => {
+      const live = this.d.pty.list(workspaceId).some((t) => t.id === terminalId);
+      // 첫 hook 이 왔다면 신뢰 창은 이미 지나갔다 (실험 12).
+      if (!live || this.d.workspaces.get(workspaceId)?.status !== 'starting') { stop(); return; }
+      const state = trustPrompt(this.d.pty.buffer(terminalId).slice(-4000), folders);
+      if (state === 'on-yes') {
+        this.d.pty.write(terminalId, '\r');
+        stop();
+      } else if (state === 'on-no' && moves < 3) {
+        moves++;
+        this.d.pty.write(terminalId, '\x1b[B'); // 아래로 한 칸. 화면이 다시 그려지면 다시 확인한다
+      } else if (state === 'on-no') {
+        stop();
+      }
+    };
+    // 화면이 다 그려진 뒤에 본다: 출력이 잠잠해지면 확인한다.
+    const onData = (id: string): void => {
+      if (id !== terminalId) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(check, 500);
+      timer.unref();
+    };
+    const giveUp = setTimeout(stop, 30_000);
+    giveUp.unref();
+    this.trustWatchers.get(workspaceId)?.();
+    this.trustWatchers.set(workspaceId, stop);
+    this.d.pty.on('data', onData);
   }
 
   /**
@@ -352,6 +417,82 @@ export class WorkspaceService extends EventEmitter {
     this.d.pty.write(terminal.id, '\x1b');
     this.confirmedIdle.delete(id);
     this.d.workspaces.update(id, { status: 'idle' });
+    this.chat?.interrupted(id);
+    this.emit('changed', id);
+  }
+
+  /**
+   * 대화 기록에서 "사용자가 중단함" 을 읽었다. 터미널에서 직접 Esc 를 눌렀거나 승인을 거부한 경우다.
+   * 그때는 hook 이 오지 않아(실험 12c, 15e) 상태가 '작업 중'/'승인 대기' 에 머문다. 쉬는 중으로 되돌린다.
+   * 쉬는 중으로 확인된 것은 아니다: 두레가 스스로 글을 써 넣는 근거로는 쓰지 않는다.
+   */
+  noteInterrupted(id: string): void {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || (ws.status !== 'working' && ws.status !== 'waiting_user')) return;
+    this.confirmedIdle.delete(id);
+    this.d.workspaces.update(id, { status: 'idle' });
+    this.emit('changed', id);
+  }
+
+  /**
+   * 채팅 입력창의 글을 지금 에이전트에게 보낼 수 있는가.
+   * 쉬는 중이면 터미널에 써 넣고, 작업 중이면 두레가 맡아 두었다가 다음 hook 응답에 실어 전달한다.
+   * 시작 중(폴더 신뢰 창)이나 승인 대기 중에는 받지 않는다.
+   */
+  canSendInput(id: string): boolean {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || ws.agentKind !== 'claude' || this.removing.has(id)) return false;
+    if (ws.status !== 'idle' && ws.status !== 'working') return false;
+    return this.d.pty.list(id).some((t) => t.kind === 'agent');
+  }
+
+  /** 사용자가 채팅 입력창에서 보낸 글을 에이전트의 터미널에 써 넣는다. */
+  async sendUserInput(id: string, text: string): Promise<void> {
+    // eslint-disable-next-line no-control-regex
+    const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
+    if (!message) throw new Error('보낼 글을 입력하세요.');
+    const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
+    const before = this.d.workspaces.get(id);
+    if (!this.canSendInput(id) || !terminal || !before) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
+    if (before.status === 'working') {
+      // 작업 중인 터미널에는 쓰지 않는다: 승인 창이 떠 있을 수 있고, 떴다는 알림은 몇 초 늦게 온다 (실험 15e).
+      // 그 틈에 글과 Enter 를 써 넣으면 Enter 가 "허용" 으로 들어간다. 두레가 맡아 두었다가 다음 hook 응답에 싣는다.
+      if (!this.chat) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
+      this.chat.queue(id, message);
+      // 사용자가 끼어든 것이다: 에이전트끼리의 왕복 횟수를 다시 센다 (이 길로는 UserPromptSubmit 이 오지 않는다).
+      this.d.messages.userIntervened(before.projectId);
+      return;
+    }
+    // 쉬는 중: 입력칸에 써 넣는다. 사용자의 입력이므로 두레가 넣은 프롬프트로 치지 않고, 쉬는 중 확인을 지운다.
+    // 앞서 맡아 두고 전달하지 못한 글(중단 등으로)이 있으면 함께 보낸다.
+    const full = [...(this.chat?.takeQueuedTexts(id) ?? []), message].join('\n\n');
+    this.confirmedIdle.delete(id);
+    this.synthetic.delete(id);
+    // 쓰기 전에 상태를 바꿔, 400ms 사이에 다른 것(깨우기, 또 한 번의 보내기)이 같은 입력칸에 쓰지 못하게 한다.
+    this.d.workspaces.update(id, { status: 'working' });
+    this.emit('changed', id);
+    this.d.pty.write(terminal.id, full.includes('\n') ? `\x1b[200~${full}\x1b[201~` : full);
+    await new Promise((r) => setTimeout(r, 400));
+    if (!this.d.pty.list(id).some((t) => t.id === terminal.id)) throw new Error('에이전트가 종료되어 보내지 못했습니다.');
+    this.d.pty.write(terminal.id, '\r');
+  }
+
+  /**
+   * 채팅의 승인 카드에서 고른 답을 승인 창에 써 넣는다.
+   * hook 으로 승인 창임이 확인됐고, 사용자가 터미널에서 그 창을 건드리지 않았을 때만 한다 (실험 15e: 커서는 "1. Yes" 에 있다).
+   */
+  answerPermission(id: string, answer: 'allow' | 'deny'): void {
+    const ws = this.d.workspaces.get(id);
+    const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
+    if (!ws || !terminal || ws.agentKind !== 'claude' || ws.status !== 'waiting_user' || !this.chat?.hasPendingPermission(id)) {
+      throw new Error('승인을 기다리는 중이 아닙니다.');
+    }
+    if (answer !== 'allow' && answer !== 'deny') throw new Error('알 수 없는 답입니다.');
+    this.chat.permissionAnswered(id);
+    this.confirmedIdle.delete(id);
+    this.d.pty.write(terminal.id, answer === 'allow' ? '\r' : '\x1b');
+    // 거부하면 hook 이 오지 않는다. 허용하면 곧 PostToolUse 가 온다.
+    this.d.workspaces.update(id, { status: answer === 'allow' ? 'working' : 'idle' });
     this.emit('changed', id);
   }
 

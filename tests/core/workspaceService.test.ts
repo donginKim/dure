@@ -12,6 +12,7 @@ let fakeBin: string;
 let repoPath: string;
 let projectId: string;
 let repoId: string;
+let claudeDir: string;
 
 function until(cond: () => boolean, ms = 5000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -28,13 +29,15 @@ function installFakeAgent(name: string): void {
 }
 
 async function boot(path = `${fakeBin}:/usr/bin:/bin`): Promise<void> {
-  core = await createCore({ dataDir, worktreeRoot, baseEnv: { PATH: path, SHELL: '/bin/sh', HOME: tempDir() } });
+  core = await createCore({ dataDir, worktreeRoot, baseEnv: { PATH: path, SHELL: '/bin/sh', HOME: tempDir() }, claudeDir });
 }
 
 beforeEach(async () => {
   dataDir = join(tempDir(), 'dure data');
   worktreeRoot = join(tempDir(), 'work trees');
   fakeBin = join(tempDir(), 'fake bin');
+  claudeDir = join(tempDir(), 'claude home');
+  mkdirSync(claudeDir);
   mkdirSync(fakeBin);
   installFakeAgent('claude');
   installFakeAgent('codex');
@@ -553,5 +556,245 @@ describe('에이전트 터미널의 git', () => {
     core.pty.write(t.id, 'echo "P=$PATH"\n');
     await until(() => core.pty.buffer(t.id).includes('P=/'));
     expect(core.pty.buffer(t.id)).not.toContain(join('workspaces', ws.id, 'bin'));
+  });
+});
+
+describe('채팅에서 보내기와 승인 응답', () => {
+  const catAgent = (): void => {
+    writeFileSync(join(fakeBin, 'claude'), '#!/bin/sh\nexec cat -v\n');
+    chmodSync(join(fakeBin, 'claude'), 0o755);
+  };
+  const hookOf = (id: string): string => join(dataDir, 'workspaces', id, 'hook.sh');
+  const PERMISSION = JSON.stringify({ notification_type: 'permission_prompt' });
+  async function agent(name: string, kind: 'claude' | 'codex' = 'claude') {
+    catAgent();
+    const ws = await create({ name, agentKind: kind });
+    const terminal = await core.service.startAgent(ws.id, SIZE);
+    return { ws, terminal };
+  }
+  const quiet = (ms = 600): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+  test('sendUserInput: 쉬는 중이면 글이 터미널에 들어가고 Enter 가 따라온다', async () => {
+    const { ws, terminal } = await agent('chat-send');
+    await runHook(hookOf(ws.id), 'SessionStart');
+    expect(core.service.canSendInput(ws.id)).toBe(true);
+    await core.service.sendUserInput(ws.id, 'make login page');
+    // 터미널의 메아리 한 번, Enter 로 줄이 넘어가 가짜 에이전트가 되뱉은 것 한 번
+    await until(() => core.pty.buffer(terminal.id).split('make login page').length === 3);
+  });
+
+  test('sendUserInput: 작업 중에는 터미널에 쓰지 않고 맡아 두었다가 다음 hook 응답에 싣는다', async () => {
+    // 승인 창이 떴다는 알림은 창이 뜨고 몇 초 뒤에 온다. 그 틈에 써 넣으면 Enter 가 "허용" 으로 들어간다.
+    const { ws, terminal } = await agent('chat-send-working');
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'rm -rf x' } }));
+    expect(core.workspaces.get(ws.id)?.status).toBe('working');
+    const before = core.pty.buffer(terminal.id);
+    let intervened = 0;
+    const original = core.messages.userIntervened.bind(core.messages);
+    core.messages.userIntervened = (id: string) => { intervened++; return original(id); };
+    await core.service.sendUserInput(ws.id, 'also this');
+    await quiet();
+    expect(core.pty.buffer(terminal.id)).toBe(before); // 글자도 Enter 도 들어가지 않았다
+    expect(core.chat.snapshot(ws.id).queued.map((q) => q.text)).toEqual(['also this']);
+    expect(intervened).toBe(1);
+    const out = await runHook(hookOf(ws.id), 'PostToolUse');
+    expect(JSON.parse(out).hookSpecificOutput.additionalContext).toBe('[두레] 사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:\n> also this');
+    expect(core.chat.snapshot(ws.id).queued).toEqual([]);
+  });
+
+  test('sendUserInput: 전달되지 못하고 남은 글은 쉬는 중에 보내는 글 앞에 붙어 나간다', async () => {
+    const { ws, terminal } = await agent('chat-send-leftover');
+    await runHook(hookOf(ws.id), 'PreToolUse');
+    await core.service.sendUserInput(ws.id, 'left over');
+    core.service.interrupt(ws.id); // 중단하면 hook 이 오지 않아 전달되지 못한다
+    expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+    expect(core.chat.snapshot(ws.id).queued.length).toBe(1);
+    await core.service.sendUserInput(ws.id, 'new one');
+    await until(() => core.pty.buffer(terminal.id).includes('left over'));
+    expect(core.pty.buffer(terminal.id)).toMatch(/\^\[\[200~left over/);
+    expect(core.chat.snapshot(ws.id).queued).toEqual([]);
+  });
+
+  test('sendUserInput: 쉬는 중에 보내면 곧바로 작업 중이 되어 같은 입력칸에 겹쳐 쓰지 못한다', async () => {
+    const { ws } = await agent('chat-send-serial');
+    await runHook(hookOf(ws.id), 'Stop');
+    const first = core.service.sendUserInput(ws.id, 'one');
+    expect(core.workspaces.get(ws.id)?.status).toBe('working');
+    expect(core.service.isConfirmedIdle(ws.id)).toBe(false); // 깨우기도 끼어들지 못한다
+    await first;
+  });
+
+  test('sendUserInput: 여러 줄은 붙여넣기 묶음으로 들어간다', async () => {
+    const { ws, terminal } = await agent('chat-send-multi');
+    await runHook(hookOf(ws.id), 'SessionStart');
+    await core.service.sendUserInput(ws.id, '첫째\r\n둘째');
+    await until(() => core.pty.buffer(terminal.id).includes('^[[200~첫째'));
+    expect(core.pty.buffer(terminal.id)).toMatch(/둘째\^\[\[201~/);
+  });
+
+  test('sendUserInput: 시작 중, 승인 대기, 꺼짐, Codex 면 오류이고 터미널에 아무것도 쓰지 않는다', async () => {
+    const { ws, terminal } = await agent('chat-send-blocked');
+    const refused = '지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.';
+    // 시작 중: 폴더 신뢰 창이 떠 있을 수 있다
+    expect(core.workspaces.get(ws.id)?.status).toBe('starting');
+    expect(core.service.canSendInput(ws.id)).toBe(false);
+    await expect(core.service.sendUserInput(ws.id, '몰래')).rejects.toThrow(refused);
+    // 승인 대기
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'rm -rf x' } }));
+    await runHook(hookOf(ws.id), 'Notification', PERMISSION);
+    expect(core.workspaces.get(ws.id)?.status).toBe('waiting_user');
+    await expect(core.service.sendUserInput(ws.id, '몰래')).rejects.toThrow(refused);
+    await quiet();
+    expect(core.pty.buffer(terminal.id)).not.toContain('몰래');
+    // 꺼짐
+    const off = await create({ name: 'chat-send-off' });
+    await expect(core.service.sendUserInput(off.id, '몰래')).rejects.toThrow(refused);
+    // Codex
+    writeFileSync(join(fakeBin, 'codex'), '#!/bin/sh\nexec cat -v\n');
+    const cx = await create({ name: 'chat-send-codex', agentKind: 'codex' });
+    const ct = await core.service.startAgent(cx.id, SIZE);
+    expect(core.service.canSendInput(cx.id)).toBe(false);
+    await expect(core.service.sendUserInput(cx.id, '몰래')).rejects.toThrow(refused);
+    await quiet(200);
+    expect(core.pty.buffer(ct.id)).not.toContain('몰래');
+  });
+
+  test('sendUserInput: 빈 글은 오류, 제어 문자는 지워진다', async () => {
+    const { ws, terminal } = await agent('chat-send-clean');
+    await runHook(hookOf(ws.id), 'SessionStart');
+    await expect(core.service.sendUserInput(ws.id, '  \n ')).rejects.toThrow('보낼 글을 입력하세요.');
+    await core.service.sendUserInput(ws.id, '가\x1b[201~나\x03다');
+    await until(() => core.pty.buffer(terminal.id).includes('가[201~나다'));
+    expect(core.pty.buffer(terminal.id)).not.toContain('^C');
+  });
+
+  test('sendUserInput 으로 보낸 글의 UserPromptSubmit 은 사용자 개입으로 친다', async () => {
+    const { ws } = await agent('chat-send-human');
+    await runHook(hookOf(ws.id), 'Stop');
+    let intervened = 0;
+    const original = core.messages.userIntervened.bind(core.messages);
+    core.messages.userIntervened = (id: string) => { intervened++; return original(id); };
+    await core.service.sendUserInput(ws.id, '직접 시킴');
+    await runHook(hookOf(ws.id), 'UserPromptSubmit', JSON.stringify({ prompt: '직접 시킴' }));
+    expect(intervened).toBe(1);
+    // 사용자가 입력했으니 쉬는 중 확인은 지워진다
+    expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
+  });
+
+  test('answerPermission: 승인 대기 중이면 allow 는 CR 을 쓰고 작업 중으로, 같은 창에 두 번 답하지 못한다', async () => {
+    const { ws, terminal } = await agent('chat-allow');
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'curl example.com' } }));
+    await runHook(hookOf(ws.id), 'Notification', PERMISSION);
+    expect(core.chat.snapshot(ws.id).pendingPermission).toMatchObject({ tool: 'Bash', summary: 'curl example.com', input: 'curl example.com', canAnswer: true });
+    const before = core.pty.buffer(terminal.id);
+    core.service.answerPermission(ws.id, 'allow');
+    await until(() => core.pty.buffer(terminal.id).length > before.length);
+    expect(core.pty.buffer(terminal.id).slice(before.length)).not.toContain('^[');
+    expect(core.workspaces.get(ws.id)?.status).toBe('working');
+    expect(core.chat.snapshot(ws.id).pendingPermission).toBeNull();
+    expect(() => core.service.answerPermission(ws.id, 'allow')).toThrow('승인을 기다리는 중이 아닙니다.');
+  });
+
+  test('answerPermission: deny 는 ESC 를 쓰고 쉬는 중으로 (확인된 쉬는 중은 아니다)', async () => {
+    const { ws, terminal } = await agent('chat-deny');
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'curl example.com' } }));
+    await runHook(hookOf(ws.id), 'Notification', PERMISSION);
+    core.service.answerPermission(ws.id, 'deny');
+    await until(() => core.pty.buffer(terminal.id).includes('^['));
+    expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+    expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
+  });
+
+  test('answerPermission: 승인 대기 중이 아니면 오류이고 아무것도 쓰지 않는다', async () => {
+    const { ws, terminal } = await agent('chat-no-permission');
+    await runHook(hookOf(ws.id), 'Stop');
+    const before = core.pty.buffer(terminal.id);
+    expect(() => core.service.answerPermission(ws.id, 'allow')).toThrow('승인을 기다리는 중이 아닙니다.');
+    expect(() => core.service.answerPermission(ws.id, 'deny')).toThrow('승인을 기다리는 중이 아닙니다.');
+    await quiet(200);
+    expect(core.pty.buffer(terminal.id)).toBe(before);
+  });
+
+  test('answerPermission: 사용자가 터미널에서 승인 창을 건드렸거나 예/아니오 창이 아니면 채팅에서 답하지 못한다', async () => {
+    const { ws, terminal } = await agent('chat-touched');
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'ls' } }));
+    await runHook(hookOf(ws.id), 'Notification', PERMISSION);
+    core.service.noteTerminalInput(terminal.id); // 화살표로 커서를 옮겼을 수 있다
+    expect(core.chat.snapshot(ws.id).pendingPermission).toMatchObject({ canAnswer: false });
+    expect(() => core.service.answerPermission(ws.id, 'allow')).toThrow('승인을 기다리는 중이 아닙니다.');
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'AskUserQuestion', tool_input: {} }));
+    await runHook(hookOf(ws.id), 'Notification', PERMISSION);
+    expect(core.chat.snapshot(ws.id).pendingPermission).toMatchObject({ canAnswer: false });
+    expect(() => core.service.answerPermission(ws.id, 'allow')).toThrow('승인을 기다리는 중이 아닙니다.');
+  });
+
+  test('기록에서 중단을 읽으면 승인 대기에 머물던 상태가 쉬는 중으로 돌아온다 (터미널에서 직접 거부한 경우)', async () => {
+    const { ws } = await agent('chat-rejected-in-terminal');
+    const file = join(claudeDir, 'projects', 'p', 's1.jsonl');
+    mkdirSync(join(claudeDir, 'projects', 'p'), { recursive: true });
+    const line = (o: object): string => `${JSON.stringify({ uuid: crypto.randomUUID(), timestamp: new Date(Date.now() + 5000).toISOString(), ...o })}\n`;
+    writeFileSync(file, line({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'curl x' } }] } }));
+    await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ transcript_path: file, tool_name: 'Bash', tool_input: { command: 'curl x' } }));
+    await runHook(hookOf(ws.id), 'Notification', JSON.stringify({ transcript_path: file, notification_type: 'permission_prompt' }));
+    expect(core.workspaces.get(ws.id)?.status).toBe('waiting_user');
+    const { appendFileSync } = await import('node:fs');
+    appendFileSync(file, line({ type: 'user', toolDenialKind: 'user-rejected', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'rejected', is_error: true }] } })
+      + line({ type: 'user', message: { content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } }));
+    await until(() => core.workspaces.get(ws.id)?.status === 'idle', 4000);
+    expect(core.chat.snapshot(ws.id).pendingPermission).toBeNull();
+    expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
+  });
+});
+
+describe('폴더 신뢰 창에 대신 답하기', () => {
+  // 신뢰 창을 흉내 내는 가짜 Claude Code: 받은 키를 16진수로 적는다.
+  const trustAgent = (folder = '$(pwd)'): void => {
+    writeFileSync(join(fakeBin, 'claude'), [
+      '#!/bin/sh', 'stty -icanon -echo',
+      `printf ' Accessing workspace:\\n %s\\n Quick safety check: Is this a project you created or one you trust?\\n ❯ No, exit\\n   Yes, I trust this folder\\n Enter to confirm · Esc to cancel\\n' "${folder}"`,
+      'k=$(dd bs=1 count=3 2>/dev/null | od -An -tx1 | tr -d " \\n")', 'printf "KEY1:%s\\n" "$k"',
+      `printf ' Accessing workspace:\\n %s\\n Quick safety check\\n   No, exit\\n ❯ Yes, I trust this folder\\n Enter to confirm · Esc to cancel\\n' "${folder}"`,
+      'k=$(dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d " \\n")', 'printf "KEY2:%s\\nTRUSTED\\n" "$k"', 'exec sleep 1000', '',
+    ].join('\n'));
+    chmodSync(join(fakeBin, 'claude'), 0o755);
+  };
+
+  test('작업 폴더를 묻는 신뢰 창이면 아래로 한 칸 내리고, 커서가 Yes 에 온 것을 본 뒤 Enter 를 보낸다', async () => {
+    trustAgent();
+    const ws = await create({ name: 'trust-auto' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    await until(() => core.pty.buffer(t.id).includes('TRUSTED'), 8000);
+    expect(core.pty.buffer(t.id)).toContain('KEY1:1b5b42'); // ESC [ B
+    expect(core.pty.buffer(t.id)).toMatch(/KEY2:0[da]/); // Enter
+  });
+
+  test('다른 폴더를 묻는 창에는 아무것도 보내지 않는다', async () => {
+    trustAgent('/somewhere/else');
+    const ws = await create({ name: 'trust-other' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(core.pty.buffer(t.id)).not.toContain('KEY1');
+  });
+
+  test('사용자가 터미널에 직접 입력하면 두레는 손을 뗀다', async () => {
+    trustAgent();
+    const ws = await create({ name: 'trust-user' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    core.service.noteTerminalInput(t.id);
+    await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(core.pty.buffer(t.id)).not.toContain('KEY1');
+  });
+
+  test('Codex 에는 하지 않는다', async () => {
+    trustAgent();
+    writeFileSync(join(fakeBin, 'codex'), readFileSync(join(fakeBin, 'claude')));
+    chmodSync(join(fakeBin, 'codex'), 0o755);
+    const ws = await create({ name: 'trust-codex', agentKind: 'codex' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(core.pty.buffer(t.id)).not.toContain('KEY1');
   });
 });

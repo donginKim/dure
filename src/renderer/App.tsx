@@ -58,7 +58,8 @@ export function App() {
   useEffect(() => {
     void reload();
     return window.dure.onChanged((topic) => {
-      if (topic !== 'terminals') void reload();
+      // 채팅 보기의 변화는 그 화면이 스스로 다시 읽는다. 여기서 전부 다시 읽으면 에이전트가 일하는 내내 목록을 다시 받는다.
+      if (topic !== 'terminals' && topic !== 'chat') void reload();
     });
   }, [reload]);
 

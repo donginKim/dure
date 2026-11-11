@@ -19,7 +19,7 @@ const hook = (ev, body) => { try { return execFileSync(path.join(dir, 'hook.sh')
 const session = resume ?? 's-new';
 out({ type: 'system', subtype: 'init', session_id: session });
 hook('SessionStart', { source: resume ? 'resume' : 'startup' });
-let waiting = null; let busy = null;
+let waiting = null; let busy = null; let outstanding = 0;
 require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
   const m = JSON.parse(line);
   if (m.type === 'control_request') {
@@ -34,7 +34,11 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
   if (m.type === 'control_response') {
     const r = m.response.response; const w = waiting; waiting = null;
     out({ type: 'assistant', message: { content: [{ type: 'text', text: 'answer:' + JSON.stringify(r) }] } });
+    fs.appendFileSync(path.join(dir, 'answers.log'), JSON.stringify({ requestId: m.response.request_id, subtype: m.response.subtype, response: r, error: m.response.error }) + '\\n');
+    if (m.response.subtype === 'error') return;
     fs.writeFileSync(path.join(dir, 'answer.json'), JSON.stringify({ requestId: m.response.request_id, expected: w, response: r }));
+    if (outstanding > 1) { outstanding--; return; } // 아직 답을 기다리는 요청이 있다
+    outstanding = 0;
     hook('Stop'); out({ type: 'result', subtype: 'success' });
     return;
   }
@@ -44,6 +48,25 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
   if (text === 'perm') { waiting = 'r-perm'; return out({ type: 'control_request', request_id: 'r-perm', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'curl https://example.com' }, permission_suggestions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'curl *' }], behavior: 'allow', destination: 'localSettings' }] } }); }
   if (text === 'perm-plain') { waiting = 'r-plain'; return out({ type: 'control_request', request_id: 'r-plain', request: { subtype: 'can_use_tool', tool_name: 'Write', input: { file_path: '/a/b.txt', content: 'x' } } }); }
   if (text === 'ask') { waiting = 'r-ask'; return out({ type: 'control_request', request_id: 'r-ask', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [{ question: '어떤 색?', header: '색', multiSelect: false, options: [{ label: '빨강', description: '따뜻함' }, { label: '파랑', description: '차가움' }] }] } } }); }
+  if (text === 'two') {
+    outstanding = 2;
+    out({ type: 'control_request', request_id: 'r-a', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'rm -rf build' } } });
+    out({ type: 'control_request', request_id: 'r-b', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' } } });
+    return;
+  }
+  if (text === 'cancel') {
+    out({ type: 'control_request', request_id: 'r-c', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' } } });
+    setTimeout(() => out({ type: 'control_cancel_request', request_id: 'r-c' }), 400);
+    return;
+  }
+  if (text === 'hook-while-waiting') {
+    waiting = 'r-h';
+    out({ type: 'control_request', request_id: 'r-h', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' } } });
+    setTimeout(() => { hook('PreToolUse', { tool_name: 'Read' }); hook('PostToolUse', { tool_name: 'Read' }); hook('Notification', { notification_type: 'permission_prompt' }); fs.writeFileSync(path.join(dir, 'hooks-done'), '1'); }, 300);
+    return;
+  }
+  if (text === 'weird') { out({ type: 'control_request', request_id: 'r-w', request: { subtype: 'something_new' } }); hook('Stop'); out({ type: 'result', subtype: 'success' }); return; }
+  if (text === 'ask2') { waiting = 'r-ask2'; return out({ type: 'control_request', request_id: 'r-ask2', request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [{ question: '색?', header: '', multiSelect: false, options: [{ label: '빨강' }] }, { question: '크기?', header: '', multiSelect: true, options: [{ label: '크게' }, { label: '작게' }] }] } } }); }
   if (text === 'long') { busy = setTimeout(() => { hook('Stop'); out({ type: 'result', subtype: 'success' }); }, 20000); return; }
   if (text === 'stream') {
     out({ type: 'stream_event', event: { type: 'message_start' } });
@@ -76,6 +99,8 @@ const status = (id: string): string | undefined => core.workspaces.get(id)?.stat
 const cfg = (id: string, file: string): string => join(dataDir, 'workspaces', id, file);
 const said = (id: string): string[] => (existsSync(cfg(id, 'said.log')) ? readFileSync(cfg(id, 'said.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as string) : []);
 const answer = (id: string): { requestId: string; response: Record<string, unknown> } => JSON.parse(readFileSync(cfg(id, 'answer.json'), 'utf8'));
+const answers = (id: string): { requestId: string; subtype: string; response: Record<string, unknown>; error?: string }[] => (existsSync(cfg(id, 'answers.log')) ? readFileSync(cfg(id, 'answers.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+const reqId = (id: string): string => core.chatView(id).pendingPermission?.requestId ?? core.chatView(id).question?.requestId ?? '';
 const argvLog = (id: string): string[][] => (existsSync(cfg(id, 'argv.log')) ? readFileSync(cfg(id, 'argv.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as string[]) : []);
 
 async function boot(): Promise<void> {
@@ -97,6 +122,14 @@ beforeEach(async () => {
   repoId = (await core.addRepo(projectId, makeRepo('front'))).id;
 });
 afterEach(async () => { await core.dispose(); });
+
+async function runHookFor(id: string, event: string, body: object): Promise<string> {
+  const { execFile } = await import('node:child_process');
+  return new Promise((resolve, reject) => {
+    const child = execFile(cfg(id, 'hook.sh'), [event], { encoding: 'utf8' }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
+    child.stdin?.end(JSON.stringify(body));
+  });
+}
 
 const create = (name: string, over = {}) => core.service.create({ projectId, repoId, name, baseBranch: 'main', agentKind: 'claude', ...over });
 async function started(name: string) {
@@ -147,12 +180,15 @@ test('승인 요청이 이벤트로 오면 사용자 기다림이 되고, 허용
   const ws = await started('perm');
   await core.service.sendUserInput(ws.id, 'perm');
   await until(() => status(ws.id) === 'waiting_user');
-  expect(core.chatView(ws.id).pendingPermission).toEqual({ tool: 'Bash', summary: 'curl https://example.com', input: 'curl https://example.com', canAnswer: true, canAlways: true });
-  core.service.answerPermission(ws.id, 'allow');
+  expect(core.chatView(ws.id).pendingPermission).toEqual({
+    tool: 'Bash', summary: 'curl https://example.com', input: 'curl https://example.com', canAnswer: true,
+    canAlways: true, alwaysRule: 'Bash: curl *', requestId: 'r-perm', more: 0,
+  });
+  core.service.answerPermission(ws.id, 'allow', 'r-perm');
   expect(status(ws.id)).toBe('working');
   expect(core.chatView(ws.id).pendingPermission).toBeNull();
   // 같은 요청에 두 번 답하지 못한다
-  expect(() => core.service.answerPermission(ws.id, 'allow')).toThrow('승인을 기다리는 중이 아닙니다.');
+  expect(() => core.service.answerPermission(ws.id, 'allow', 'r-perm')).toThrow('승인을 기다리는 중이 아닙니다.');
   await until(() => existsSync(cfg(ws.id, 'answer.json')));
   expect(answer(ws.id)).toEqual({ requestId: 'r-perm', expected: 'r-perm', response: { behavior: 'allow', updatedInput: { command: 'curl https://example.com' } } });
   await until(() => status(ws.id) === 'idle');
@@ -162,14 +198,15 @@ test('"앞으로 묻지 않기" 는 에이전트가 제안한 규칙을 함께 �
   const ws = await started('always');
   await core.service.sendUserInput(ws.id, 'perm');
   await until(() => status(ws.id) === 'waiting_user');
-  core.service.answerPermission(ws.id, 'always');
+  core.service.answerPermission(ws.id, 'always', reqId(ws.id));
   await until(() => existsSync(cfg(ws.id, 'answer.json')));
-  expect(answer(ws.id).response).toMatchObject({ behavior: 'allow', updatedPermissions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'curl *' }] }] });
+  // 에이전트는 작업 폴더의 설정 파일(localSettings)에 남기자고 제안했지만, 두레는 이번 대화에만 적용되게 고쳐 돌려준다.
+  expect(answer(ws.id).response).toEqual({ behavior: 'allow', updatedInput: { command: 'curl https://example.com' }, updatedPermissions: [{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'curl *' }], behavior: 'allow', destination: 'session' }] });
   await until(() => status(ws.id) === 'idle');
   await core.service.sendUserInput(ws.id, 'perm-plain');
   await until(() => status(ws.id) === 'waiting_user');
   expect(core.chatView(ws.id).pendingPermission).toMatchObject({ tool: 'Write', summary: 'b.txt 씀', canAlways: false });
-  expect(() => core.service.answerPermission(ws.id, 'always')).toThrow('앞으로 묻지 않기');
+  expect(() => core.service.answerPermission(ws.id, 'always', reqId(ws.id))).toThrow('앞으로 묻지 않기');
   expect(status(ws.id)).toBe('waiting_user'); // 답하지 못했으니 그대로 기다린다
 });
 
@@ -177,7 +214,7 @@ test('거부하면 deny 와 이유를 돌려준다', async () => {
   const ws = await started('deny');
   await core.service.sendUserInput(ws.id, 'perm');
   await until(() => status(ws.id) === 'waiting_user');
-  core.service.answerPermission(ws.id, 'deny');
+  core.service.answerPermission(ws.id, 'deny', reqId(ws.id));
   await until(() => existsSync(cfg(ws.id, 'answer.json')));
   expect(answer(ws.id).response).toEqual({ behavior: 'deny', message: '사용자가 거부했습니다.' });
 });
@@ -188,13 +225,16 @@ test('여러 선택지 질문: 질문이 화면용으로 오고, 고른 답이 a
   await until(() => status(ws.id) === 'waiting_user');
   const view = core.chatView(ws.id);
   expect(view.pendingPermission).toBeNull();
-  expect(view.question).toEqual({ questions: [{ question: '어떤 색?', header: '색', multiSelect: false, options: [{ label: '빨강', description: '따뜻함' }, { label: '파랑', description: '차가움' }] }] });
+  expect(view.question).toEqual({ requestId: 'r-ask', questions: [{ question: '어떤 색?', header: '색', multiSelect: false, options: [{ label: '빨강', description: '따뜻함' }, { label: '파랑', description: '차가움' }] }] });
   // 질문에는 승인으로 답할 수 없다
-  expect(() => core.service.answerPermission(ws.id, 'allow')).toThrow('승인을 기다리는 중이 아닙니다.');
-  expect(() => core.service.answerQuestion(ws.id, {})).toThrow('답을 고르세요.');
-  core.service.answerQuestion(ws.id, { '어떤 색?': ' 파랑 ' });
+  expect(() => core.service.answerPermission(ws.id, 'allow', 'r-ask')).toThrow('승인을 기다리는 중이 아닙니다.');
+  expect(() => core.service.answerQuestion(ws.id, 'r-ask', {})).toThrow('모든 질문에 답하세요.');
+  // 묻지 않은 것에 대한 답은 버린다
+  expect(() => core.service.answerQuestion(ws.id, 'r-ask', { '묻지 않은 질문': '답' })).toThrow('모든 질문에 답하세요.');
+  core.service.answerQuestion(ws.id, 'r-ask', { '어떤 색?': ' 파랑 ', '묻지 않은 질문': '끼워 넣기' });
   await until(() => existsSync(cfg(ws.id, 'answer.json')));
   expect(answer(ws.id).response).toMatchObject({ behavior: 'allow', updatedInput: { answers: { '어떤 색?': '파랑' }, questions: expect.any(Array) } });
+  expect((answer(ws.id).response.updatedInput as { answers: object }).answers).toEqual({ '어떤 색?': '파랑' });
   expect(core.chatView(ws.id).question).toBeNull();
 });
 
@@ -202,18 +242,17 @@ test('질문을 답하지 않고 넘기면 deny 가 간다', async () => {
   const ws = await started('ask-skip');
   await core.service.sendUserInput(ws.id, 'ask');
   await until(() => status(ws.id) === 'waiting_user');
-  core.service.dismissQuestion(ws.id);
+  core.service.dismissQuestion(ws.id, 'r-ask');
   await until(() => existsSync(cfg(ws.id, 'answer.json')));
   expect(answer(ws.id).response).toMatchObject({ behavior: 'deny' });
 });
 
-test('멈춤: 에이전트에게 멈춤 요청이 가고 쉬는 중이 된다 (확인된 쉬는 중은 아니다). 프로세스는 살아 있다', async () => {
+test('멈춤: 에이전트에게 멈춤 요청이 가고 쉬는 중이 된다. 프로세스는 살아 있다', async () => {
   const ws = await started('interrupt');
   await core.service.sendUserInput(ws.id, 'long');
   await until(() => status(ws.id) === 'working');
   core.service.interrupt(ws.id);
   expect(status(ws.id)).toBe('idle');
-  expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
   await new Promise((r) => setTimeout(r, 300));
   expect(core.service.isAgentRunning(ws.id)).toBe(true);
   await core.service.sendUserInput(ws.id, '이어서');
@@ -306,8 +345,6 @@ test('Stop hook 없이 차례가 끝나도(로그인 만료 같은 오류) 작�
   await core.service.sendUserInput(ws.id, 'fail');
   await until(() => said(ws.id).length === 1);
   await until(() => status(ws.id) === 'idle');
-  // 확인된 쉬는 중은 아니다: 두레가 스스로 깨우는 근거로 쓰지 않는다
-  expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
   expect(core.chatView(ws.id).canSend).toBe(true);
 });
 
@@ -323,4 +360,117 @@ test('대화 기록 폴더는 에이전트가 물려받는 CLAUDE_CONFIG_DIR 를
   const ws = await create('profile');
   core.chat.noteHook(ws.id, 'Stop', { transcript_path: file });
   expect(core.chatView(ws.id)).toMatchObject({ available: true, items: [expect.objectContaining({ text: '프로필 폴더의 기록' })] });
+});
+
+// ---- 리뷰에서 나온 경우들 ----
+
+test('승인 요청이 동시에 둘 오면 줄을 세워 하나씩 보이고, 답은 화면에 보인 그 요청에만 간다', async () => {
+  const ws = await started('two');
+  await core.service.sendUserInput(ws.id, 'two');
+  await until(() => core.chatView(ws.id).pendingPermission?.more === 1);
+  expect(core.chatView(ws.id).pendingPermission).toMatchObject({ requestId: 'r-a', summary: 'rm -rf build', more: 1 });
+  // 화면에 보이지 않는 요청의 id 로는 답할 수 없다
+  expect(() => core.service.answerPermission(ws.id, 'allow', 'r-b')).toThrow('화면의 요청이 바뀌었습니다.');
+  expect(() => core.service.answerPermission(ws.id, 'allow', '')).toThrow('화면의 요청이 바뀌었습니다.');
+  core.service.answerPermission(ws.id, 'deny', 'r-a');
+  // 아직 하나가 기다린다: 사용자 기다림 그대로이고 다음 요청이 보인다
+  expect(status(ws.id)).toBe('waiting_user');
+  expect(core.chatView(ws.id).pendingPermission).toMatchObject({ requestId: 'r-b', summary: 'ls', more: 0 });
+  // 방금 누른 버튼을 한 번 더 눌러도(옛 id) 새 요청에 적용되지 않는다
+  expect(() => core.service.answerPermission(ws.id, 'deny', 'r-a')).toThrow('화면의 요청이 바뀌었습니다.');
+  core.service.answerPermission(ws.id, 'allow', 'r-b');
+  await until(() => answers(ws.id).length === 2);
+  expect(answers(ws.id).map((a) => [a.requestId, a.response.behavior])).toEqual([['r-a', 'deny'], ['r-b', 'allow']]);
+  await until(() => status(ws.id) === 'idle');
+});
+
+test('에이전트가 물음을 거둬들이면 카드가 사라지고 사용자 기다림에서 풀린다', async () => {
+  const ws = await started('cancel');
+  await core.service.sendUserInput(ws.id, 'cancel');
+  await until(() => status(ws.id) === 'waiting_user');
+  await until(() => core.chatView(ws.id).pendingPermission === null);
+  expect(status(ws.id)).toBe('working');
+  expect(() => core.service.answerPermission(ws.id, 'allow', 'r-c')).toThrow('승인을 기다리는 중이 아닙니다.');
+});
+
+test('승인을 기다리는 동안 다른 hook 이 와도 사용자 기다림이 유지되고 카드가 남는다. 답한 뒤에 늦은 알림이 와도 다시 기다림이 되지 않는다', async () => {
+  const ws = await started('hook-while');
+  await core.service.sendUserInput(ws.id, 'hook-while-waiting');
+  await until(() => existsSync(cfg(ws.id, 'hooks-done')));
+  expect(status(ws.id)).toBe('waiting_user');
+  expect(core.chatView(ws.id).pendingPermission).toMatchObject({ requestId: 'r-h' });
+  core.service.answerPermission(ws.id, 'allow', 'r-h');
+  await until(() => status(ws.id) === 'idle');
+  // 답한 뒤의 승인 알림 hook (채팅 방식에서는 엔진의 대기가 근거다)
+  core.service.noteWaiting(ws.id, false);
+  await runHookFor(ws.id, 'Notification', { notification_type: 'permission_prompt' });
+  expect(status(ws.id)).not.toBe('waiting_user');
+});
+
+test('모르는 종류의 물음에는 오류로 답해 에이전트가 기다리지 않게 한다', async () => {
+  const ws = await started('weird');
+  await core.service.sendUserInput(ws.id, 'weird');
+  await until(() => answers(ws.id).length === 1);
+  expect(answers(ws.id)[0]).toMatchObject({ requestId: 'r-w', subtype: 'error' });
+  expect(core.chatView(ws.id).pendingPermission).toBeNull();
+});
+
+test('질문이 여럿이면 전부 답해야 한다', async () => {
+  const ws = await started('ask2');
+  await core.service.sendUserInput(ws.id, 'ask2');
+  await until(() => core.chatView(ws.id).question !== null);
+  expect(() => core.service.answerQuestion(ws.id, 'r-ask2', { '색?': '빨강' })).toThrow('모든 질문에 답하세요.');
+  expect(core.chatView(ws.id).question).not.toBeNull(); // 답하지 못했으니 그대로 묻고 있다
+  core.service.answerQuestion(ws.id, 'r-ask2', { '색?': '빨강', '크기?': '크게, 작게' });
+  await until(() => existsSync(cfg(ws.id, 'answer.json')));
+  expect((answer(ws.id).response.updatedInput as { answers: object }).answers).toEqual({ '색?': '빨강', '크기?': '크게, 작게' });
+});
+
+test('이어 띄운 직후에 끄면 그대로 꺼지고, 이어갈 대화 id 도 남는다 (다시 뜨지 않는다)', async () => {
+  const ws = await started('stop-soon');
+  core.service.stopAgent(ws.id);
+  await until(() => status(ws.id) === 'stopped');
+  await core.service.startAgent(ws.id, SIZE); // --resume s-new
+  await until(() => status(ws.id) === 'idle');
+  core.service.stopAgent(ws.id); // 띄운 지 10초 안
+  await until(() => status(ws.id) === 'stopped');
+  await new Promise((r) => setTimeout(r, 500));
+  expect(status(ws.id)).toBe('stopped');
+  expect(core.service.isAgentRunning(ws.id)).toBe(false);
+  expect(core.workspaces.getSessionId(ws.id)).toBe('s-new');
+  expect(argvLog(ws.id).length).toBe(2);
+});
+
+test('끈 직후에 다시 시작하면 앞의 것이 끝난 뒤에 새로 뜬다', async () => {
+  const ws = await started('restart-fast');
+  core.service.stopAgent(ws.id);
+  await core.service.startAgent(ws.id, SIZE);
+  await until(() => argvLog(ws.id).length === 2 && status(ws.id) === 'idle');
+  expect(core.service.isAgentRunning(ws.id)).toBe(true);
+});
+
+test('막 띄운 채팅 방식 에이전트에게도 기다리던 메시지가 전달된다 (사용자가 먼저 말을 걸지 않아도)', async () => {
+  const front = await started('f3');
+  const back = await started('b3'); // 띄우기만 하고 아무 말도 하지 않았다
+  core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: front.id }, toWorkspaceId: back.id, body: '막 뜬 너에게' });
+  await until(() => said(back.id).some((t) => t.includes('> 막 뜬 너에게')));
+});
+
+test('멈춘 뒤에 온 메시지도 전달된다', async () => {
+  const front = await started('f4');
+  const back = await started('b4');
+  await core.service.sendUserInput(back.id, 'long');
+  await until(() => status(back.id) === 'working');
+  core.service.interrupt(back.id);
+  await until(() => status(back.id) === 'idle');
+  await new Promise((r) => setTimeout(r, 300));
+  core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: front.id }, toWorkspaceId: back.id, body: '멈춘 뒤의 메시지' });
+  await until(() => said(back.id).some((t) => t.includes('> 멈춘 뒤의 메시지')));
+});
+
+test('코어를 닫은 뒤에는 에이전트를 띄우지 않는다', async () => {
+  const ws = await create('after-close');
+  await core.dispose();
+  await expect(core.service.startAgent(ws.id, SIZE)).rejects.toThrow();
+  expect(core.engine.has(ws.id)).toBe(false);
 });

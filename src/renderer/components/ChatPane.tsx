@@ -127,30 +127,35 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
 
 /** 에이전트가 여러 선택지 중에서 고르라고 묻는 카드 (채팅 방식). */
 function QuestionCard({ question, onAnswer, onDismiss }: { question: ChatQuestion; onAnswer: (answers: Record<string, string>) => void; onDismiss: () => void }) {
-  // 질문 글 → 고른 선택지들, 직접 쓴 답
-  const [picked, setPicked] = useState<Record<string, string[]>>({});
-  const [typed, setTyped] = useState<Record<string, string>>({});
-  const answerOf = (q: ChatQuestion['questions'][number]): string => (typed[q.question]?.trim() || (picked[q.question] ?? []).join(', '));
-  const ready = question.questions.length > 0 && question.questions.every((q) => answerOf(q));
-  const toggle = (q: ChatQuestion['questions'][number], label: string): void => {
-    setTyped((t) => ({ ...t, [q.question]: '' }));
+  // 질문 번호 → 고른 선택지들, 직접 쓴 답
+  const [picked, setPicked] = useState<Record<number, string[]>>({});
+  const [typed, setTyped] = useState<Record<number, string>>({});
+  const answerOf = (q: ChatQuestion['questions'][number], i: number): string => {
+    const own = typed[i]?.trim() ?? '';
+    const chosen = picked[i] ?? [];
+    // 하나만 고르는 질문은 직접 쓴 답이 선택지를 대신하고, 여러 개 고르는 질문은 함께 낸다.
+    return q.multiSelect ? [...chosen, ...(own ? [own] : [])].join(', ') : (own || chosen.join(', '));
+  };
+  const ready = question.questions.length > 0 && question.questions.every((q, i) => answerOf(q, i));
+  const toggle = (q: ChatQuestion['questions'][number], i: number, label: string): void => {
+    if (!q.multiSelect) setTyped((t) => ({ ...t, [i]: '' }));
     setPicked((p) => {
-      const cur = p[q.question] ?? [];
+      const cur = p[i] ?? [];
       const next = q.multiSelect ? (cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label]) : [label];
-      return { ...p, [q.question]: next };
+      return { ...p, [i]: next };
     });
   };
   return (
     <div className="permit ask">
       <div className="permit-title">에이전트가 묻습니다</div>
-      {question.questions.map((q) => (
-        <div key={q.question} className="ask-q">
+      {question.questions.map((q, i) => (
+        <div key={i} className="ask-q">
           <div className="ask-text">{q.question}{q.multiSelect && <span className="permit-hint"> (여러 개 고를 수 있음)</span>}</div>
           <div className="ask-options">
             {q.options.map((o) => {
-              const on = !typed[q.question]?.trim() && (picked[q.question] ?? []).includes(o.label);
+              const on = (q.multiSelect || !typed[i]?.trim()) && (picked[i] ?? []).includes(o.label);
               return (
-                <button key={o.label} className={`ask-option${on ? ' on' : ''}`} aria-pressed={on} onClick={() => toggle(q, o.label)}>
+                <button key={o.label} className={`ask-option${on ? ' on' : ''}`} aria-pressed={on} onClick={() => toggle(q, i, o.label)}>
                   <span className="ask-label">{o.label}</span>
                   {o.description && <span className="ask-desc">{o.description}</span>}
                 </button>
@@ -158,13 +163,13 @@ function QuestionCard({ question, onAnswer, onDismiss }: { question: ChatQuestio
             })}
           </div>
           <input
-            type="text" className="ask-other" placeholder="직접 쓰기" value={typed[q.question] ?? ''}
-            onChange={(e) => setTyped((t) => ({ ...t, [q.question]: e.target.value }))}
+            type="text" className="ask-other" placeholder={q.multiSelect ? '그 밖의 답 직접 쓰기' : '직접 쓰기'} value={typed[i] ?? ''}
+            onChange={(e) => setTyped((t) => ({ ...t, [i]: e.target.value }))}
           />
         </div>
       ))}
       <div className="permit-actions">
-        <button className="btn primary" disabled={!ready} onClick={() => onAnswer(Object.fromEntries(question.questions.map((q) => [q.question, answerOf(q)])))}>답하기</button>
+        <button className="btn primary" disabled={!ready} onClick={() => onAnswer(Object.fromEntries(question.questions.map((q, i) => [q.question, answerOf(q, i)])))}>답하기</button>
         <button className="btn" onClick={onDismiss}>답하지 않고 넘기기</button>
       </div>
     </div>
@@ -234,7 +239,9 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     ask(6);
     return () => { alive = false; };
   }, [liveChat, workspace.id]);
-  const menu = useMemo(() => matchCommands(draft, commands), [draft, commands]);
+  // Esc 로 목록만 닫는다. 글을 더 치면 다시 뜬다.
+  const [menuClosed, setMenuClosed] = useState<string | null>(null);
+  const menu = useMemo(() => (menuClosed === draft ? [] : matchCommands(draft, commands)), [draft, commands, menuClosed]);
   useEffect(() => { setMenuAt(0); }, [draft]);
   const pick = (c: SlashCommand): void => { setDraft(`/${c.name} `); input.current?.focus(); };
 
@@ -293,7 +300,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       if (e.key === 'ArrowUp') { e.preventDefault(); setMenuAt((i) => (i - 1 + menu.length) % menu.length); return; }
       const chosen = menu[Math.min(menuAt, menu.length - 1)]!;
       if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && draft !== `/${chosen.name}`)) { e.preventDefault(); pick(chosen); return; }
-      if (e.key === 'Escape') { e.preventDefault(); setDraft(''); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setMenuClosed(draft); return; }
     }
     // 한글 조합 중의 Enter 는 글자를 확정하는 것이지 보내기가 아니다.
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -304,7 +311,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
 
   const answer = (a: 'allow' | 'deny' | 'always'): void => {
     setError('');
-    window.dure.chat.answerPermission(workspace.id, a).catch((e: Error) => setError(e.message));
+    window.dure.chat.answerPermission(workspace.id, a, view.pendingPermission?.requestId).catch((e: Error) => setError(e.message));
   };
 
   entryCount.current = entries.length;
@@ -321,7 +328,8 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     return () => clearTimeout(t);
   }, [statusNow]);
 
-  if (loaded && !view.available) {
+  // 채팅 방식에서는 대화 기록을 못 읽어도 입력창과 승인·질문 카드는 남긴다: 그것들이 에이전트에 답하는 유일한 길이다.
+  if (loaded && !view.available && view.engine !== 'chat') {
     return (
       <div className="chat">
         <div className="chat-empty">
@@ -353,10 +361,10 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   } else if (view.question) {
     composer = (
       <QuestionCard
-        key={view.question.questions.map((q) => q.question).join('|')}
+        key={view.question.requestId}
         question={view.question}
-        onAnswer={(answers) => { setError(''); window.dure.chat.answerQuestion(workspace.id, answers).catch((e: Error) => setError(e.message)); }}
-        onDismiss={() => { setError(''); window.dure.chat.dismissQuestion(workspace.id).catch((e: Error) => setError(e.message)); }}
+        onAnswer={(answers) => { setError(''); window.dure.chat.answerQuestion(workspace.id, view.question!.requestId, answers).catch((e: Error) => setError(e.message)); }}
+        onDismiss={() => { setError(''); window.dure.chat.dismissQuestion(workspace.id, view.question!.requestId).catch((e: Error) => setError(e.message)); }}
       />
     );
   } else if (status === 'waiting_user') {
@@ -372,7 +380,9 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
         <div className="permit-actions">
           {permission?.canAnswer && <button className="btn primary" onClick={() => answer('allow')}>허용</button>}
           {permission?.canAnswer && <button className="btn" onClick={() => answer('deny')}>거부</button>}
-          {permission?.canAlways && <button className="btn" onClick={() => answer('always')} title="허용하고, 앞으로 같은 것은 묻지 않습니다">허용하고 앞으로 묻지 않기</button>}
+          {permission?.canAlways && <button className="btn" onClick={() => answer('always')} title="허용하고, 이번 대화 동안 같은 것은 묻지 않습니다">허용하고 이번 대화에서는 묻지 않기</button>}
+          {permission?.canAlways && permission.alwaysRule && <span className="permit-hint">묻지 않게 될 것: <code>{permission.alwaysRule}</code></span>}
+          {(permission?.more ?? 0) > 0 && <span className="permit-hint">이 뒤에 {permission!.more}건이 더 기다립니다</span>}
           {permission?.canAnswer && view.engine === 'terminal' && !showPeek && <button className="btn" onClick={() => setPeek({ why: 'manual' })} title={'"다시 묻지 않기" 같은 다른 선택지를 직접 고릅니다'}>다른 선택지</button>}
           {!permission?.canAnswer && view.engine === 'terminal' && <span className="permit-hint">위 창에서 ↑↓ 로 고르고 Enter 를 누르세요.</span>}
         </div>
@@ -424,7 +434,8 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
         <div className="chat-col">
           {view.hidden > 0 && <div className="chat-notice"><span>앞쪽 {view.hidden}개 항목은 줄였습니다. 전부 보려면 터미널 보기를 쓰세요.</span></div>}
-          {loaded && entries.length === 0 && view.queued.length === 0 && !view.streaming && (
+          {loaded && !view.available && <div className="chat-notice"><span>{view.reason}</span></div>}
+          {loaded && view.available && entries.length === 0 && view.queued.length === 0 && !view.streaming && (
             <div className="chat-blank">
               <div className="chat-blank-title">아직 대화가 없습니다</div>
               <div>{hasAgent ? '아래에 시킬 일을 쓰면 여기에 대화가 쌓입니다.' : '에이전트를 시작하면 여기에 대화가 쌓입니다.'}</div>

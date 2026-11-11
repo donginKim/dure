@@ -109,6 +109,10 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event !== 'Notification' || isPermissionPrompt(payload)) noteHook(workspace.id, event, out !== '');
       // 채팅 보기는 터미널 보기 위에 얹힌 화면이다. 여기서 문제가 나도 hook 응답은 나가야 한다.
       try { chat.noteHook(workspace.id, event, payload, event === 'Stop' && out !== ''); } catch { /* 채팅 보기만 영향받는다 */ }
+      // 채팅 방식: 승인·질문 대기는 엔진이 안다. hook 이 바꾼 상태를 그에 맞춘다.
+      service.reconcileWaiting(workspace.id);
+      // 막 띄운 채팅 방식 에이전트가 쉬는 중이 됐다. 그동안 기다리던 메시지를 전달한다.
+      if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools]);
@@ -135,7 +139,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     onWaiting: (id, waiting) => service.noteWaiting(id, waiting),
     // 차례가 끝났는데도 '작업 중' 이면 Stop hook 이 오지 않은 것이다 (사용자가 멈춤, 로그인 만료 같은 오류). 쉬는 중으로 되돌린다.
     // 보통은 Stop hook 이 먼저 와서 이미 쉬는 중이고, 그때는 아무것도 바뀌지 않는다.
-    onTurnEnd: (id) => { chat.interrupted(id); service.noteInterrupted(id); },
+    onTurnEnd: (id) => {
+      chat.interrupted(id);
+      service.noteTurnEnd(id);
+      // 쉬게 됐으니 기다리던 메시지가 있으면 지금 전달한다 (채팅 방식은 쉬는 중이면 바로 받을 수 있다).
+      kick(id);
+    },
     onActivity: (id) => chat.refreshSoon(id, [0, 300, 1200]),
     onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
   });

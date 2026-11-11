@@ -220,10 +220,18 @@ export interface ChatPermission {
   canAnswer: boolean;
   /** "앞으로 묻지 않기" 로 답할 수 있는가 (채팅 방식에서, 에이전트가 규칙을 제안했을 때) */
   canAlways?: boolean;
+  /** "앞으로 묻지 않기" 를 누르면 이번 대화 동안 허용될 것 (예: "Bash: curl *"). 화면에 그대로 보인다 */
+  alwaysRule?: string;
+  /** 이 요청의 id (채팅 방식). 답할 때 함께 보내, 화면에 보인 바로 그 요청에만 답이 가게 한다 */
+  requestId?: string;
+  /** 이 뒤에 기다리는 요청 수 (채팅 방식) */
+  more?: number;
 }
 
 /** 에이전트가 여러 선택지 중에서 고르라고 묻는 것 */
 export interface ChatQuestion {
+  /** 이 요청의 id. 답할 때 함께 보낸다 */
+  requestId: string;
   questions: { question: string; header: string; multiSelect: boolean; options: { label: string; description: string }[] }[];
 }
 

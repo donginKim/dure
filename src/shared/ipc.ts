@@ -95,10 +95,11 @@ export interface DureApi {
     step(workspaceId: string, stepId: string): Promise<{ input: string; output: string | null } | null>;
     send(workspaceId: string, text: string): Promise<void>;
     /** always: 허용하고 앞으로 같은 것은 묻지 않는다 (채팅 방식) */
-    answerPermission(workspaceId: string, answer: 'allow' | 'deny' | 'always'): Promise<void>;
+    /** requestId: 화면에 보인 요청의 id (채팅 방식). 그 요청에만 답이 간다 */
+    answerPermission(workspaceId: string, answer: 'allow' | 'deny' | 'always', requestId?: string): Promise<void>;
     /** 여러 선택지 질문에 답한다. answers: 질문 글 → 답 */
-    answerQuestion(workspaceId: string, answers: Record<string, string>): Promise<void>;
-    dismissQuestion(workspaceId: string): Promise<void>;
+    answerQuestion(workspaceId: string, requestId: string, answers: Record<string, string>): Promise<void>;
+    dismissQuestion(workspaceId: string, requestId: string): Promise<void>;
     /** 입력창에서 쓸 수 있는 슬래시 명령 (채팅 방식의 에이전트가 떠 있을 때) */
     commands(workspaceId: string): Promise<SlashCommand[]>;
   };

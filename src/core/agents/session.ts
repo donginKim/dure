@@ -114,6 +114,11 @@ export class AgentSession extends EventEmitter {
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
   }
 
+  /** 에이전트가 물어 온 것에 "처리하지 못한다" 고 답한다. */
+  respondError(requestId: string, error: string): void {
+    try { this.write({ type: 'control_response', response: { subtype: 'error', request_id: requestId, error } }); } catch { /* 이미 끝남 */ }
+  }
+
   /** 하던 일을 멈춘다. 프로세스는 살아 있다 (실험 18: 0.2초 안에 멈춘다). */
   interrupt(): Promise<unknown> {
     return this.control({ subtype: 'interrupt' }, 10_000);

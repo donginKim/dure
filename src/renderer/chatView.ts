@@ -221,7 +221,10 @@ export function matchCommands(draft: string, commands: SlashCommand[], limit = 8
   const m = /^\/(\S*)$/.exec(draft);
   if (!m) return [];
   const q = m[1]!.toLowerCase();
-  const starts = commands.filter((c) => c.name.toLowerCase().startsWith(q));
-  const contains = commands.filter((c) => !c.name.toLowerCase().startsWith(q) && c.name.toLowerCase().includes(q));
-  return [...starts, ...contains].slice(0, limit);
+  const name = (c: SlashCommand): string => c.name.toLowerCase();
+  // 정확히 맞는 것이 맨 위다: "/review" 를 다 쳤는데 Enter 가 "review-pr" 로 바꾸면 안 된다.
+  const exact = commands.filter((c) => name(c) === q);
+  const starts = commands.filter((c) => name(c) !== q && name(c).startsWith(q));
+  const contains = commands.filter((c) => !name(c).startsWith(q) && name(c).includes(q));
+  return [...exact, ...starts, ...contains].slice(0, limit);
 }

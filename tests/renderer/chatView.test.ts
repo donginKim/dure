@@ -155,3 +155,8 @@ test('matchCommands: "/" 로 시작하는 한 낱말일 때만, 앞글자가 맞
   expect(matchCommands('', cmds)).toEqual([]);
   expect(matchCommands('/zzz', cmds)).toEqual([]);
 });
+
+test('matchCommands: 정확히 맞는 명령이 맨 위다', () => {
+  const cmds = ['review-pr', 'review', 'reviewer'].map((name) => ({ name, description: '', argumentHint: '' }));
+  expect(matchCommands('/review', cmds).map((c) => c.name)).toEqual(['review', 'review-pr', 'reviewer']);
+});

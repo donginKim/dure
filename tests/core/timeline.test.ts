@@ -51,6 +51,15 @@ test('두레의 프롬프트와 [두레] hook 글은 dure 항목, 다른 hook �
   ]);
 });
 
+test('한 번에 넣은 글의 여러 꼭지는 dure 항목 여러 개가 된다', () => {
+  const t = new Timeline();
+  t.push([{ type: 'hook-context', id: 'h', at: 1, text: '[두레] 사용자가 TODO를 바꿨다:\n- 추가됨: "배포"\n\n[두레] 워크스페이스 "백엔드" 이(가) 보낸 메시지다. (스레드 abc)\n> 첫 줄\n>\n> 셋째 줄' }]);
+  expect(t.items()).toEqual([
+    { kind: 'dure', id: 'h', at: 1, title: '사용자가 TODO를 바꿨다:', text: '- 추가됨: "배포"' },
+    { kind: 'dure', id: 'h#1', at: 1, title: '워크스페이스 "백엔드" 이(가) 보낸 메시지다. (스레드 abc)', text: '> 첫 줄\n>\n> 셋째 줄' },
+  ]);
+});
+
 test('중단과 압축은 notice 가 되고, 중단되면 하는 중이던 단계가 끝난다', () => {
   const t = new Timeline();
   t.push([start('a'), { type: 'interrupted', id: 'i', at: 5 }, { type: 'compacted', id: 'c', at: 6 }]);

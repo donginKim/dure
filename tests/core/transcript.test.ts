@@ -106,7 +106,7 @@ test.each([
   ['Bash', { command: 'x'.repeat(200) }, `${'x'.repeat(80)}…`],
   ['Read', { file_path: '/a/b/LoginForm.tsx' }, 'LoginForm.tsx 읽음'],
   ['Edit', { file_path: '/a/b/LoginForm.tsx' }, 'LoginForm.tsx 수정'],
-  ['Write', { file_path: '/a/new.ts' }, 'new.ts 만듦'],
+  ['Write', { file_path: '/a/new.ts' }, 'new.ts 씀'],
   ['Grep', { pattern: 'useAuth' }, '"useAuth" 찾음'],
   ['mcp__dure__todo_add', { title: 'x' }, 'TODO 추가'],
   ['mcp__dure__message_send', {}, '메시지 보냄'],

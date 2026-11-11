@@ -69,9 +69,12 @@ export class Timeline {
     }
   }
 
+  /** 두레가 한 번에 넣은 글에는 여러 꼭지가 이어져 있을 수 있다 (TODO 변경 + 메시지 여러 건). 꼭지마다 항목 하나로 낸다. */
   private addDure(id: string, at: number, text: string): void {
-    const [first = '', ...rest] = text.split('\n');
-    this.add({ kind: 'dure', id, at, title: first.slice(DURE_PREFIX.length).trim(), text: rest.join('\n').trim() });
+    text.split(/\n\s*\n(?=\[두레\])/).forEach((part, i) => {
+      const [first = '', ...rest] = part.split('\n');
+      this.add({ kind: 'dure', id: i === 0 ? id : `${id}#${i}`, at, title: first.slice(DURE_PREFIX.length).trim(), text: rest.join('\n').trim() });
+    });
   }
 
   /** 결과 없이 끝난 단계(중단되어 결과가 기록되지 않은 것)가 계속 '하는 중' 으로 남지 않게 한다. */

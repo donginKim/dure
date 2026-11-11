@@ -1,10 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
 import { buildAgentLaunch } from './agents/launch';
+import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
 import type { DeliveryService } from './delivery';
 import type { Git } from './git';
@@ -80,6 +81,8 @@ export class WorkspaceService extends EventEmitter {
   private readonly lastActivity = new Map<string, number>();
 
   private chat?: ChatService;
+  /** 폴더 신뢰 창을 지켜보는 중인 워크스페이스 → 그만두는 함수 */
+  private readonly trustWatchers = new Map<string, () => void>();
 
   /** 대화 서비스를 이어 준다: 승인 창 상태를 묻고, 중단·종료·삭제를 알린다. */
   attachChat(chat: ChatService): void {
@@ -119,6 +122,7 @@ export class WorkspaceService extends EventEmitter {
     const workspaceId = this.agentTerminals.get(terminalId);
     if (!workspaceId) return;
     this.confirmedIdle.delete(workspaceId);
+    this.trustWatchers.get(workspaceId)?.(); // 사용자가 직접 답하고 있다
     this.chat?.noteTerminalInput(workspaceId);
   }
 
@@ -126,6 +130,7 @@ export class WorkspaceService extends EventEmitter {
     const workspaceId = this.agentTerminals.get(terminalId);
     if (!workspaceId) return;
     this.agentTerminals.delete(terminalId);
+    this.trustWatchers.get(workspaceId)?.();
     this.confirmedIdle.delete(workspaceId);
     this.synthetic.delete(workspaceId);
     this.lastActivity.delete(workspaceId);
@@ -145,6 +150,7 @@ export class WorkspaceService extends EventEmitter {
 
   /** 코어를 닫을 때 부른다. 이후의 터미널 종료는 상태 저장소를 건드리지 않는다. */
   detach(): void {
+    for (const stop of [...this.trustWatchers.values()]) stop();
     this.d.pty.off('exit', this.onTerminalExit);
   }
 
@@ -293,11 +299,58 @@ export class WorkspaceService extends EventEmitter {
     this.agentTerminals.set(terminal.id, id);
     // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
     this.d.todos.takePending(id);
+    if (ws.agentKind === 'claude') this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
     // Claude Code 는 첫 hook 이 올 때까지 '시작 중' 이다: 폴더 신뢰 창이 떠 있을 수 있다 (실험 12: 그동안은 hook 이 오지 않는다).
     // Codex 는 hook 이 없어 알 길이 없으므로 예전처럼 쉬는 중으로 둔다.
     this.d.workspaces.update(id, { status: ws.agentKind === 'claude' ? 'starting' : 'idle' });
     this.emit('changed', id);
     return terminal;
+  }
+
+  /**
+   * Claude Code 가 처음 보는 폴더에서 묻는 "이 폴더를 신뢰하는가" 창에 두레가 대신 "신뢰함" 으로 답한다. [사용자 결정, 2026-11-11]
+   * 작업 폴더는 사용자가 직접 등록한 저장소에서 두레가 만든 것이다.
+   * 화면이 그 창이고, 묻는 폴더가 이 작업 폴더이고, 커서가 "Yes" 에 있는 것을 확인한 뒤에만 Enter 를 보낸다.
+   * 조금이라도 다르면 아무것도 누르지 않는다: 사용자가 터미널에서 직접 답하면 된다.
+   */
+  private answerTrustPrompt(workspaceId: string, terminalId: string, worktreePath: string): void {
+    let folders = [worktreePath];
+    try { folders = [...new Set([worktreePath, realpathSync(worktreePath)])]; } catch { /* 경로 그대로 쓴다 */ }
+    let moves = 0;
+    let timer: NodeJS.Timeout | undefined;
+    const stop = (): void => {
+      if (timer) clearTimeout(timer);
+      clearTimeout(giveUp);
+      this.d.pty.off('data', onData);
+      this.trustWatchers.delete(workspaceId);
+    };
+    const check = (): void => {
+      const live = this.d.pty.list(workspaceId).some((t) => t.id === terminalId);
+      // 첫 hook 이 왔다면 신뢰 창은 이미 지나갔다 (실험 12).
+      if (!live || this.d.workspaces.get(workspaceId)?.status !== 'starting') { stop(); return; }
+      const state = trustPrompt(this.d.pty.buffer(terminalId).slice(-4000), folders);
+      if (state === 'on-yes') {
+        this.d.pty.write(terminalId, '\r');
+        stop();
+      } else if (state === 'on-no' && moves < 3) {
+        moves++;
+        this.d.pty.write(terminalId, '\x1b[B'); // 아래로 한 칸. 화면이 다시 그려지면 다시 확인한다
+      } else if (state === 'on-no') {
+        stop();
+      }
+    };
+    // 화면이 다 그려진 뒤에 본다: 출력이 잠잠해지면 확인한다.
+    const onData = (id: string): void => {
+      if (id !== terminalId) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(check, 500);
+      timer.unref();
+    };
+    const giveUp = setTimeout(stop, 30_000);
+    giveUp.unref();
+    this.trustWatchers.get(workspaceId)?.();
+    this.trustWatchers.set(workspaceId, stop);
+    this.d.pty.on('data', onData);
   }
 
   /**

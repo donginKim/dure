@@ -147,7 +147,7 @@ export function stepSummary(tool: string, input: unknown): string {
     case 'Bash': return firstLine(str(i.command)) || 'Bash';
     case 'Read': return `${fileName(i.file_path)} 읽음`;
     case 'Edit': case 'MultiEdit': case 'NotebookEdit': return `${fileName(i.file_path ?? i.notebook_path)} 수정`;
-    case 'Write': return `${fileName(i.file_path)} 만듦`;
+    case 'Write': return `${fileName(i.file_path)} 씀`;
     case 'Grep': return `"${firstLine(str(i.pattern), 60)}" 찾음`;
     case 'Glob': return `${firstLine(str(i.pattern), 60)} 파일 찾음`;
     case 'WebFetch': return `${firstLine(str(i.url), 70)} 읽음`;

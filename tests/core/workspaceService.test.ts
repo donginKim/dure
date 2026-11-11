@@ -712,3 +712,56 @@ describe('채팅에서 보내기와 승인 응답', () => {
     expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
   });
 });
+
+describe('폴더 신뢰 창에 대신 답하기', () => {
+  // 신뢰 창을 흉내 내는 가짜 Claude Code: 받은 키를 16진수로 적는다.
+  const trustAgent = (folder = '$(pwd)'): void => {
+    writeFileSync(join(fakeBin, 'claude'), [
+      '#!/bin/sh', 'stty -icanon -echo',
+      `printf ' Accessing workspace:\\n %s\\n Quick safety check: Is this a project you created or one you trust?\\n ❯ No, exit\\n   Yes, I trust this folder\\n Enter to confirm · Esc to cancel\\n' "${folder}"`,
+      'k=$(dd bs=1 count=3 2>/dev/null | od -An -tx1 | tr -d " \\n")', 'printf "KEY1:%s\\n" "$k"',
+      `printf ' Accessing workspace:\\n %s\\n Quick safety check\\n   No, exit\\n ❯ Yes, I trust this folder\\n Enter to confirm · Esc to cancel\\n' "${folder}"`,
+      'k=$(dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d " \\n")', 'printf "KEY2:%s\\nTRUSTED\\n" "$k"', 'exec sleep 1000', '',
+    ].join('\n'));
+    chmodSync(join(fakeBin, 'claude'), 0o755);
+  };
+
+  test('작업 폴더를 묻는 신뢰 창이면 아래로 한 칸 내리고, 커서가 Yes 에 온 것을 본 뒤 Enter 를 보낸다', async () => {
+    trustAgent();
+    const ws = await create({ name: 'trust-auto' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    await until(() => core.pty.buffer(t.id).includes('TRUSTED'), 8000);
+    expect(core.pty.buffer(t.id)).toContain('KEY1:1b5b42'); // ESC [ B
+    expect(core.pty.buffer(t.id)).toMatch(/KEY2:0[da]/); // Enter
+  });
+
+  test('다른 폴더를 묻는 창에는 아무것도 보내지 않는다', async () => {
+    trustAgent('/somewhere/else');
+    const ws = await create({ name: 'trust-other' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(core.pty.buffer(t.id)).not.toContain('KEY1');
+  });
+
+  test('사용자가 터미널에 직접 입력하면 두레는 손을 뗀다', async () => {
+    trustAgent();
+    const ws = await create({ name: 'trust-user' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    core.service.noteTerminalInput(t.id);
+    await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(core.pty.buffer(t.id)).not.toContain('KEY1');
+  });
+
+  test('Codex 에는 하지 않는다', async () => {
+    trustAgent();
+    writeFileSync(join(fakeBin, 'codex'), readFileSync(join(fakeBin, 'claude')));
+    chmodSync(join(fakeBin, 'codex'), 0o755);
+    const ws = await create({ name: 'trust-codex', agentKind: 'codex' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(core.pty.buffer(t.id)).not.toContain('KEY1');
+  });
+});

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ERROR_PREFIX } from '@shared/ipc';
 import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types';
+import { recallView, rememberView, type ViewMode } from '../chatView';
 import { STATUS_LABEL, type Selection } from '../tree';
+import { ChatPane } from './ChatPane';
 import { CommitDialog } from './CommitDialog';
 import { ConfirmDialog } from './dialogs';
 import { TerminalPane } from './TerminalPane';
@@ -31,6 +33,10 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
   const [removing, setRemoving] = useState<{ uncommitted: number } | null>(null);
   const area = useRef<HTMLDivElement>(null);
   const [committing, setCommitting] = useState(false);
+  // 보기: 터미널 또는 채팅. 워크스페이스마다 기억한다. Codex 는 채팅 보기가 없다.
+  const canChat = workspace.agentKind === 'claude';
+  const [mode, setMode] = useState<ViewMode>(() => (canChat ? recallView(workspace.id, window.localStorage) : 'terminal'));
+  const switchTo = (next: ViewMode): void => { setMode(next); rememberView(workspace.id, next, window.localStorage); };
   // 커밋 버튼에 보일 것: 바뀐 파일 수와 에이전트가 써 둔 초안이 있는지
   const [commitInfo, setCommitInfo] = useState<{ changed: number; hasDraft: boolean }>({ changed: 0, hasDraft: false });
 
@@ -85,6 +91,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         : await window.dure.terminals.openShell(workspace.id, size());
       await load();
       setActiveId(t.id);
+      // 처음 뜰 때의 폴더 신뢰 창에는 두레가 대신 답한다. 못 넘어가면 '시작 중' 에 머물고 채팅 보기가 터미널로 안내한다.
     } catch (e) {
       setError(describeError((e as Error).message));
     }
@@ -112,6 +119,13 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         {workspace.permissionMode === 'bypass' && <span className="tag warn">승인 생략</span>}
         <span className="tag">{STATUS_LABEL[workspace.status]}</span>
         <span className="spacer" />
+        <div className="view-switch" role="tablist" aria-label="보기">
+          <button role="tab" aria-selected={mode === 'terminal'} className={mode === 'terminal' ? 'on' : ''} onClick={() => switchTo('terminal')} title="에이전트가 도는 터미널을 그대로 봅니다">터미널</button>
+          <button
+            role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'on' : ''} disabled={!canChat} onClick={() => switchTo('chat')}
+            title={canChat ? '같은 대화를 채팅 형태로 봅니다. 에이전트는 그대로입니다' : 'Codex 는 아직 채팅 보기를 지원하지 않습니다'}
+          >채팅</button>
+        </div>
         {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
         {workspace.agentKind === 'claude' && (workspace.status === 'working' || workspace.status === 'waiting_user') && (
           <button className="btn" title="하던 일을 멈춥니다. 에이전트는 꺼지지 않습니다" onClick={() => { window.dure.workspaces.interrupt(workspace.id).catch((e: Error) => setError(e.message)); }}>멈춤</button>
@@ -126,6 +140,17 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
       <div className="ws-body">
+      {mode === 'chat' && (
+        <div className="ws-terms">
+          <ChatPane
+            workspace={workspace} workspaces={workspaces} conversation={conversation} hasAgent={hasAgent}
+            onShowTerminal={() => { const agent = terminals.find((t) => t.kind === 'agent'); if (agent) setActiveId(agent.id); switchTo('terminal'); }}
+            onStartAgent={() => void open('agent')}
+          />
+          {error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}
+        </div>
+      )}
+      {mode === 'terminal' && (
       <div className="ws-terms">
       <div className="tabs">
         {terminals.map((t) => (
@@ -145,12 +170,13 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
               {error && <div className="error">{error}</div>}
               <div>{hasAgent ? '터미널을 고르세요.' : '에이전트가 꺼져 있습니다.'}</div>
               {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
-              <div style={{ fontSize: 12 }}>처음 시작하면 에이전트가 이 폴더를 신뢰하는지 묻습니다. 터미널에서 직접 답하세요.</div>
+              <div style={{ fontSize: 12 }}>처음 시작할 때 에이전트가 묻는 “이 폴더를 신뢰하는가” 에는 두레가 대신 “신뢰함” 으로 답합니다. 넘어가지 않으면 터미널에서 직접 답하세요.</div>
             </div>
           )}
         {active && error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}
       </div>
       </div>
+      )}
       <SidePanel workspace={workspace} workspaces={workspaces} todos={todos} pending={pending} conversation={conversation} />
       </div>
       {committing && <CommitDialog workspace={workspace} onClose={() => setCommitting(false)} />}

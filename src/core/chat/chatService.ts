@@ -340,6 +340,13 @@ export class ChatService extends EventEmitter {
     this.emit('changed', workspaceId);
   }
 
+  /** 곧 기록이 바뀔 일을 했다 (hook 을 부르지 않는 슬래시 명령 등). 몇 번 더 읽어 본다. */
+  refreshSoon(workspaceId: string): void {
+    const s = this.states.get(workspaceId);
+    if (!s) return;
+    for (const ms of [500, 1500, 3000, 6000, 12000]) this.later(workspaceId, s, ms);
+  }
+
   /** 두레가 에이전트를 중단시켰다 (hook 이 오지 않는다). */
   interrupted(workspaceId: string): void {
     const s = this.states.get(workspaceId);

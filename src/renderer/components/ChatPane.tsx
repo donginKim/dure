@@ -118,6 +118,7 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
     case 'assistant': return <div className="say"><Markdown text={entry.text} /></div>;
     case 'steps': return <StepsBlock workspaceId={workspaceId} steps={entry.steps} />;
     case 'dure': return <DureLine item={entry} />;
+    case 'output': return <pre className="raw command-out">{cut(entry.text)}</pre>;
     case 'notice': return <div className="chat-notice"><span>{entry.text}</span></div>;
     case 'peer': return <PeerCard entry={entry} workspaces={workspaces} conversation={conversation} />;
   }
@@ -140,6 +141,8 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [behind, setBehind] = useState(false);
+  // 방금 슬래시 명령을 보냈다: 고르는 화면이 뜨는 명령은 터미널에서만 마무리할 수 있다고 알려 준다.
+  const [slashSent, setSlashSent] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
@@ -193,6 +196,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
     setError('');
     try {
       await window.dure.chat.send(workspace.id, text);
+      setSlashSent(text.startsWith('/'));
       setDraft('');
       stick.current = true;
     } catch (e) {
@@ -314,6 +318,13 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
       <div className="chat-foot">
         <div className="chat-col">
           {error && <div className="error chat-error">{error}</div>}
+          {slashSent && view.canSend && (
+            <div className="slash-hint">
+              <span>명령을 보냈습니다. <b>/model</b> 처럼 고르는 화면이 뜨는 명령은 터미널에서 마무리해야 합니다.</span>
+              <button className="btn ghost" onClick={onShowTerminal}>터미널로</button>
+              <button className="btn ghost" onClick={() => setSlashSent(false)}>닫기</button>
+            </div>
+          )}
           {composer}
         </div>
       </div>

@@ -424,6 +424,10 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 /* 아래: 입력창, 승인 카드 */
 .chat-foot { padding: 8px 24px 16px; }
 .chat-error { margin-bottom: 8px; }
+.slash-hint { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; padding: 6px 6px 6px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--muted); font-size: 12px; }
+.slash-hint span { flex: 1; }
+.slash-hint b { color: var(--text); font-weight: 600; }
+.raw.command-out { color: #b9c0cf; }
 .composer { display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 8px 8px 14px; }
 .composer:focus-within { border-color: var(--accent); }
 .composer textarea { flex: 1; min-width: 0; resize: none; background: none; border: 0; outline: none; color: var(--text); font: inherit; line-height: 1.5; padding: 4px 0; max-height: 200px; }

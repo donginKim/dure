@@ -681,6 +681,31 @@ describe('채팅에서 보내기와 승인 응답', () => {
     expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
   });
 
+  test('sendUserInput: 슬래시 명령은 입력칸에 그대로 넣고 상태를 쉬는 중으로 둔다 (명령은 신호를 보내지 않는다)', async () => {
+    const { ws, terminal } = await agent('chat-slash');
+    await runHook(hookOf(ws.id), 'Stop');
+    await core.service.sendUserInput(ws.id, '/context');
+    await until(() => core.pty.buffer(terminal.id).split('/context').length === 3); // 메아리 + Enter 뒤 되뱉음
+    expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+    expect(core.service.isConfirmedIdle(ws.id)).toBe(false);
+    // 이어서 보통 글을 보낼 수 있다
+    await core.service.sendUserInput(ws.id, 'next task');
+    await until(() => core.pty.buffer(terminal.id).includes('next task'));
+  });
+
+  test('sendUserInput: 작업 중에는 슬래시 명령을 받지 않는다 (글로 전달되면 명령으로 실행되지 않는다)', async () => {
+    const { ws, terminal } = await agent('chat-slash-working');
+    await runHook(hookOf(ws.id), 'PreToolUse');
+    const before = core.pty.buffer(terminal.id);
+    await expect(core.service.sendUserInput(ws.id, '/compact')).rejects.toThrow('슬래시 명령은 에이전트가 쉬는 중일 때만 보낼 수 있습니다.');
+    expect(core.chat.snapshot(ws.id).queued).toEqual([]);
+    await quiet(200);
+    expect(core.pty.buffer(terminal.id)).toBe(before);
+    // 경로처럼 / 로 시작하는 보통 글은 명령이 아니다
+    await core.service.sendUserInput(ws.id, '/tmp/a.txt 를 읽어줘\n둘째 줄');
+    expect(core.chat.snapshot(ws.id).queued.length).toBe(1);
+  });
+
   test('answerPermission: 승인 대기 중이면 allow 는 CR 을 쓰고 작업 중으로, 같은 창에 두 번 답하지 못한다', async () => {
     const { ws, terminal } = await agent('chat-allow');
     await runHook(hookOf(ws.id), 'PreToolUse', JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'curl example.com' } }));

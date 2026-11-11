@@ -62,11 +62,24 @@ test('작업 중에 보낸 글(queued_command)은 친 시각의 프롬프트가 
   expect(p).toEqual({ type: 'prompt', id: 'u1', at: Date.parse('2026-11-11T03:59:00.000Z'), text: '이것도 해줘', from: 'user' });
 });
 
-test('슬래시 명령의 흔적과 시스템 글은 프롬프트가 아니다', () => {
-  expect(parseLine(user('<command-name>/compact</command-name>\n<command-message>compact</command-message>'))).toEqual([]);
-  expect(parseLine(user('<local-command-stdout>Compacted</local-command-stdout>'))).toEqual([]);
+test('슬래시 명령: 명령 줄은 사용자가 친 것으로, 출력은 command-output 으로 (색 표시는 뗀다)', () => {
+  // 실험 16: system/local_command 줄로 남는다
+  const cmd = row({ type: 'system', subtype: 'local_command', content: '<command-name>/context</command-name>\n            <command-message>context</command-message>\n            <command-args></command-args>' });
+  expect(parseLine(cmd)).toEqual([expect.objectContaining({ type: 'prompt', from: 'user', text: '/context' })]);
+  const withArgs = row({ type: 'system', subtype: 'local_command', content: '<command-name>/model</command-name><command-message>model</command-message><command-args>opus</command-args>' });
+  expect(parseLine(withArgs)[0]).toMatchObject({ type: 'prompt', text: '/model opus' });
+  const out = row({ type: 'system', subtype: 'local_command', content: '<local-command-stdout>\x1b[1mContext Usage\x1b[22m\n\x1b[37m⛁ ⛁\x1b[39m  Opus 5</local-command-stdout>' });
+  expect(parseLine(out)).toEqual([expect.objectContaining({ type: 'command-output', text: 'Context Usage\n⛁ ⛁  Opus 5' })]);
+  // 실험 14b: 같은 것이 user 줄로 남기도 한다
+  expect(parseLine(user('<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>'))[0]).toMatchObject({ type: 'prompt', text: '/compact' });
+  expect(parseLine(user('<local-command-stdout>Compacted</local-command-stdout>'))[0]).toMatchObject({ type: 'command-output', text: 'Compacted' });
+  expect(parseLine(row({ type: 'system', subtype: 'local_command', content: '<local-command-stdout></local-command-stdout>' }))).toEqual([]);
+});
+
+test('그 밖의 시스템 글은 프롬프트가 아니다', () => {
   expect(parseLine(user('<task-notification>…</task-notification>'))).toEqual([]);
   expect(parseLine(user('<local-command-caveat>…', { isMeta: true }))).toEqual([]);
+  expect(parseLine(user('## Context Usage\n…', { isMeta: true }))).toEqual([]);
 });
 
 test('압축: compact_boundary 는 compacted, 요약 글은 버린다', () => {

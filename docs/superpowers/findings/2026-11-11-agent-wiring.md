@@ -51,6 +51,7 @@
 | 15f | 대화가 압축되거나 비워지면 기록 파일은 어떻게 되는가 | ✅ `/compact`: 같은 파일, 같은 세션 id 에 이어 쓴다. `system`/`compact_boundary` 줄 뒤에 `isCompactSummary: true` 인 `user` 줄(요약)이 온다. `/clear`: 새 세션 id 와 새 파일로 바뀌고 `SessionStart`(`source: "clear"`)의 `transcript_path` 가 새 파일을 가리킨다. 슬래시 명령의 흔적은 `<command-name>…`, `<local-command-stdout>…` 로 시작하는 `user` 줄로 남는다 | `spikes/14b-compact-clear.mjs` |
 | 16 | Claude Code 의 폴더 신뢰 창을 화면 글자로 알아보고 넘길 수 있는가 (2.1.322) | ✅ 화면: `Accessing workspace:` / 폴더 경로 / `Quick safety check: …` / `❯ No, exit` / `Yes, I trust this folder` / `Enter to confirm · Esc to cancel`. 선택지에 번호가 없고 기본 선택은 `No, exit`. 아래 화살표(`ESC [ B`) 한 번으로 커서가 Yes 로 가고 Enter 로 넘어간다. 커서를 옮기면 바뀐 줄만 다시 그려져 옛 `❯ No, exit` 가 출력 기록에 남는다: 가장 나중에 그려진 `❯` 를 봐야 한다 | `spikes/15-trust-dialog.mjs`, `tests/fixtures/trust-dialog.json` |
 | 16a | 터미널 화면(xterm.js)이 붙으면 무엇을 보내는가 | ✅ Claude Code 가 시작하며 터미널에 묻는 것(`ESC [ > 0 q` 등)에 화면이 스스로 응답을 써 보낸다. 이것을 사용자 입력으로 치면 "사용자가 터미널을 쓰는 중" 으로 잘못 본다(⚠️ 응답의 정확한 바이트는 기록하지 않았다. 응답을 사용자 입력에서 빼자 증상이 사라진 것으로 확인) | 검증용 인스턴스 손 확인 |
+| 17 | 슬래시 명령을 입력칸에 써 넣으면 어떤 신호와 기록이 오는가 | ✅ hook 이 하나도 오지 않는다(`/context`, `/model` 모두. `/compact`, `/clear` 는 뒤따르는 `SessionStart` 만 온다, 15f). 기록에는 `system`/`local_command` 줄 둘이 남는다: `<command-name>/context</command-name>…<command-args>…` 와 `<local-command-stdout>…</local-command-stdout>`(색 제어 문자 포함). `/model` 처럼 고르는 화면이 뜨는 명령은 그 화면을 닫은 뒤에야 줄이 남고, 고르는 동안에는 아무 흔적이 없다 | `spikes/16-slash-commands.mjs` |
 
 ## 설계를 바꾸는 발견
 

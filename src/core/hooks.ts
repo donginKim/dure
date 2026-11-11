@@ -1,6 +1,6 @@
 import type { Workspace, WorkspaceStatus } from '@shared/types';
 import type { WorkspaceStore } from './stores';
-import { pendingMessage, type TodoService } from './todos';
+import { pendingMessage, todoDigest, type TodoService } from './todos';
 
 export type HookEvent = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse' | 'Stop' | 'Notification';
 
@@ -35,9 +35,18 @@ export function handleHook(deps: HookDeps, workspace: Workspace, event: string, 
   };
 
   switch (event) {
-    case 'SessionStart':
+    case 'SessionStart': {
+      // 대화가 시작되거나, 이어지거나, 비워지거나, 압축된 직후에 온다 (실험 11).
+      // 에이전트가 읽으라고 시키지 않아도 남은 할 일을 알도록 현재 목록을 다시 넣어준다.
       setStatus('idle');
-      return '';
+      const digest = todoDigest(
+        deps.todos.listWorkspace(workspace.id),
+        deps.todos.listProject(workspace.projectId).filter((t) => t.workspaceId === null),
+      );
+      if (!digest) return '';
+      deps.todos.takePending(workspace.id); // 목록 전체를 알려줬으니 변경 기록은 다시 전달하지 않는다
+      return JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: digest } });
+    }
     case 'PreToolUse':
       setStatus('working');
       return '';

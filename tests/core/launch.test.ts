@@ -128,4 +128,5 @@ test('지침에 두레 TODO 사용 문단이 있다', () => {
   expect(text).toContain('todo_add');
   expect(text).toContain('todo_list 로 목록과 userChanges 를 확인하라');
   expect(text).toContain('assignee 를 user 로 적어라');
+  expect(text).toContain('사용자가 놓친 할 일이 보이면');
 });

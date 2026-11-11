@@ -25,8 +25,29 @@ function setup(initial: WorkspaceStatus = 'idle') {
   const fire = (event: string, payload: unknown = {}) => handleHook(deps, workspaces.get(ws.id)!, event, payload);
   const status = () => workspaces.get(ws.id)!.status;
   const userAdds = (title: string) => todos.add({ projectId: p.id, workspaceId: ws.id, title }, 'user');
-  return { fire, status, userAdds, todos, ws, statusCalls };
+  return { fire, status, userAdds, todos, ws, p, statusCalls };
 }
+
+test('SessionStart: TODO 가 있으면 현재 목록을 additionalContext 로 다시 알려주고, 쌓인 변경 기록은 비운다', () => {
+  const c = setup('working');
+  c.todos.add({ projectId: c.p.id, workspaceId: c.ws.id, title: '링크 추가', status: 'doing' }, 'agent');
+  c.userAdds('테스트 실행');
+  const out = JSON.parse(c.fire('SessionStart', { source: 'compact' }));
+  expect(out.hookSpecificOutput.hookEventName).toBe('SessionStart');
+  const text: string = out.hookSpecificOutput.additionalContext;
+  expect(text).toContain('[두레] 이 워크스페이스의 현재 TODO 다.');
+  expect(text).toContain('진행 중:\n- 링크 추가');
+  expect(text).toContain('할 일:\n- 테스트 실행');
+  expect(text).toContain('사용자가 놓친 할 일이 보이면 todo_add 로 추가하라');
+  // 목록 전체를 방금 알려줬으므로 변경 기록을 또 전달할 필요가 없다
+  expect(c.todos.pendingCount(c.ws.id)).toBe(0);
+  expect(c.status()).toBe('idle');
+});
+
+test('SessionStart: TODO 가 하나도 없으면 빈 글', () => {
+  const c = setup('working');
+  expect(c.fire('SessionStart', { source: 'startup' })).toBe('');
+});
 
 test.each([['SessionStart', 'idle'], ['UserPromptSubmit', 'working'], ['PreToolUse', 'working'], ['PostToolUse', 'working']] as const)(
   '%s 는 상태를 %s 로 바꾼다', (event, expected) => {

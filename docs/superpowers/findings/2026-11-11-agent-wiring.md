@@ -28,6 +28,13 @@
 | 8 | 샌드박스 안에서 서버를 띄우고 localhost 를 호출할 수 있는가 | 해당 없음 (샌드박스 없음, 승인 창으로 다룸) | ❌ `:workspace` 프로필에서 localhost 와 외부 모두 접속 실패. `-c sandbox_workspace_write.network_access=true` 로도 안 풀림. 작업 폴더 쓰기는 됨, 밖은 막힘 | `codex sandbox -P :workspace` |
 | 9 | `PATH` 앞에 끼운 `git` 이 에이전트의 명령 실행에 쓰이는가 | ✅ 에이전트가 실행한 `git status` 가 대리 실행 파일을 탔다 | ✅ 샌드박스 안 `git status` 가 대리 실행 파일을 탔다 (모델 없이 확인). ⏳ 실제 에이전트 실행에서는 미확인 | 같음 |
 
+## 추가 실험
+
+| 번호 | 질문 | Claude Code | 근거 |
+|---|---|---|---|
+| 11 | `SessionStart` hook 의 `additionalContext` 가 에이전트 컨텍스트에 들어가는가 | ✅ 들어간다. 넣어준 낱말을 그대로 답함 | `spikes/11-sessionstart.mjs` |
+| 11a | 압축(`/compact`) 뒤에도 `SessionStart` 가 오는가 | ✅ 온다. 본문의 `source` 가 처음은 `startup`, 압축 뒤는 `compact`. 이때 넣은 새 낱말도 그대로 답함 | 같음 |
+
 ## 설계를 바꾸는 발견
 
 1. **터미널에 글자를 써 넣는 것은 위험하다.** 에이전트는 예고 없이 선택 창을 띄운다. 실험 중 확인한 것만 해도 Claude Code의 폴더 신뢰 창(기본 선택 "No, exit"), Codex의 폴더 신뢰 창, Codex 업데이트 창(기본 선택 "Update now"), Codex 새 모델 안내 창이 있다. 실험 스크립트가 업데이트 창에 Enter를 보내 `brew upgrade --cask codex` 가 실행되는 사고가 났다. 두레는 에이전트가 쉬는 중이라는 것을 hook 신호로 확인했을 때만 터미널에 써 넣어야 하고, 상태를 모르면 쓰지 않고 사용자에게 알려야 한다.

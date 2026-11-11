@@ -40,6 +40,27 @@ export function pendingMessage(lines: string[]): string {
 // eslint-disable-next-line no-control-regex
 const clean = (s: string): string => s.replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '');
 
+/**
+ * 컨텍스트가 새로 시작되거나 압축된 에이전트에게 현재 TODO 를 다시 알려주는 글.
+ * 남은 일은 제목까지, 끝난 일은 개수만 적는다. 항목이 하나도 없으면 undefined.
+ */
+export function todoDigest(workspaceItems: Todo[], projectItems: Todo[]): string | undefined {
+  if (workspaceItems.length === 0 && projectItems.length === 0) return undefined;
+  const open = (t: Todo): boolean => t.status === 'todo' || t.status === 'doing';
+  const section = (title: string, items: Todo[]): string[] => (items.length > 0 ? [title, ...items.map((t) => `- ${t.title}`)] : []);
+  const mine = workspaceItems.filter((t) => t.assignee === 'agent');
+  const all = [...workspaceItems, ...projectItems];
+  return [
+    '[두레] 이 워크스페이스의 현재 TODO 다. 컨텍스트가 새로 시작되거나 압축돼서 다시 알려준다.',
+    ...section('진행 중:', mine.filter((t) => t.status === 'doing')),
+    ...section('할 일:', mine.filter((t) => t.status === 'todo')),
+    ...section('사용자가 할 일:', workspaceItems.filter((t) => t.assignee === 'user' && open(t))),
+    ...section('프로젝트 전체의 할 일 (읽기 전용):', projectItems.filter(open)),
+    `완료 ${all.filter((t) => t.status === 'done').length}건, 취소 ${all.filter((t) => t.status === 'cancelled').length}건.`,
+    '빠졌거나 사용자가 놓친 할 일이 보이면 todo_add 로 추가하라. 사용자가 해야 하는 일이면 assignee 를 user 로 한다. 항목을 고치기 전에는 todo_list 로 rev 를 읽어라.',
+  ].join('\n');
+}
+
 function statusLine(status: TodoStatus, title: string): string {
   if (status === 'done') return `사용자가 직접 완료함: "${title}"`;
   if (status === 'cancelled') return `취소됨: "${title}"`;

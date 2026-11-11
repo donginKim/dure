@@ -16,6 +16,7 @@ export function baseInstructions(ws: Workspace, project: Project): string {
       '- 일을 시작할 때 todo_add 로 단계를 적고, 진행에 따라 todo_update 로 status 를 doing, done 으로 바꿔라.',
       '- 단계를 시작하기 전에 todo_list 로 목록과 userChanges 를 확인하라. 사용자가 직접 끝낸 항목은 건너뛰고, 바뀐 내용을 따르라.',
       '- 사용자가 해야 하는 일(커밋, push, 배포 등)은 assignee 를 user 로 적어라.',
+      '- 일하다가 계획에 없던 필요한 일을 발견하거나 사용자가 놓친 할 일이 보이면 todo_add 로 추가하라. 추가한 것은 응답에서 한 줄로 알려라.',
     ].join('\n'),
     '커밋 메시지는 작성만 하고 `git commit`, `git push`, 배포는 실행하지 마라. 사용자가 직접 한다.',
   ].join('\n');

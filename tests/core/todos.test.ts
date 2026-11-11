@@ -216,3 +216,46 @@ test('restorePending 은 가져갔던 줄을 다시 넣는다', () => {
   todos.restorePending(front.id, lines);
   expect(todos.takePending(front.id)).toEqual(['추가됨: "A"']);
 });
+
+describe('todoDigest (컨텍스트가 새로 시작될 때 다시 알려주는 글)', () => {
+  test('항목이 없으면 undefined', async () => {
+    const { todoDigest } = await import('@core/todos');
+    expect(todoDigest([], [])).toBeUndefined();
+  });
+
+  test('남은 일을 상태와 담당별로 묶고, 끝난 일은 개수만 알린다', async () => {
+    const { todoDigest } = await import('@core/todos');
+    const { todos, p, front, addWs } = setup();
+    addWs('코드 살펴보기', 'agent', { status: 'done' });
+    addWs('링크 추가', 'agent', { status: 'doing' });
+    addWs('테스트 실행');
+    addWs('문구 다듬기', 'agent', { status: 'cancelled' });
+    addWs('커밋', 'agent', { assignee: 'user' });
+    addWs('이미 한 배포', 'agent', { assignee: 'user', status: 'done' });
+    todos.add({ projectId: p.id, workspaceId: null, title: '로그인 기능 출시' }, 'user');
+    todos.add({ projectId: p.id, workspaceId: null, title: '끝난 프로젝트 일', status: 'done' }, 'user');
+    const all = todos.listProject(p.id);
+    expect(todoDigest(all.filter((t) => t.workspaceId === front.id), all.filter((t) => t.workspaceId === null))).toBe([
+      '[두레] 이 워크스페이스의 현재 TODO 다. 컨텍스트가 새로 시작되거나 압축돼서 다시 알려준다.',
+      '진행 중:',
+      '- 링크 추가',
+      '할 일:',
+      '- 테스트 실행',
+      '사용자가 할 일:',
+      '- 커밋',
+      '프로젝트 전체의 할 일 (읽기 전용):',
+      '- 로그인 기능 출시',
+      '완료 3건, 취소 1건.', // 워크스페이스 2건 + 프로젝트 1건
+      '빠졌거나 사용자가 놓친 할 일이 보이면 todo_add 로 추가하라. 사용자가 해야 하는 일이면 assignee 를 user 로 한다. 항목을 고치기 전에는 todo_list 로 rev 를 읽어라.',
+    ].join('\n'));
+  });
+
+  test('남은 일이 없고 끝난 일만 있어도 알려준다', async () => {
+    const { todoDigest } = await import('@core/todos');
+    const { todos, front, addWs } = setup();
+    addWs('A', 'agent', { status: 'done' });
+    const text = todoDigest(todos.listWorkspace(front.id), [])!;
+    expect(text).toContain('완료 1건, 취소 0건.');
+    expect(text).not.toContain('할 일:');
+  });
+});

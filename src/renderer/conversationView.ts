@@ -1,3 +1,4 @@
+import type { DeliveryInfo } from '@shared/ipc';
 import type { DeliveryState, Message, ProjectFlow, Thread, Workspace } from '@shared/types';
 
 export const GONE = '지워진 워크스페이스';
@@ -7,7 +8,9 @@ export function workspaceName(id: string, workspaces: Workspace[]): string {
 }
 
 export function senderName(m: Message, workspaces: Workspace[]): string {
-  return m.from.kind === 'user' ? '사용자' : workspaceName(m.from.workspaceId, workspaces);
+  if (m.from.kind === 'user') return '사용자';
+  if (m.from.kind === 'system') return '두레';
+  return workspaceName(m.from.workspaceId, workspaces);
 }
 
 /** 그 워크스페이스가 보내거나 받은 스레드만, 최근 것이 먼저. */
@@ -34,6 +37,12 @@ export function deliveryLabel(state: DeliveryState): string {
 /** 사용자가 손을 써야 풀리는 상태인가 (화면에서 눈에 띄게 알린다) */
 export function needsAttention(state: DeliveryState): boolean {
   return state === 'waiting-unknown' || state === 'waiting-codex' || state === 'held';
+}
+
+/** 전달 대기 중인 것 옆에 보여줄 말과, 사용자가 손을 써야 하는지. 전달 실패가 있으면 그것이 먼저다. */
+export function deliveryNote(info: DeliveryInfo): { text: string; attention: boolean } {
+  if (info.error) return { text: `전달 실패: ${info.error}`, attention: true };
+  return { text: deliveryLabel(info.state), attention: needsAttention(info.state) };
 }
 
 /** 스레드 위에 띄울 안내문. 상한이 멈춤보다, 프로젝트가 스레드보다 먼저다. */

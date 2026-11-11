@@ -13,15 +13,11 @@ export interface HookDeps {
   collect(workspaceId: string): string | undefined;
   /** 메시지만 모아 가져간다 */
   collectMessages(workspaceId: string): string | undefined;
-  /** 사용자가 터미널에 직접 프롬프트를 입력했다 */
+  /**
+   * 에이전트가 프롬프트를 받았다. 사용자가 직접 넣은 것인지 두레가 넣은 것인지는 부른 쪽이 가린다:
+   * 두레가 붙여 넣은 글은 <pasted_content> 로 감싸여 와서 글만으로는 구분할 수 없다 (실험 13).
+   */
   onUserPrompt(workspace: Workspace): void;
-}
-
-// 실험 12a: UserPromptSubmit 본문의 prompt 필드에 프롬프트 글이 온다.
-// 두레가 써 넣은 글은 '[두레]' 로 시작한다. 그렇지 않으면 사용자가 직접 입력한 것이다.
-function isUserTyped(payload: unknown): boolean {
-  const prompt = typeof payload === 'object' && payload !== null ? (payload as { prompt?: unknown }).prompt : undefined;
-  return typeof prompt === 'string' && !prompt.trimStart().startsWith('[두레]');
 }
 
 // 실험 10 (spikes/10-notification.mjs): 승인 창이 뜨면 notification_type 이 'permission_prompt' 로 온다.
@@ -54,7 +50,10 @@ export function handleHook(deps: HookDeps, workspace: Workspace, event: string, 
         deps.todos.listProject(workspace.projectId).filter((t) => t.workspaceId === null),
       );
       if (digest) deps.todos.takePending(workspace.id); // 목록 전체를 알려주니 변경 기록은 다시 전달하지 않는다
-      const context = [digest, deps.collectMessages(workspace.id)].filter((x) => x !== undefined).join('\n\n');
+      // 메시지는 압축 직후에만 함께 넣는다: 그때는 에이전트가 하던 일을 이어 가므로 읽고 행동한다.
+      // 대화를 막 시작했거나 비운 에이전트는 프롬프트 없이는 움직이지 않아, 넣으면 읽히지 않고 사라진다.
+      const source = typeof payload === 'object' && payload !== null ? (payload as { source?: unknown }).source : undefined;
+      const context = [digest, source === 'compact' ? deps.collectMessages(workspace.id) : undefined].filter((x) => x !== undefined).join('\n\n');
       return context ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) : '';
     }
     case 'PreToolUse':
@@ -62,7 +61,7 @@ export function handleHook(deps: HookDeps, workspace: Workspace, event: string, 
       return '';
     case 'UserPromptSubmit':
     case 'PostToolUse': {
-      if (event === 'UserPromptSubmit' && isUserTyped(payload)) deps.onUserPrompt(workspace);
+      if (event === 'UserPromptSubmit') deps.onUserPrompt(workspace);
       setStatus('working');
       const message = pending();
       return message ? JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: message } }) : '';

@@ -6,7 +6,13 @@ import type {
 export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
-export interface DeliveryInfo { state: DeliveryState; waiting: number; held: number }
+export interface DeliveryInfo {
+  state: DeliveryState;
+  waiting: number;
+  held: number;
+  /** 마지막 전달 실패 이유 (에이전트를 띄우지 못함 등) */
+  error?: string;
+}
 export interface TerminalSize { cols: number; rows: number }
 
 /** 화면(renderer)이 `window.dure` 로 쓰는 API. */

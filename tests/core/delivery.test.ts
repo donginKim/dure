@@ -176,20 +176,95 @@ test('상한에 걸린 뒤 사용자가 개입하면 붙잡힌 메시지가 전�
   expect(out.hookSpecificOutput.additionalContext).toContain(`> ${THREAD_CAP + 1}`);
 });
 
-test('사용자가 터미널에 직접 입력하면 개입으로 치고, 두레가 넣은 글은 개입이 아니다', async () => {
+test('두레가 깨우며 넣은 프롬프트는 사용자 개입이 아니고, 그 밖의 프롬프트는 사용자 개입이다', async () => {
   await core.service.startAgent(front.id, SIZE);
-  send(back, front, 'x');
+  await runHook(front, 'Stop');
+  send(back, front, 'x'); // 프론트를 깨운다
+  await until(() => agentBuffer(front).includes('> x'));
   expect(core.messages.flow(projectId).agentStreak).toBe(1);
-  await runHook(front, 'UserPromptSubmit', JSON.stringify({ prompt: '[두레] 워크스페이스 "백엔드" 이(가) 보낸 메시지다.' }));
+  // 깨우느라 붙여 넣은 글은 <pasted_content> 로 감싸여 온다 (실험 13). 글로는 구분할 수 없다.
+  await runHook(front, 'UserPromptSubmit', JSON.stringify({ prompt: '\n\n<pasted_content id="a1">\n[두레] 워크스페이스 "백엔드" 이(가) 보낸 메시지다.' }));
   expect(core.messages.flow(projectId).agentStreak).toBe(1);
   await runHook(front, 'UserPromptSubmit', JSON.stringify({ prompt: '로그인 화면 고쳐줘' }));
   expect(core.messages.flow(projectId).agentStreak).toBe(0);
 });
 
-test('받는 워크스페이스를 지우면 미전달 메시지가 정리되고 보낸 쪽 기록은 남는다', async () => {
+test('첫 프롬프트로 띄운 에이전트의 첫 프롬프트도 사용자 개입이 아니다', async () => {
+  send(front, back, '띄워라');
+  await until(() => agentBuffer(back).includes('ARGS:'));
+  await runHook(back, 'UserPromptSubmit', JSON.stringify({ prompt: '[두레] 워크스페이스 "프론트" 이(가) 보낸 메시지다.' }));
+  expect(core.messages.flow(projectId).agentStreak).toBe(1);
+});
+
+test('사용자가 에이전트 터미널에 입력하면 쉬는 중 확인이 풀려, 치던 글 위에 메시지를 써 넣지 않는다', async () => {
+  const t = await core.service.startAgent(back.id, SIZE);
+  await runHook(back, 'Stop');
+  core.service.noteTerminalInput(t.id); // 사용자가 입력창에 무언가 치기 시작했다
+  send(front, back, '끼어들면 안 되는 말');
+  await settle();
+  expect(core.delivery.state(back.id)).toBe('waiting-unknown');
+  expect(agentBuffer(back)).not.toContain('> 끼어들면 안 되는 말');
+});
+
+test('첫 프롬프트로 띄운 에이전트가 프롬프트를 받기 전에 종료되면 메시지가 다시 미전달이 되고 화면에 이유가 남는다', async () => {
+  writeFileSync(join(fakeBin, 'claude'), '#!/bin/sh\nexit 1\n'); // 폴더 신뢰 창에서 "No, exit" 를 고른 것과 같다
+  const m = send(front, back, '읽기 전에 죽으면');
+  await until(() => core.messages.messages(m.threadId)[0].deliveredAt === null && core.delivery.error(back.id) !== undefined, 5000);
+  expect(core.delivery.error(back.id)).toBe('에이전트가 메시지를 읽기 전에 종료됐습니다.');
+  expect(core.pty.list(back.id)).toEqual([]); // 다시 띄우기를 반복하지 않는다
+});
+
+test('첫 프롬프트를 받았다는 신호가 온 뒤에 종료되면 메시지는 전달된 것으로 남는다', async () => {
+  const m = send(front, back, '읽었다');
+  await until(() => agentBuffer(back).includes('ARGS:'));
+  await runHook(back, 'UserPromptSubmit', JSON.stringify({ prompt: '[두레] …' }));
+  core.pty.kill(core.pty.list(back.id)[0].id);
+  await until(() => core.pty.list(back.id).length === 0);
+  expect(core.messages.messages(m.threadId)[0].deliveredAt).not.toBeNull();
+});
+
+test('자동 시작이 실패하면(작업 폴더 없음) 메시지는 미전달로 남고 이유가 기록된다', async () => {
+  (await import('node:fs')).rmSync(back.worktreePath, { recursive: true, force: true });
+  const m = send(front, back, '폴더가 없다');
+  await until(() => core.delivery.error(back.id) !== undefined);
+  expect(core.delivery.error(back.id)).toContain('작업 폴더가 없습니다');
+  expect(core.messages.messages(m.threadId)[0].deliveredAt).toBeNull();
+});
+
+test('꺼진 Codex 는 자동으로 띄우지 않는다 (첫 프롬프트 방식이 실측되지 않았다)', async () => {
+  const repo = core.repos.list(projectId)[0];
+  const cx = await core.service.create({ projectId, repoId: repo.id, name: '코덱스', baseBranch: 'main', agentKind: 'codex' });
+  send(front, cx, 'x');
+  await settle();
+  expect(core.delivery.state(cx.id)).toBe('waiting-codex');
+  expect(core.pty.list(cx.id)).toEqual([]);
+});
+
+test('작업 중인데 오랫동안 신호가 없으면 상태를 모르는 것으로 본다', async () => {
+  await core.service.startAgent(back.id, SIZE);
+  await runHook(back, 'PreToolUse');
+  send(front, back, 'x');
+  expect(core.delivery.state(back.id)).toBe('next-hook');
+  expect(core.delivery.state(back.id, Date.now() + 11 * 60_000)).toBe('waiting-unknown'); // 중단이나 모델 오류 뒤에는 hook 이 오지 않는다
+});
+
+test('지우는 중인 워크스페이스에는 에이전트를 띄우지 않는다', async () => {
+  const removing = core.service.remove(back.id, { deleteWorktree: true });
+  expect(() => send(front, back, '지워지는 중')).not.toThrow();
+  await removing;
+  await settle();
+  expect(core.pty.list(back.id)).toEqual([]);
+  expect(core.workspaces.get(back.id)).toBeUndefined();
+});
+
+test('받는 워크스페이스를 지우면 보낸 쪽이 알림을 받는다', async () => {
+  await core.service.startAgent(front.id, SIZE);
+  await runHook(front, 'PreToolUse');
   await core.service.startAgent(back.id, SIZE); // waiting-unknown 으로 붙잡히게
   const m = send(front, back, '곧 지워질 곳으로');
   await core.service.remove(back.id, { deleteWorktree: true });
-  expect(core.messages.messages(m.threadId)).toEqual([]);
-  expect(core.delivery.state(back.id)).toBe('none');
+  expect(core.messages.messages(m.threadId)[0].failed).toBe(true);
+  const out = JSON.parse(await runHook(front, 'PostToolUse'));
+  expect(out.hookSpecificOutput.additionalContext).toContain('[두레] 두레가 알린다.');
+  expect(out.hookSpecificOutput.additionalContext).toContain('> 받는 워크스페이스 "백엔드" 이(가) 지워져 메시지 1건이 전달되지 않았다.');
 });

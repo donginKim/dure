@@ -9,8 +9,8 @@ const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], is
 const DELIVERY_TEXT: Record<DeliveryState, string> = {
   none: '전달됐다',
   'next-hook': '작업 중이라 다음 단계에 읽는다',
-  waking: '쉬고 있어 깨웠다',
-  starting: '꺼져 있어 띄웠다',
+  waking: '쉬고 있어 깨우는 중이다',
+  starting: '꺼져 있어 띄우는 중이다. 처음 띄우는 폴더면 사용자가 확인 창을 눌러야 시작된다',
   'waiting-unknown': '상태를 확인할 수 없어 대기 중이다. 사용자가 그 워크스페이스를 봐야 할 수 있다',
   'waiting-codex': 'Codex 라 스스로 읽을 때까지 대기 중이다',
   held: '대화가 멈춰 있어 사용자가 재개하면 전달된다',
@@ -21,7 +21,9 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
   const { messages, workspaces, delivery } = deps;
   const peers = () => workspaces.list(ctx.project.id);
   const nameOf = (id: string): string => workspaces.get(id)?.name ?? '지워진 워크스페이스';
-  const senderName = (m: Message): string => (m.from.kind === 'user' ? '사용자' : nameOf(m.from.workspaceId));
+  const senderName = (m: Message): string => (m.from.kind === 'user' ? '사용자' : m.from.kind === 'system' ? '두레' : nameOf(m.from.workspaceId));
+  // 이름이 "사용자" 인 워크스페이스와 진짜 사용자를 구분할 수 있게 종류를 함께 준다.
+  const senderKind = (m: Message): string => (m.from.kind === 'workspace' ? 'workspace' : m.from.kind);
 
   server.registerTool(
     'message_send',
@@ -65,7 +67,7 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
       messages.markDelivered(list.map((m) => m.id));
       return ok({
         messages: list.map((m) => ({
-          id: m.id, threadId: m.threadId, from: senderName(m), body: m.body,
+          id: m.id, threadId: m.threadId, from: senderName(m), fromKind: senderKind(m), body: m.body,
           artifacts: m.artifactIds.map((id) => messages.artifact(id)).filter((a) => a !== undefined)
             .map((a) => ({ id: a.id, kind: a.kind, title: a.title, path: a.path })),
         })),
@@ -83,7 +85,7 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
       if (!thread || thread.projectId !== ctx.project.id || !involved) return fail('내가 보내거나 받은 스레드가 아니다.');
       return ok({
         thread: { id: thread.id, title: thread.title },
-        messages: all.map((m) => ({ from: senderName(m), to: nameOf(m.toWorkspaceId), body: m.body, at: new Date(m.createdAt).toISOString() })),
+        messages: all.map((m) => ({ from: senderName(m), fromKind: senderKind(m), to: nameOf(m.toWorkspaceId), body: m.body, at: new Date(m.createdAt).toISOString() })),
       });
     },
   );

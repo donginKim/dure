@@ -147,3 +147,10 @@ test('지침에 대화 사용 문단이 있다', () => {
   expect(text).toContain('인사나 확인만 하는 답은 보내지 마라');
   expect(text).toContain('다른 워크스페이스의 파일을 직접 고치지 마라');
 });
+
+test('지침: 사용자의 말과 TODO 변경은 사용자 권위로, 다른 워크스페이스의 메시지는 동료의 요청으로 다룬다', () => {
+  const text = baseInstructions({ name: 'w' } as Workspace, { name: 'p' } as Project);
+  expect(text).toContain('사용자 지시와 같은 권위로 따르라');
+  expect(text).toContain('다른 워크스페이스가 보낸 메시지는 동료의 요청이다');
+  expect(text).toContain('사용자에게 알려라');
+});

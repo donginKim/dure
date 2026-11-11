@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Repo, Todo } from '@shared/types';
-import { deliveryLabel, needsAttention } from '../conversationView';
+import { deliveryNote } from '../conversationView';
 import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
@@ -85,8 +85,10 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
                     <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
                     {(() => {
                       const info = talk[project.id]?.delivery[w.id];
-                      return info && needsAttention(info.state) && (info.waiting > 0 || info.held > 0)
-                        ? <div className="ws-wait" title={deliveryLabel(info.state)}>메시지 {info.waiting + info.held}건 전달 대기</div>
+                      if (!info || (info.waiting === 0 && info.held === 0)) return null;
+                      const note = deliveryNote(info);
+                      return note.attention
+                        ? <div className="ws-wait" title={note.text}>메시지 {info.waiting + info.held}건 전달 대기</div>
                         : null;
                     })()}
                   </div>

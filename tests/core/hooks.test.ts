@@ -24,7 +24,7 @@ function setup(initial: WorkspaceStatus = 'idle') {
   workspaces.update(ws.id, { status: initial });
   const statusCalls: string[] = [];
   const messages = new MessageService(db);
-  const delivery = new DeliveryService({ workspaces, todos, messages, actions: { isConfirmedIdle: () => false, wake: async () => undefined, start: async () => undefined } });
+  const delivery = new DeliveryService({ workspaces, todos, messages, actions: { isConfirmedIdle: () => false, isRemoving: () => false, lastActivityAt: () => undefined, wake: async () => undefined, start: async () => undefined } });
   const userPrompts: string[] = [];
   const deps: HookDeps = {
     workspaces, todos, onStatus: (id) => statusCalls.push(id),
@@ -179,23 +179,28 @@ test('Stop: 메시지가 있으면 block, 없으면 idle', () => {
   expect(c.status()).toBe('idle');
 });
 
-test('SessionStart: 미전달 메시지도 함께 넣어준다', () => {
+test('SessionStart: 압축 직후(작업을 이어가는 중)에만 미전달 메시지를 함께 넣어준다', () => {
   const c = setup('working');
-  c.receive('꺼져 있는 동안 온 말');
-  const out = JSON.parse(c.fire('SessionStart', { source: 'resume' }));
-  expect(out.hookSpecificOutput.additionalContext).toContain('> 꺼져 있는 동안 온 말');
+  c.receive('압축 중에 온 말');
+  const out = JSON.parse(c.fire('SessionStart', { source: 'compact' }));
+  expect(out.hookSpecificOutput.additionalContext).toContain('> 압축 중에 온 말');
 });
 
-test('UserPromptSubmit: 프롬프트가 [두레] 로 시작하지 않으면 사용자 개입으로 친다', () => {
+test('SessionStart: 대화를 막 시작했거나 비운 에이전트는 스스로 일하지 않으므로 메시지를 넣지 않고 남겨 둔다', () => {
+  for (const source of ['startup', 'clear', 'resume']) {
+    const c = setup('starting');
+    const m = c.receive('읽히지 않으면 사라지면 안 되는 말');
+    expect(c.fire('SessionStart', { source })).toBe('');
+    expect(c.messages.messages(m.threadId)[0].deliveredAt).toBeNull();
+  }
+});
+
+test('UserPromptSubmit 이 올 때마다 onUserPrompt 를 부른다 (누가 넣은 프롬프트인지는 부른 쪽이 가린다)', () => {
+  // 프롬프트 글로는 가릴 수 없다: 두레가 붙여 넣은 글은 <pasted_content> 로 감싸여 온다 (실험 13).
   const c = setup('idle');
   c.fire('UserPromptSubmit', { prompt: '로그인 화면 고쳐줘' });
-  expect(c.userPrompts).toEqual([c.ws.id]);
-});
-
-test('UserPromptSubmit: 프롬프트가 [두레] 로 시작하거나 본문이 없으면 사용자 개입이 아니다', () => {
-  const c = setup('idle');
-  c.fire('UserPromptSubmit', { prompt: '[두레] 워크스페이스 "백엔드" 이(가) 보낸 메시지다.' });
-  c.fire('UserPromptSubmit', {});
-  c.fire('UserPromptSubmit', 'not json');
-  expect(c.userPrompts).toEqual([]);
+  c.fire('UserPromptSubmit', { prompt: '\n\n<pasted_content id="c2f9">\n[두레] 워크스페이스 "백엔드" 이(가) 보낸 메시지다.' });
+  expect(c.userPrompts).toEqual([c.ws.id, c.ws.id]);
+  c.fire('PostToolUse', {});
+  expect(c.userPrompts).toHaveLength(2);
 });

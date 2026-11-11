@@ -60,8 +60,8 @@ export interface Todo {
 
 export type TodoPatch = Partial<Pick<Todo, 'title' | 'detail' | 'status' | 'assignee'>>;
 
-/** 메시지를 보낸 쪽. 워크스페이스의 에이전트이거나 사용자다. */
-export type Sender = { kind: 'workspace'; workspaceId: string } | { kind: 'user' };
+/** 메시지를 보낸 쪽. 워크스페이스의 에이전트, 사용자, 또는 두레 자신(알림)이다. */
+export type Sender = { kind: 'workspace'; workspaceId: string } | { kind: 'user' } | { kind: 'system' };
 
 export interface Thread {
   id: string;
@@ -88,6 +88,8 @@ export interface Message {
   artifactIds: string[];
   createdAt: number;
   deliveredAt: number | null;
+  /** 받는 워크스페이스가 지워져 전달하지 못했다 */
+  failed: boolean;
 }
 
 export type ArtifactKind = 'result' | 'decision' | 'api-spec' | 'note';

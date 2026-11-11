@@ -69,7 +69,11 @@ export function registerIpc(core: Core): () => void {
     'terminals.list': (workspaceId: string) => core.pty.listWithExited(workspaceId),
     'terminals.startAgent': (workspaceId: string, size: TerminalSize) => core.service.startAgent(workspaceId, size),
     'terminals.openShell': (workspaceId: string, size: TerminalSize) => core.service.openShell(workspaceId, size),
-    'terminals.write': (id: string, data: string) => core.pty.write(id, data),
+    'terminals.write': (id: string, data: string) => {
+      // 사용자가 에이전트 터미널에 입력하고 있다: 두레가 그 터미널에 글을 써 넣으면 안 된다.
+      core.service.noteTerminalInput(id);
+      core.pty.write(id, data);
+    },
     'terminals.resize': (id: string, cols: number, rows: number) => core.pty.resize(id, cols, rows),
     'terminals.kill': (id: string) => { core.pty.kill(id); changed('terminals'); },
     'terminals.buffer': (id: string) => core.pty.snapshot(id),
@@ -100,6 +104,7 @@ export function registerIpc(core: Core): () => void {
       state: core.delivery.state(w.id),
       waiting: core.messages.undelivered(w.id).length,
       held: core.messages.heldCount(w.id),
+      error: core.delivery.error(w.id),
     }])),
     'artifacts.list': (projectId: string) => core.messages.artifacts(projectId),
     'artifacts.get': (id: string) => core.messages.artifact(id) ?? null,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Todo, Workspace } from '@shared/types';
-import { needsAttention, threadsFor } from '../conversationView';
+import { deliveryNote, threadsFor } from '../conversationView';
 import { progress } from '../todoView';
 import { ConversationList, type ConversationData } from './ConversationPanel';
 import { TodoBody, type PendingInfo } from './TodoPanel';
@@ -20,7 +20,8 @@ export function SidePanel({ workspace, workspaces, todos, pending, conversation 
   const threads = threadsFor(conversation.threads, conversation.messages, workspace.id);
   const info = conversation.delivery[workspace.id];
   // 사용자가 봐야 할 것이 있으면 탭에 점을 찍는다: 전달이 막혀 있거나, 낀 대화가 상한에 걸렸다.
-  const attention = (info !== undefined && needsAttention(info.state)) || threads.some((t) => t.capped) || conversation.flow.capped;
+  const attention = (info !== undefined && (info.waiting > 0 || info.held > 0 || info.error !== undefined) && deliveryNote(info).attention)
+    || threads.some((t) => t.capped) || conversation.flow.capped;
   const todoLabel = total > 0 ? `${done}/${total}` : '';
 
   if (state.collapsed) {

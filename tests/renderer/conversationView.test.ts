@@ -6,7 +6,7 @@ const ws = (id: string, name: string): Workspace => ({
   worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', status: 'stopped', createdAt: 0,
 });
 const msg = (id: string, threadId: string, from: Message['from'], to: string): Message => ({
-  id, threadId, projectId: 'p', from, toWorkspaceId: to, body: id, artifactIds: [], createdAt: 0, deliveredAt: null,
+  id, threadId, projectId: 'p', from, toWorkspaceId: to, body: id, artifactIds: [], createdAt: 0, deliveredAt: null, failed: false,
 });
 const thread = (id: string, updatedAt: number, over: Partial<Thread> = {}): Thread => ({
   id, projectId: 'p', title: id, paused: false, capped: false, agentStreak: 0, createdAt: 0, updatedAt, ...over,
@@ -50,4 +50,16 @@ test('threadNotice: 프로젝트 상한, 스레드 상한, 프로젝트 멈춤, 
   expect(threadNotice(thread('t', 0, { paused: true }), flow({ paused: true }))).toBe('프로젝트 전체가 멈춰 있습니다.');
   expect(threadNotice(thread('t', 0, { paused: true }), flow())).toBe('이 대화는 멈춰 있습니다. 새 메시지는 재개할 때까지 전달되지 않습니다.');
   expect(threadNotice(thread('t', 0), flow())).toBeNull();
+});
+
+test('senderName: 두레가 보낸 알림', () => {
+  expect(senderName(msg('m', 't', { kind: 'system' }, 'B'), [])).toBe('두레');
+});
+
+test('deliveryNote: 오류가 있으면 오류를, 없으면 상태 문구를 보여주고 주의가 필요한지 알려준다', async () => {
+  const { deliveryNote } = await import('../../src/renderer/conversationView');
+  expect(deliveryNote({ state: 'starting', waiting: 1, held: 0, error: '작업 폴더가 없습니다: /x' })).toEqual({ text: '전달 실패: 작업 폴더가 없습니다: /x', attention: true });
+  expect(deliveryNote({ state: 'next-hook', waiting: 1, held: 0 })).toEqual({ text: '다음 단계에 전달', attention: false });
+  expect(deliveryNote({ state: 'waiting-unknown', waiting: 1, held: 0 })).toEqual({ text: '터미널 확인 필요: 에이전트가 무언가를 묻고 있을 수 있습니다', attention: true });
+  expect(deliveryNote({ state: 'none', waiting: 0, held: 0 })).toEqual({ text: '', attention: false });
 });

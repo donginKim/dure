@@ -74,8 +74,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         onStatus: (id) => onStatus(id),
         collect: (id) => delivery.collect(id),
         collectMessages: (id) => delivery.collectMessages(id),
-        // 사용자가 직접 입력했다: 에이전트끼리의 왕복 횟수를 다시 센다
-        onUserPrompt: (w) => messages.userIntervened(w.projectId),
+        onUserPrompt: (w) => {
+          // 첫 프롬프트로 건넨 메시지는 에이전트가 프롬프트를 받은 지금 전달이 확정된다.
+          delivery.confirmStart(w.id);
+          // 두레가 넣은 프롬프트가 아니면 사용자가 직접 입력한 것이다: 에이전트끼리의 왕복 횟수를 다시 센다.
+          if (!service.consumeSynthetic(w.id)) messages.userIntervened(w.projectId);
+        },
       }, workspace, event, payload);
       // 승인 요청이 아닌 알림(입력을 기다린다는 알림 등)은 에이전트가 일을 시작했다는 뜻이 아니다.
       // 그런 알림 때문에 '쉬는 중 확인' 을 지우면 쉬는 에이전트에게 메시지를 전달하지 못한다.
@@ -91,12 +95,15 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     workspaces, todos, messages,
     actions: {
       isConfirmedIdle: (id) => service.isConfirmedIdle(id),
+      isRemoving: (id) => service.isRemoving(id),
+      lastActivityAt: (id) => service.lastActivityAt(id),
       wake: (id, text) => service.wake(id, text),
-      start: async (id, prompt) => { await service.startAgent(id, { cols: 120, rows: 40 }, prompt); },
+      // 기다리던 메시지는 startAgent 가 takeForStart 로 가져가 첫 프롬프트로 준다.
+      start: async (id) => { await service.startAgent(id, { cols: 120, rows: 40 }); },
     },
   });
   service.attachDelivery(delivery);
-  // 전달은 실패해도(에이전트 종료 등) 메시지가 미전달로 되돌아가므로 여기서는 오류를 삼킨다.
+  // 전달이 실패하면 메시지는 미전달로 되돌아가고 이유가 delivery.error 에 남아 화면에 보인다. 여기서는 오류를 삼킨다.
   const kick = (workspaceId: string): void => { delivery.kick(workspaceId).catch(() => undefined); };
   const onSent = (m: { toWorkspaceId: string }): void => kick(m.toWorkspaceId);
   const onReleased = (projectId: string): void => { for (const w of workspaces.list(projectId)) kick(w.id); };

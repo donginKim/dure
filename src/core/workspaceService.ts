@@ -71,6 +71,12 @@ export class WorkspaceService extends EventEmitter {
    */
   private readonly confirmedIdle = new Set<string>();
   private delivery?: DeliveryService;
+  /** 지우는 중인 워크스페이스. 이때는 에이전트를 띄우거나 깨우지 않는다 */
+  private readonly removing = new Set<string>();
+  /** 두레가 방금 프롬프트를 넣은 워크스페이스. 다음 UserPromptSubmit 은 사용자 입력이 아니다 */
+  private readonly synthetic = new Set<string>();
+  /** 마지막으로 hook 을 받은 시각 */
+  private readonly lastActivity = new Map<string, number>();
 
   /** 전달 엔진은 이 서비스를 쓰므로 만든 뒤에 이어 준다. */
   attachDelivery(delivery: DeliveryService): void {
@@ -81,11 +87,40 @@ export class WorkspaceService extends EventEmitter {
     return this.confirmedIdle.has(id);
   }
 
+  isRemoving(id: string): boolean {
+    return this.removing.has(id);
+  }
+
+  lastActivityAt(id: string): number | undefined {
+    return this.lastActivity.get(id);
+  }
+
+  /**
+   * 방금 온 UserPromptSubmit 이 두레가 넣은 프롬프트 때문인가. 한 번 물으면 표시가 지워진다.
+   * 프롬프트 글로는 가릴 수 없다: 붙여 넣은 글은 <pasted_content> 로 감싸여 온다 (실험 13).
+   */
+  consumeSynthetic(id: string): boolean {
+    return this.synthetic.delete(id);
+  }
+
+  /**
+   * 사용자가 터미널에 무언가를 입력했다. 에이전트 터미널이면 쉬는 중 확인을 지운다:
+   * 입력창에 글을 치는 중이거나 선택 창을 열어 둔 터미널에 두레가 글을 써 넣으면 안 된다.
+   */
+  noteTerminalInput(terminalId: string): void {
+    const workspaceId = this.agentTerminals.get(terminalId);
+    if (workspaceId) this.confirmedIdle.delete(workspaceId);
+  }
+
   private readonly onTerminalExit = (terminalId: string): void => {
     const workspaceId = this.agentTerminals.get(terminalId);
     if (!workspaceId) return;
     this.agentTerminals.delete(terminalId);
     this.confirmedIdle.delete(workspaceId);
+    this.synthetic.delete(workspaceId);
+    this.lastActivity.delete(workspaceId);
+    // 첫 프롬프트를 받기 전에 끝났다면 건넨 메시지를 되돌린다.
+    this.delivery?.agentExited(workspaceId);
     if (this.d.workspaces.get(workspaceId)) {
       this.d.workspaces.update(workspaceId, { status: 'stopped' });
       this.emit('changed', workspaceId);
@@ -164,6 +199,18 @@ export class WorkspaceService extends EventEmitter {
 
   async remove(id: string, o: { deleteWorktree: boolean }): Promise<void> {
     const ws = this.mustGet(id);
+    // 지우는 동안 메시지가 와도 이 워크스페이스에 에이전트를 띄우지 않게 한다.
+    this.removing.add(id);
+    try {
+      await this.removeInner(ws, o);
+    } finally {
+      this.removing.delete(id);
+      this.delivery?.forget(id);
+    }
+  }
+
+  private async removeInner(ws: Workspace, o: { deleteWorktree: boolean }): Promise<void> {
+    const id = ws.id;
     // 작업 폴더를 지우기 전에 그 안에서 도는 프로세스를 먼저 끝낸다.
     await this.killTerminals(id);
     if (o.deleteWorktree) {
@@ -172,7 +219,7 @@ export class WorkspaceService extends EventEmitter {
     }
     this.d.pty.forgetExited(id);
     this.d.todos.removeWorkspace(id);
-    this.d.messages.removeWorkspace(id);
+    this.d.messages.removeWorkspace(id, ws.name);
     this.confirmedIdle.delete(id);
     this.d.workspaces.remove(id);
     rmSync(this.configDir(id), { recursive: true, force: true });
@@ -183,6 +230,7 @@ export class WorkspaceService extends EventEmitter {
     const ws = this.mustGet(id);
     const running = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (running) return running;
+    if (this.removing.has(id)) throw new Error('지우는 중인 워크스페이스입니다.');
     this.d.pty.forgetExited(id, 'agent'); // 지난 에이전트 탭 기록은 치운다
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
@@ -190,7 +238,7 @@ export class WorkspaceService extends EventEmitter {
     const executableCheck = findExecutable(ws.agentKind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
     if (!executableCheck) throw new AgentNotInstalledError(ws.agentKind);
     // 받은 메시지가 기다리고 있으면 그것을 첫 프롬프트로 준다. 실행 파일을 확인한 뒤에 가져가야 실패 시 사라지지 않는다.
-    const firstPrompt = initialPrompt ?? this.delivery?.collectMessages(id);
+    const firstPrompt = initialPrompt ?? this.delivery?.takeForStart(id);
     const launch = buildAgentLaunch({
       kind: ws.agentKind,
       permissionMode: ws.permissionMode,
@@ -204,17 +252,26 @@ export class WorkspaceService extends EventEmitter {
     const executable = findExecutable(launch.command, this.d.baseEnv.PATH);
     if (!executable) throw new AgentNotInstalledError(ws.agentKind);
 
-    for (const f of launch.files) {
-      mkdirSync(dirname(f.path), { recursive: true });
-      const mode = f.mode ?? 0o600; // 토큰이 들어 있다
-      writeFileSync(f.path, f.content, { mode });
-      chmodSync(f.path, mode); // 이미 있던 파일은 writeFileSync 가 권한을 바꾸지 않는다
+    let terminal: TerminalInfo;
+    try {
+      for (const f of launch.files) {
+        mkdirSync(dirname(f.path), { recursive: true });
+        const mode = f.mode ?? 0o600; // 토큰이 들어 있다
+        writeFileSync(f.path, f.content, { mode });
+        chmodSync(f.path, mode); // 이미 있던 파일은 writeFileSync 가 권한을 바꾸지 않는다
+      }
+      terminal = this.d.pty.spawn({
+        workspaceId: id, kind: 'agent', title: AGENT_NAMES[ws.agentKind],
+        command: executable, args: launch.args, cwd: ws.worktreePath,
+        env: { ...this.d.baseEnv, ...launch.env }, cols: size.cols, rows: size.rows,
+      });
+    } catch (e) {
+      this.delivery?.startFailed(id); // 첫 프롬프트로 가져간 메시지를 되돌린다
+      throw e;
     }
-    const terminal = this.d.pty.spawn({
-      workspaceId: id, kind: 'agent', title: AGENT_NAMES[ws.agentKind],
-      command: executable, args: launch.args, cwd: ws.worktreePath,
-      env: { ...this.d.baseEnv, ...launch.env }, cols: size.cols, rows: size.rows,
-    });
+    // 첫 프롬프트는 두레가 넣은 것이다: 사용자 개입으로 세지 않는다.
+    if (firstPrompt) this.synthetic.add(id);
+    this.lastActivity.set(id, Date.now());
     this.agentTerminals.set(terminal.id, id);
     // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
     this.d.todos.takePending(id);
@@ -232,6 +289,7 @@ export class WorkspaceService extends EventEmitter {
    */
   /** hook 이 올 때마다 부른다. 응답을 그냥 끝낸 Stop 만 쉬는 중의 근거가 된다. */
   noteHook(id: string, event: string, blocked: boolean): void {
+    this.lastActivity.set(id, Date.now());
     if (event === 'Stop' && !blocked) this.confirmedIdle.add(id);
     else this.confirmedIdle.delete(id);
   }
@@ -255,7 +313,7 @@ export class WorkspaceService extends EventEmitter {
   async wake(id: string, text: string): Promise<void> {
     const ws = this.d.workspaces.get(id);
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
-    if (!ws || ws.agentKind !== 'claude' || ws.status !== 'idle' || !this.confirmedIdle.has(id) || !terminal) {
+    if (!ws || ws.agentKind !== 'claude' || ws.status !== 'idle' || !this.confirmedIdle.has(id) || !terminal || this.removing.has(id)) {
       throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
     }
     // 본문의 제어 문자는 저장할 때 걸러지지만, 터미널에 쓰는 글은 여기서 한 번 더 거른다.
@@ -263,12 +321,15 @@ export class WorkspaceService extends EventEmitter {
     const message = text.replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '');
     // 쓰기 전에 상태를 바꿔 같은 내용을 두 번 보내지 못하게 한다.
     this.confirmedIdle.delete(id);
+    this.synthetic.add(id); // 이 프롬프트는 두레가 넣는 것이다
+    this.lastActivity.set(id, Date.now());
     this.d.workspaces.update(id, { status: 'working' });
     this.emit('changed', id);
     // 여러 줄은 붙여넣기로 묶어 넣고, 잠시 뒤 Enter 를 따로 보낸다 (실험 03, 12b).
     this.d.pty.write(terminal.id, `\x1b[200~${message}\x1b[201~`);
     await new Promise((r) => setTimeout(r, 400));
     if (!this.d.pty.list(id).some((t) => t.id === terminal.id)) {
+      this.synthetic.delete(id);
       throw new Error('에이전트가 종료되어 전달하지 못했습니다.');
     }
     this.d.pty.write(terminal.id, '\r');

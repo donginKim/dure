@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { DeliveryInfo } from '@shared/ipc';
 import type { Artifact, Message, ProjectFlow, Thread, Workspace } from '@shared/types';
-import { clock, deliveryLabel, needsAttention, senderName, threadNotice, workspaceName } from '../conversationView';
+import { clock, deliveryNote, senderName, threadNotice, workspaceName } from '../conversationView';
 
 export interface ConversationData {
   threads: Thread[];
@@ -30,9 +30,10 @@ function Attachment({ artifact }: { artifact: Artifact }) {
 
 function MessageRow({ m, workspaces, artifacts, info }: { m: Message; workspaces: Workspace[]; artifacts: Artifact[]; info?: DeliveryInfo }) {
   const fromUser = m.from.kind === 'user';
-  const waiting = m.deliveredAt === null;
+  const waiting = m.deliveredAt === null && !m.failed;
+  const note = info ? deliveryNote(info) : undefined;
   return (
-    <div className={`msg${fromUser ? ' from-user' : ''}`}>
+    <div className={`msg${fromUser ? ' from-user' : ''}${m.from.kind === 'system' ? ' from-system' : ''}`}>
       <div className="msg-head">
         <span className="who">{senderName(m, workspaces)}</span>
         <span className="arrow">→</span>
@@ -40,15 +41,16 @@ function MessageRow({ m, workspaces, artifacts, info }: { m: Message; workspaces
         <span className="at">{clock(m.createdAt)}</span>
       </div>
       <div className="msg-body">{m.body}</div>
-      {m.artifactIds.map((id) => {
+      {m.artifactIds.map((id, i) => {
         const a = artifacts.find((x) => x.id === id);
-        return a ? <Attachment key={id} artifact={a} /> : null;
+        return a ? <Attachment key={`${id}-${i}`} artifact={a} /> : null;
       })}
       {waiting && (
-        <div className={`msg-wait${info && needsAttention(info.state) ? ' attention' : ''}`}>
-          전달 대기{info && deliveryLabel(info.state) ? ` · ${deliveryLabel(info.state)}` : ''}
+        <div className={`msg-wait${note?.attention ? ' attention' : ''}`}>
+          전달 대기{note?.text ? ` · ${note.text}` : ''}
         </div>
       )}
+      {m.failed && <div className="msg-wait attention">전달 못 함 · 받는 워크스페이스가 지워졌습니다</div>}
     </div>
   );
 }
@@ -59,7 +61,9 @@ function ThreadCard({ thread, data, workspaces, projectId, open, onToggle }: {
   const msgs = data.messages[thread.id] ?? [];
   const last = msgs[msgs.length - 1];
   // 기본 받는 쪽: 마지막 메시지를 보낸 워크스페이스 (사용자가 보낸 것이면 그 받는 쪽)
-  const defaultTo = last ? (last.from.kind === 'workspace' ? last.from.workspaceId : last.toWorkspaceId) : (workspaces[0]?.id ?? '');
+  const lastPeer = last ? (last.from.kind === 'workspace' ? last.from.workspaceId : last.toWorkspaceId) : '';
+  // 그 워크스페이스가 지워졌으면 남아 있는 첫 워크스페이스로 한다 (없는 id 로 보내면 실패한다).
+  const defaultTo = workspaces.some((w) => w.id === lastPeer) ? lastPeer : (workspaces[0]?.id ?? '');
   const [to, setTo] = useState('');
   const [body, setBody] = useState('');
   const [error, setError] = useState('');

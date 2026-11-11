@@ -125,7 +125,9 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
           {(conversation.threads.length > 0 || conversation.flow.paused) && (
             <button
               className="btn"
-              title={conversation.flow.paused ? '멈춘 동안 쌓인 메시지를 전달하고 대화를 이어갑니다' : '모든 에이전트가 하던 일을 멈추고, 메시지 전달도 멈춥니다'}
+              title={conversation.flow.paused
+                ? '메시지 전달을 다시 시작합니다. 멈춤으로 중단된 에이전트는 스스로 이어가지 않습니다: 터미널에서 이어서 하라고 말해 주세요'
+                : '모든 에이전트가 하던 일을 멈추고, 메시지 전달도 멈춥니다'}
               onClick={() => { window.dure.messages.pauseProject(project.id, !conversation.flow.paused).catch((e: Error) => setError(e.message)); }}
             >{conversation.flow.paused ? '전체 재개' : '전체 멈춤'}</button>
           )}

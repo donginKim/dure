@@ -39,6 +39,8 @@ const api: DureApi = {
     remove: (id, options) => call('workspaces.remove', id, options),
     uncommitted: (id) => call('workspaces.uncommitted', id),
     interrupt: (id) => call('workspaces.interrupt', id),
+    stopAgent: (id) => call('workspaces.stopAgent', id),
+    setEngine: (id, engine) => call('workspaces.setEngine', id, engine),
   },
   terminals: {
     list: (workspaceId) => call('terminals.list', workspaceId),
@@ -80,6 +82,9 @@ const api: DureApi = {
     step: (workspaceId, stepId) => call('chat.step', workspaceId, stepId),
     send: (workspaceId, text) => call('chat.send', workspaceId, text),
     answerPermission: (workspaceId, answer) => call('chat.answerPermission', workspaceId, answer),
+    answerQuestion: (workspaceId, answers) => call('chat.answerQuestion', workspaceId, answers),
+    dismissQuestion: (workspaceId) => call('chat.dismissQuestion', workspaceId),
+    commands: (workspaceId) => call('chat.commands', workspaceId),
   },
   artifacts: {
     list: (projectId) => call('artifacts.list', projectId),

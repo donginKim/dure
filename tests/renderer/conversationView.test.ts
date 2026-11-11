@@ -3,7 +3,7 @@ import type { Message, ProjectFlow, Thread, Workspace } from '@shared/types';
 
 const ws = (id: string, name: string): Workspace => ({
   id, projectId: 'p', repoId: 'r', name, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
-  worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', status: 'stopped', createdAt: 0,
+  worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', status: 'stopped', createdAt: 0,
 });
 const msg = (id: string, threadId: string, from: Message['from'], to: string): Message => ({
   id, threadId, projectId: 'p', from, toWorkspaceId: to, body: id, artifactIds: [], createdAt: 0, deliveredAt: null, failed: false,

@@ -7,7 +7,7 @@ interface RepoRow { id: string; project_id: string; name: string; path: string }
 interface WorkspaceRow {
   id: string; project_id: string; repo_id: string; name: string; name_locked: number; summary: string;
   branch: string; base_branch: string; worktree_path: string; agent_kind: string; permission_mode: string;
-  status: string; token: string; created_at: number;
+  status: string; token: string; created_at: number; engine: string; session_id: string | null;
 }
 
 const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at });
@@ -17,7 +17,7 @@ const toWorkspace = (r: WorkspaceRow): Workspace => ({
   id: r.id, projectId: r.project_id, repoId: r.repo_id, name: r.name, nameLocked: r.name_locked === 1,
   summary: r.summary, branch: r.branch, baseBranch: r.base_branch, worktreePath: r.worktree_path,
   agentKind: r.agent_kind as Workspace['agentKind'], permissionMode: r.permission_mode as Workspace['permissionMode'],
-  status: r.status as Workspace['status'], createdAt: r.created_at,
+  engine: r.engine as Workspace['engine'], status: r.status as Workspace['status'], createdAt: r.created_at,
 });
 
 export class ProjectStore {
@@ -70,9 +70,9 @@ export class RepoStore {
   }
 }
 
-export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt'> & { token: string };
+export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine'> & { token: string; engine?: Workspace['engine'] };
 
-const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status' } as const;
+const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine' } as const;
 export type WorkspacePatch = Partial<Pick<Workspace, keyof typeof PATCH_COLUMNS>>;
 
 export class WorkspaceStore {
@@ -81,10 +81,11 @@ export class WorkspaceStore {
   insert(w: NewWorkspace): Workspace {
     this.db.prepare(
       `INSERT INTO workspaces (id, project_id, repo_id, name, name_locked, branch, base_branch, worktree_path,
-         agent_kind, permission_mode, token, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         agent_kind, permission_mode, token, created_at, engine)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(w.id, w.projectId, w.repoId, w.name, w.nameLocked ? 1 : 0, w.branch, w.baseBranch, w.worktreePath,
-      w.agentKind, w.permissionMode, w.token, Date.now());
+      // 채팅 방식은 Claude Code 만 된다.
+      w.agentKind, w.permissionMode, w.token, Date.now(), w.agentKind === 'claude' ? (w.engine ?? 'chat') : 'terminal');
     return this.get(w.id)!;
   }
 
@@ -118,6 +119,16 @@ export class WorkspaceStore {
     const w = this.get(id);
     if (!w) throw new Error(`워크스페이스가 없습니다: ${id}`);
     return w;
+  }
+
+  /** 이어갈 대화의 id (채팅 방식). 없으면 undefined */
+  getSessionId(id: string): string | undefined {
+    const r = this.db.prepare('SELECT session_id FROM workspaces WHERE id = ?').get(id) as { session_id: string | null } | undefined;
+    return r?.session_id ?? undefined;
+  }
+
+  setSessionId(id: string, sessionId: string | null): void {
+    this.db.prepare('UPDATE workspaces SET session_id = ? WHERE id = ?').run(sessionId, id);
   }
 
   remove(id: string): void {

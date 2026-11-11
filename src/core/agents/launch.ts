@@ -27,7 +27,17 @@ export interface AgentLaunchInput {
   basePath: string;
   /** 띄우자마자 실행할 프롬프트. 폴더 신뢰 창이 있으면 그 뒤에 실행된다 (실험 12) */
   initialPrompt?: string;
+  /**
+   * 터미널 화면 없이 구조화된 입출력으로 띄운다 (Claude Code 만. 실험 17, 18).
+   * 이때 프롬프트는 인자가 아니라 표준 입력으로 보낸다.
+   */
+  headless?: boolean;
+  /** 이어갈 대화의 id (headless 일 때) */
+  resumeSessionId?: string;
 }
+
+/** 구조화된 입출력 인자. Orca 의 채팅이 Claude Code 를 띄우는 방식과 같다. */
+export const HEADLESS_ARGS = ['--output-format', 'stream-json', '--input-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompt-tool', 'stdio'] as const;
 
 const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification'] as const;
 
@@ -51,8 +61,14 @@ const toml = (s: string): string => JSON.stringify(s);
  */
 export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
   const launch = buildBase(i);
-  // 두 에이전트 모두 프롬프트는 마지막 위치 인자다.
-  if (i.initialPrompt) launch.args.push(i.initialPrompt);
+  if (i.headless) {
+    if (i.kind !== 'claude') throw new Error('채팅 방식은 Claude Code 만 지원합니다.');
+    launch.args.push(...HEADLESS_ARGS);
+    if (i.resumeSessionId) launch.args.push('--resume', i.resumeSessionId);
+  } else if (i.initialPrompt) {
+    // 두 에이전트 모두 프롬프트는 마지막 위치 인자다.
+    launch.args.push(i.initialPrompt);
+  }
   if (i.realGit && i.gitCommonDir) {
     // 에이전트가 실행하는 git 이 이 파일을 먼저 타게 한다 (실험 09). 사용자 셸 탭에는 걸지 않는다.
     const bin = join(i.configDir, 'bin');

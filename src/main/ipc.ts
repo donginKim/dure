@@ -67,6 +67,8 @@ export function registerIpc(core: Core): () => void {
     'workspaces.remove': (id: string, options: { deleteWorktree: boolean }) => core.service.remove(id, options),
     'workspaces.uncommitted': (id: string) => core.service.uncommittedCount(id),
     'workspaces.interrupt': (id: string) => core.service.interrupt(id),
+    'workspaces.stopAgent': (id: string) => core.service.stopAgent(id),
+    'workspaces.setEngine': (id: string, engine: 'chat' | 'terminal') => core.service.setEngine(id, engine),
     'terminals.list': (workspaceId: string) => core.pty.listWithExited(workspaceId),
     'terminals.startAgent': (workspaceId: string, size: TerminalSize) => core.service.startAgent(workspaceId, size),
     'terminals.openShell': (workspaceId: string, size: TerminalSize) => core.service.openShell(workspaceId, size),
@@ -111,10 +113,13 @@ export function registerIpc(core: Core): () => void {
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
     'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
-    'chat.get': (workspaceId: string) => ({ ...core.chat.snapshot(workspaceId), canSend: core.service.canSendInput(workspaceId) }),
+    'chat.get': (workspaceId: string) => core.chatView(workspaceId),
     'chat.step': (workspaceId: string, stepId: string) => core.chat.step(workspaceId, stepId),
     'chat.send': (workspaceId: string, text: string) => core.service.sendUserInput(workspaceId, text),
-    'chat.answerPermission': (workspaceId: string, answer: 'allow' | 'deny') => core.service.answerPermission(workspaceId, answer),
+    'chat.answerPermission': (workspaceId: string, answer: 'allow' | 'deny' | 'always') => core.service.answerPermission(workspaceId, answer),
+    'chat.answerQuestion': (workspaceId: string, answers: Record<string, string>) => core.service.answerQuestion(workspaceId, answers),
+    'chat.dismissQuestion': (workspaceId: string) => core.service.dismissQuestion(workspaceId),
+    'chat.commands': (workspaceId: string) => core.slashCommands(workspaceId),
     'artifacts.list': (projectId: string) => core.messages.artifacts(projectId),
     'artifacts.get': (id: string) => core.messages.artifact(id) ?? null,
   };
@@ -154,6 +159,7 @@ export function registerIpc(core: Core): () => void {
   core.messages.on('changed', onMessagesChanged);
   core.commit.on('changed', onCommitChanged);
   core.chat.on('changed', onChatChanged);
+  core.engine.on('changed', onChatChanged);
 
   return () => {
     core.pty.off('data', onData);
@@ -164,6 +170,7 @@ export function registerIpc(core: Core): () => void {
     core.messages.off('changed', onMessagesChanged);
     core.commit.off('changed', onCommitChanged);
     core.chat.off('changed', onChatChanged);
+    core.engine.off('changed', onChatChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));
       else ipcMain.removeHandler(ipcName(channel));

@@ -49,7 +49,8 @@ beforeEach(async () => {
 
 afterEach(async () => { await core.dispose(); });
 
-const create = (over = {}) => core.service.create({ projectId, repoId, baseBranch: 'main', agentKind: 'claude', ...over });
+// 이 파일의 시험은 터미널 방식의 에이전트를 다룬다. 채팅 방식은 chatEngine.test.ts 에서 본다.
+const create = (over = {}) => core.service.create({ projectId, repoId, baseBranch: 'main', agentKind: 'claude', engine: 'terminal' as const, ...over });
 
 test('create 는 worktree 와 브랜치 dure/<slug> 를 만들고 status 는 stopped', async () => {
   const ws = await create({ name: '로그인 화면' });
@@ -103,14 +104,14 @@ test('체크아웃 도중 실패하면 방금 만든 브랜치도 남지 않는�
 test('에이전트가 뜨자마자 죽어도 출력과 종료 코드가 남는다', async () => {
   writeFileSync(join(fakeBin, 'claude'), '#!/bin/sh\necho "usage: bad flag"\nexit 2\n');
   const ws = await create({ name: 'dies' });
-  const t = await core.service.startAgent(ws.id, SIZE);
+  const t = (await core.service.startAgent(ws.id, SIZE))!;
   await until(() => core.workspaces.get(ws.id)?.status === 'stopped');
   const listed = core.pty.listWithExited(ws.id);
   expect(listed).toEqual([{ ...t, exitCode: 2 }]);
   expect(core.pty.snapshot(t.id).data).toContain('usage: bad flag');
   // 다시 시작하면 지난 에이전트 탭 기록은 치운다
   installFakeAgent('claude');
-  const again = await core.service.startAgent(ws.id, SIZE);
+  const again = (await core.service.startAgent(ws.id, SIZE))!;
   expect(core.pty.listWithExited(ws.id).map((x) => x.id)).toEqual([again.id]);
 });
 
@@ -123,7 +124,7 @@ test('create 뒤 저장소 작업 트리에 변경이 없다', async () => {
 test('worktree 폴더가 지워졌으면 startAgent 는 WorktreeMissingError', async () => {
   const ws = await create({ name: 'gone' });
   rmSync(ws.worktreePath, { recursive: true, force: true });
-  const err = await core.service.startAgent(ws.id, SIZE).catch((e) => e);
+  const err = (await core.service.startAgent(ws.id, SIZE).catch((e) => e))!;
   expect(err).toBeInstanceOf(WorktreeMissingError);
   expect((err as WorktreeMissingError).worktreePath).toBe(ws.worktreePath);
   expect(core.workspaces.get(ws.id)?.status).toBe('stopped');
@@ -133,7 +134,7 @@ test('PATH 에 에이전트가 없으면 AgentNotInstalledError 이고 kind 가 
   await core.dispose();
   await boot('/usr/bin:/bin');
   const ws = await core.service.create({ projectId, repoId, name: 'nocli', baseBranch: 'main', agentKind: 'codex' });
-  const err = await core.service.startAgent(ws.id, SIZE).catch((e) => e);
+  const err = (await core.service.startAgent(ws.id, SIZE).catch((e) => e))!;
   expect(err).toBeInstanceOf(AgentNotInstalledError);
   expect((err as AgentNotInstalledError).kind).toBe('codex');
   expect(core.pty.list(ws.id)).toEqual([]);
@@ -141,8 +142,8 @@ test('PATH 에 에이전트가 없으면 AgentNotInstalledError 이고 kind 가 
 
 test('startAgent 는 두 번 불러도 같은 터미널을 돌려준다', async () => {
   const ws = await create({ name: 'twice' });
-  const a = await core.service.startAgent(ws.id, SIZE);
-  const b = await core.service.startAgent(ws.id, SIZE);
+  const a = (await core.service.startAgent(ws.id, SIZE))!;
+  const b = (await core.service.startAgent(ws.id, SIZE))!;
   expect(b.id).toBe(a.id);
   expect(a.kind).toBe('agent');
   expect(core.pty.list(ws.id)).toHaveLength(1);
@@ -152,7 +153,7 @@ test('startAgent 뒤 status idle, 에이전트 종료 뒤 stopped 이고 changed
   const ws = await create({ name: 'life' });
   const changed: string[] = [];
   core.service.on('changed', (id) => changed.push(id));
-  const t = await core.service.startAgent(ws.id, SIZE);
+  const t = (await core.service.startAgent(ws.id, SIZE))!;
   // 막 띄운 Claude Code 는 폴더 신뢰 창을 띄우고 있을 수 있다. 첫 hook 이 올 때까지는 '시작 중' 이다.
   expect(core.workspaces.get(ws.id)?.status).toBe('starting');
   expect(changed).toContain(ws.id);
@@ -164,7 +165,7 @@ test('startAgent 뒤 status idle, 에이전트 종료 뒤 stopped 이고 changed
 
 test('가짜 claude 는 worktree 를 cwd 로, 두레 설정 파일이 쓰인 상태로 뜬다', async () => {
   const ws = await create({ name: 'wired' });
-  const t = await core.service.startAgent(ws.id, SIZE);
+  const t = (await core.service.startAgent(ws.id, SIZE))!;
   await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
   const out = core.pty.buffer(t.id);
   const cfg = join(dataDir, 'workspaces', ws.id, 'mcp.json');
@@ -180,7 +181,7 @@ test('가짜 claude 는 worktree 를 cwd 로, 두레 설정 파일이 쓰인 상
 
 test('가짜 codex 는 토큰을 환경변수로 받는다', async () => {
   const ws = await create({ name: 'cx', agentKind: 'codex', permissionMode: 'bypass' });
-  const t = await core.service.startAgent(ws.id, SIZE);
+  const t = (await core.service.startAgent(ws.id, SIZE))!;
   await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
   const out = core.pty.buffer(t.id);
   expect(out).toContain(`TOKEN_ENV:${core.workspaces.getToken(ws.id)}`);
@@ -303,7 +304,7 @@ async function idleConfirmedAgent(name: string) {
   writeFileSync(join(fakeBin, 'claude'), '#!/bin/sh\nexec cat\n');
   chmodSync(join(fakeBin, 'claude'), 0o755);
   const ws = await create({ name });
-  const terminal = await core.service.startAgent(ws.id, SIZE);
+  const terminal = (await core.service.startAgent(ws.id, SIZE))!;
   await runHook(join(dataDir, 'workspaces', ws.id, 'hook.sh'), 'Stop');
   return { ws, terminal };
 }
@@ -357,7 +358,7 @@ describe('nudge (에이전트에게 알리기)', () => {
   test('쉬는 중인 claude 에 미전달 변경이 있으면 터미널에 [두레] 글이 들어가고 미전달 변경이 비워진다', async () => {
     echoAgent('claude');
     const ws = await create({ name: 'nudge-ok' });
-    const t = await core.service.startAgent(ws.id, SIZE);
+    const t = (await core.service.startAgent(ws.id, SIZE))!;
     core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
     // 시작만 한 상태는 쉬는 중인지 알 수 없다 (폴더 신뢰 창이 떠 있을 수 있다)
     expect(core.service.canNudge(ws.id)).toBe(false);
@@ -431,7 +432,7 @@ test('에이전트를 새로 시작하면 꺼져 있던 동안 쌓인 미전달 
 
 test('startAgent 에 첫 프롬프트를 주면 에이전트의 마지막 인자로 전달된다', async () => {
   const ws = await create({ name: 'boot-prompt' });
-  const t = await core.service.startAgent(ws.id, SIZE, '[두레] 첫 지시');
+  const t = (await core.service.startAgent(ws.id, SIZE, '[두레] 첫 지시'))!;
   await until(() => core.pty.buffer(t.id).includes('ARGS:'));
   // 인자에는 여러 줄짜리 실행 지침이 들어 있다. 첫 프롬프트는 그 뒤, 맨 끝에 온다.
   await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
@@ -494,7 +495,7 @@ test('멈춘 대화의 메시지는 직접 시작해도 넣지 않고, 멈춤이
   // 프로젝트를 멈춘 채 보내 자동으로 뜨지 않게 한 뒤, 멈춤을 풀지 않고... 대신 받는 쪽을 직접 시작한다
   core.messages.pauseProject(projectId, true);
   const m = core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: sender.id }, toWorkspaceId: receiver.id, body: '시작하면 읽어라' });
-  const held = await core.service.startAgent(receiver.id, SIZE);
+  const held = (await core.service.startAgent(receiver.id, SIZE))!;
   await until(() => core.pty.buffer(held.id).includes('TOKEN_ENV:'));
   expect(core.pty.buffer(held.id)).not.toContain('> 시작하면 읽어라'); // 멈춘 대화의 메시지는 넣지 않는다
   core.pty.kill(held.id);
@@ -519,7 +520,7 @@ test('받은 메시지가 대기 중인 꺼진 워크스페이스를 사용자�
   await new Promise((r) => setTimeout(r, 300));
   expect(core.messages.messages(m.threadId)[0].deliveredAt).toBeNull(); // 시작 실패 → 미전달로 남는다
   renameSync(hidden, real);
-  const t = await core.service.startAgent(receiver.id, SIZE);
+  const t = (await core.service.startAgent(receiver.id, SIZE))!;
   await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
   expect(core.pty.buffer(t.id)).toContain('> 수동 시작 때 읽어라');
   expect(core.messages.messages(m.threadId)[0].deliveredAt).not.toBeNull();
@@ -536,7 +537,7 @@ describe('에이전트 터미널의 git', () => {
     gitRunner();
     const ws = await create({ name: 'guarded' });
     writeFileSync(join(ws.worktreePath, 'new.txt'), 'x\n');
-    const t = await core.service.startAgent(ws.id, SIZE);
+    const t = (await core.service.startAgent(ws.id, SIZE))!;
     await until(() => core.pty.buffer(t.id).includes('PATH_HEAD:'));
     expect(core.pty.buffer(t.id)).toContain(`PATH_HEAD:${join(dataDir, 'workspaces', ws.id, 'bin')}`);
     core.pty.write(t.id, 'git add -A && git commit -m agent-commit\n');
@@ -569,7 +570,7 @@ describe('채팅에서 보내기와 승인 응답', () => {
   async function agent(name: string, kind: 'claude' | 'codex' = 'claude') {
     catAgent();
     const ws = await create({ name, agentKind: kind });
-    const terminal = await core.service.startAgent(ws.id, SIZE);
+    const terminal = (await core.service.startAgent(ws.id, SIZE))!;
     return { ws, terminal };
   }
   const quiet = (ms = 600): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -652,7 +653,7 @@ describe('채팅에서 보내기와 승인 응답', () => {
     // Codex
     writeFileSync(join(fakeBin, 'codex'), '#!/bin/sh\nexec cat -v\n');
     const cx = await create({ name: 'chat-send-codex', agentKind: 'codex' });
-    const ct = await core.service.startAgent(cx.id, SIZE);
+    const ct = (await core.service.startAgent(cx.id, SIZE))!;
     expect(core.service.canSendInput(cx.id)).toBe(false);
     await expect(core.service.sendUserInput(cx.id, '몰래')).rejects.toThrow(refused);
     await quiet(200);
@@ -787,7 +788,7 @@ describe('폴더 신뢰 창에 대신 답하기', () => {
   test('작업 폴더를 묻는 신뢰 창이면 아래로 한 칸 내리고, 커서가 Yes 에 온 것을 본 뒤 Enter 를 보낸다', async () => {
     trustAgent();
     const ws = await create({ name: 'trust-auto' });
-    const t = await core.service.startAgent(ws.id, SIZE);
+    const t = (await core.service.startAgent(ws.id, SIZE))!;
     await until(() => core.pty.buffer(t.id).includes('TRUSTED'), 8000);
     expect(core.pty.buffer(t.id)).toContain('KEY1:1b5b42'); // ESC [ B
     expect(core.pty.buffer(t.id)).toMatch(/KEY2:0[da]/); // Enter
@@ -796,7 +797,7 @@ describe('폴더 신뢰 창에 대신 답하기', () => {
   test('다른 폴더를 묻는 창에는 아무것도 보내지 않는다', async () => {
     trustAgent('/somewhere/else');
     const ws = await create({ name: 'trust-other' });
-    const t = await core.service.startAgent(ws.id, SIZE);
+    const t = (await core.service.startAgent(ws.id, SIZE))!;
     await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
     await new Promise((r) => setTimeout(r, 1500));
     expect(core.pty.buffer(t.id)).not.toContain('KEY1');
@@ -805,7 +806,7 @@ describe('폴더 신뢰 창에 대신 답하기', () => {
   test('사용자가 터미널에 직접 입력하면 두레는 손을 뗀다', async () => {
     trustAgent();
     const ws = await create({ name: 'trust-user' });
-    const t = await core.service.startAgent(ws.id, SIZE);
+    const t = (await core.service.startAgent(ws.id, SIZE))!;
     core.service.noteTerminalInput(t.id);
     await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
     await new Promise((r) => setTimeout(r, 1500));
@@ -817,7 +818,7 @@ describe('폴더 신뢰 창에 대신 답하기', () => {
     writeFileSync(join(fakeBin, 'codex'), readFileSync(join(fakeBin, 'claude')));
     chmodSync(join(fakeBin, 'codex'), 0o755);
     const ws = await create({ name: 'trust-codex', agentKind: 'codex' });
-    const t = await core.service.startAgent(ws.id, SIZE);
+    const t = (await core.service.startAgent(ws.id, SIZE))!;
     await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
     await new Promise((r) => setTimeout(r, 1500));
     expect(core.pty.buffer(t.id)).not.toContain('KEY1');

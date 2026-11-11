@@ -125,7 +125,7 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
   }
 });
 
-const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [], canSend: false };
+const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [], canSend: false, engine: 'chat', streaming: null, question: null };
 
 /**
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.

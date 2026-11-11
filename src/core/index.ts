@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
+import { ChatEngine } from './chat/engine';
+import type { ChatView, SlashCommand } from '@shared/types';
 import { CommitDraftStore } from './commitDrafts';
 import { CommitService } from './commitService';
 import { openDatabase } from './db';
@@ -31,6 +33,10 @@ export interface Core {
   messages: MessageService;
   delivery: DeliveryService;
   chat: ChatService;
+  engine: ChatEngine;
+  /** 채팅 화면이 받는 것: 대화, 쓰는 중인 글, 승인·질문 대기 */
+  chatView(workspaceId: string): ChatView;
+  slashCommands(workspaceId: string): SlashCommand[];
   commitDrafts: CommitDraftStore;
   commit: CommitService;
   pty: PtyManager;
@@ -122,6 +128,16 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   });
   service.attachDelivery(delivery);
   service.attachChat(chat);
+  // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
+  const engine = new ChatEngine({
+    onSession: (id, sessionId) => { if (workspaces.get(id)) workspaces.setSessionId(id, sessionId); },
+    onWaiting: (id, waiting) => service.noteWaiting(id, waiting),
+    // 사용자가 멈춰서 끝난 차례는 Stop hook 을 부르지 않는다. 상태를 여기서 되돌린다.
+    onTurnEnd: (id, interrupted) => { if (interrupted) { chat.interrupted(id); service.noteInterrupted(id); } },
+    onActivity: (id) => chat.refreshSoon(id, [0, 300, 1200]),
+    onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
+  });
+  service.attachEngine(engine);
   // 전달이 실패하면 메시지는 미전달로 되돌아가고 이유가 delivery.error 에 남아 화면에 보인다. 여기서는 오류를 삼킨다.
   const kick = (workspaceId: string): void => { delivery.kick(workspaceId).catch(() => undefined); };
   const onSent = (m: { toWorkspaceId: string }): void => kick(m.toWorkspaceId);
@@ -136,7 +152,23 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, commitDrafts, commit, pty, git, mcpUrl: mcp.url,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, commitDrafts, commit,
+    chatView(workspaceId) {
+      const snap = chat.snapshot(workspaceId);
+      const ws = workspaces.get(workspaceId);
+      const live = engine.has(workspaceId);
+      const o = engine.overlay(workspaceId);
+      return {
+        ...snap,
+        // 채팅 방식에서는 승인 요청이 엔진으로 온다 (hook 의 알림이 아니라).
+        pendingPermission: live ? o.permission : snap.pendingPermission,
+        streaming: o.streaming,
+        question: o.question,
+        engine: ws?.engine ?? 'terminal',
+        canSend: service.canSendInput(workspaceId),
+      };
+    },
+    slashCommands: (workspaceId) => engine.commands(workspaceId), pty, git, mcpUrl: mcp.url,
     async addRepo(projectId, path) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);
@@ -156,6 +188,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       messages.off('released', onReleased);
       service.detach();
       chat.dispose();
+      await engine.stopAll();
       await pty.killAll();
       await mcp.close();
       db.close();

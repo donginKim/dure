@@ -56,15 +56,21 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const git = createGit(o.baseEnv);
   // hook 으로 상태가 바뀌면 서비스의 'changed' 로 내보낸다. 서비스는 MCP 주소가 정해진 뒤에 만들어지므로 나중에 잇는다.
   let onStatus: (workspaceId: string) => void = () => undefined;
+  let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
   const mcp = await startMcpServer({
     workspaces, projects, repos, todos,
-    onHook: (workspace, event, payload) => handleHook({ workspaces, todos, onStatus: (id) => onStatus(id) }, workspace, event, payload),
+    onHook: (workspace, event, payload) => {
+      const out = handleHook({ workspaces, todos, onStatus: (id) => onStatus(id) }, workspace, event, payload);
+      noteHook(workspace.id, event, out !== '');
+      return out;
+    },
   }, [workspaceTools, todoTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });
 
   onStatus = (id) => service.emit('changed', id);
+  noteHook = (id, event, blocked) => service.noteHook(id, event, blocked);
 
   let disposed = false;
   return {

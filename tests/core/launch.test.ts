@@ -11,7 +11,9 @@ const common = {
 test('claude ask: mcp 설정 파일이 configDir 아래에 있고 URL 과 Bearer 토큰을 담는다', () => {
   const l = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'ask' });
   expect(l.command).toBe('claude');
-  expect(l.files.map((f) => f.path)).toEqual(['/data/workspaces/w1/mcp.json', '/data/workspaces/w1/settings.json', '/data/workspaces/w1/hook.sh']);
+  expect(l.files.map((f) => f.path)).toEqual([
+    '/data/workspaces/w1/mcp.json', '/data/workspaces/w1/settings.json', '/data/workspaces/w1/auth.hdr', '/data/workspaces/w1/hook.sh',
+  ]);
   expect(JSON.parse(l.files[0].content)).toEqual({
     mcpServers: { dure: { type: 'http', url: common.mcpUrl, headers: { Authorization: 'Bearer TOKEN-abc123' } } },
   });
@@ -98,7 +100,11 @@ test('claude: hook.sh 는 0o700 이고 토큰과 hookUrl 을 담으며 항상 ex
   const hook = l.files.find((f) => f.path.endsWith('hook.sh'))!;
   expect(hook.mode).toBe(0o700);
   expect(hook.content.startsWith('#!/bin/sh\n')).toBe(true);
-  expect(hook.content).toContain('Authorization: Bearer TOKEN-abc123');
+  // 토큰은 curl 인자에 넣지 않는다 (ps 로 보인다). 0600 헤더 파일에서 읽게 한다.
+  expect(hook.content).not.toContain('TOKEN-abc123');
+  expect(hook.content).toContain(`-H @'/data/workspaces/w1/auth.hdr'`);
+  expect(hook.content).toMatch(/curl -sf /); // 오류 응답의 본문을 내보내지 않는다
+  expect(l.files.find((f) => f.path.endsWith('auth.hdr'))!.content).toBe('Authorization: Bearer TOKEN-abc123');
   expect(hook.content).toContain('"http://127.0.0.1:5555/hook/$1"');
   expect(hook.content.trimEnd().endsWith('exit 0')).toBe(true);
   for (const f of l.files.filter((x) => x !== hook)) expect(f.mode ?? 0o600).toBe(0o600);

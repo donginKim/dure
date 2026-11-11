@@ -62,11 +62,17 @@ function findExecutable(command: string, pathVar: string | undefined): string | 
 export class WorkspaceService extends EventEmitter {
   /** 에이전트 터미널 id → 워크스페이스 id */
   private readonly agentTerminals = new Map<string, string>();
+  /**
+   * 응답을 끝냈다는 hook(Stop)으로 쉬는 중임이 확인된 워크스페이스.
+   * 에이전트를 막 띄웠을 때의 'idle' 은 여기에 들지 않는다: 폴더 신뢰 창 같은 선택 창이 떠 있을 수 있다.
+   */
+  private readonly confirmedIdle = new Set<string>();
 
   private readonly onTerminalExit = (terminalId: string): void => {
     const workspaceId = this.agentTerminals.get(terminalId);
     if (!workspaceId) return;
     this.agentTerminals.delete(terminalId);
+    this.confirmedIdle.delete(workspaceId);
     if (this.d.workspaces.get(workspaceId)) {
       this.d.workspaces.update(workspaceId, { status: 'stopped' });
       this.emit('changed', workspaceId);
@@ -202,9 +208,15 @@ export class WorkspaceService extends EventEmitter {
    * 터미널에 글을 써 넣는 방식이라, hook 신호로 쉬는 중임이 확인된 Claude Code 에서만 허용한다.
    * (선택 창이 떠 있을 수 있는 터미널에 써 넣으면 의도하지 않은 동작이 실행된다.)
    */
+  /** hook 이 올 때마다 부른다. 응답을 그냥 끝낸 Stop 만 쉬는 중의 근거가 된다. */
+  noteHook(id: string, event: string, blocked: boolean): void {
+    if (event === 'Stop' && !blocked) this.confirmedIdle.add(id);
+    else this.confirmedIdle.delete(id);
+  }
+
   canNudge(id: string): boolean {
     const ws = this.d.workspaces.get(id);
-    if (!ws || ws.agentKind !== 'claude' || ws.status !== 'idle') return false;
+    if (!ws || ws.agentKind !== 'claude' || ws.status !== 'idle' || !this.confirmedIdle.has(id)) return false;
     if (!this.d.pty.list(id).some((t) => t.kind === 'agent')) return false;
     return this.d.todos.pendingCount(id) > 0;
   }
@@ -213,13 +225,22 @@ export class WorkspaceService extends EventEmitter {
   async nudge(id: string): Promise<void> {
     if (!this.canNudge(id)) throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent')!;
-    const message = pendingMessage(this.d.todos.takePending(id));
+    const lines = this.d.todos.takePending(id);
+    // 제목의 제어 문자는 저장할 때 걸러지지만, 터미널에 쓰는 글은 여기서 한 번 더 거른다.
+    // eslint-disable-next-line no-control-regex
+    const message = pendingMessage(lines).replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '');
     // 쓰기 전에 상태를 바꿔 같은 내용을 두 번 보내지 못하게 한다.
+    this.confirmedIdle.delete(id);
     this.d.workspaces.update(id, { status: 'working' });
     this.emit('changed', id);
     // 여러 줄은 붙여넣기로 묶어 넣고, 잠시 뒤 Enter 를 따로 보낸다 (실험 03).
     this.d.pty.write(terminal.id, `\x1b[200~${message}\x1b[201~`);
     await new Promise((r) => setTimeout(r, 400));
+    if (!this.d.pty.list(id).some((t) => t.id === terminal.id)) {
+      // 그사이 에이전트가 끝났다. 변경이 사라지지 않게 되돌려 놓는다.
+      this.d.todos.restorePending(id, lines);
+      throw new Error('에이전트가 종료되어 전달하지 못했습니다.');
+    }
     this.d.pty.write(terminal.id, '\r');
   }
 

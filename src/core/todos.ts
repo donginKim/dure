@@ -35,6 +35,11 @@ export function pendingMessage(lines: string[]): string {
   ].join('\n');
 }
 
+// 제목과 설명은 에이전트의 터미널에 써 넣어질 수 있다. 제어 문자가 섞이면 키 입력으로 해석되므로 저장하지 않는다.
+// 줄바꿈만 남긴다.
+// eslint-disable-next-line no-control-regex
+const clean = (s: string): string => s.replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '');
+
 function statusLine(status: TodoStatus, title: string): string {
   if (status === 'done') return `사용자가 직접 완료함: "${title}"`;
   if (status === 'cancelled') return `취소됨: "${title}"`;
@@ -45,7 +50,7 @@ function statusLine(status: TodoStatus, title: string): string {
  * TODO 의 원본. 사용자와 에이전트가 함께 고친다.
  * - 사용자 수정이 이긴다: 에이전트의 수정·삭제는 rev 가 맞아야 통과한다.
  * - 사용자가 워크스페이스 범위 항목을 바꾸면 그 워크스페이스의 "미전달 변경" 으로 쌓인다.
- * 이벤트: 'changed' (projectId)
+ * 이벤트: 'changed' (projectId), 'delivered' (workspaceId: 미전달 변경을 가져감)
  */
 export class TodoService extends EventEmitter {
   constructor(private readonly db: Database.Database) {
@@ -93,7 +98,7 @@ export class TodoService extends EventEmitter {
     i: { projectId: string; workspaceId?: string | null; title: string; detail?: string; assignee?: TodoAssignee; status?: TodoStatus },
     actor: Actor,
   ): Todo {
-    const title = i.title.trim();
+    const title = clean(i.title).trim();
     if (!title) throw new Error('제목을 입력하세요.');
     const workspaceId = i.workspaceId ?? null;
     const siblings = this.scope(i.projectId, workspaceId);
@@ -105,7 +110,7 @@ export class TodoService extends EventEmitter {
       this.db.prepare(
         `INSERT INTO todos (id, project_id, workspace_id, title, detail, status, assignee, position, rev, updated_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-      ).run(id, i.projectId, workspaceId, title, i.detail ?? '', i.status ?? 'todo', assignee, position, actor, now, now);
+      ).run(id, i.projectId, workspaceId, title, clean(i.detail ?? ''), i.status ?? 'todo', assignee, position, actor, now, now);
       this.notePending({ workspaceId }, actor, [`추가됨: "${title}"${assignee === 'user' ? ' (사용자 몫)' : ''}`]);
     })();
     this.emit('changed', i.projectId);
@@ -118,13 +123,13 @@ export class TodoService extends EventEmitter {
     const next = { ...current };
     const lines: string[] = [];
     if (patch.title !== undefined) {
-      const title = patch.title.trim();
+      const title = clean(patch.title).trim();
       if (!title) throw new Error('제목을 입력하세요.');
       if (title !== current.title) { lines.push(`제목 바뀜: "${current.title}" → "${title}"`); next.title = title; }
     }
-    if (patch.detail !== undefined && patch.detail !== current.detail) {
+    if (patch.detail !== undefined && clean(patch.detail) !== current.detail) {
       lines.push(`설명 바뀜: "${next.title}"`);
-      next.detail = patch.detail;
+      next.detail = clean(patch.detail);
     }
     if (patch.status !== undefined && patch.status !== current.status) {
       lines.push(statusLine(patch.status, next.title));
@@ -179,11 +184,21 @@ export class TodoService extends EventEmitter {
 
   /** 미전달 변경을 돌려주고 전달된 것으로 지운다. */
   takePending(workspaceId: string): string[] {
-    return this.db.transaction(() => {
+    const lines = this.db.transaction(() => {
       const rows = this.db.prepare('SELECT line FROM todo_pending WHERE workspace_id = ? ORDER BY seq').all(workspaceId) as { line: string }[];
       this.db.prepare('DELETE FROM todo_pending WHERE workspace_id = ?').run(workspaceId);
       return rows.map((r) => r.line);
     })();
+    // 화면의 "미전달 N건" 표시가 따라 바뀌어야 한다.
+    if (lines.length > 0) this.emit('delivered', workspaceId);
+    return lines;
+  }
+
+  /** 가져갔지만 에이전트에게 닿지 못한 줄을 다시 넣는다. */
+  restorePending(workspaceId: string, lines: string[]): void {
+    const insert = this.db.prepare('INSERT INTO todo_pending (workspace_id, line) VALUES (?, ?)');
+    this.db.transaction(() => { for (const line of lines) insert.run(workspaceId, line); })();
+    if (lines.length > 0) this.emit('delivered', workspaceId);
   }
 
   /** 워크스페이스의 항목과 미전달 변경을 모두 지운다. */

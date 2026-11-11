@@ -26,8 +26,9 @@ const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostTool
 const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
 // 두레에 상태를 알리고, 두레가 돌려준 글을 그대로 내보낸다. 실패해도 에이전트를 막지 않는다.
-const hookScript = (hookUrl: string, token: string): string => `#!/bin/sh
-curl -s -m 5 -X POST -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @- "${hookUrl}/$1" 2>/dev/null
+// 토큰은 인자에 넣지 않고(ps 로 보인다) 0600 헤더 파일에서 읽게 한다. -f: 오류 응답의 본문을 내보내지 않는다.
+const hookScript = (hookUrl: string, authHeaderFile: string): string => `#!/bin/sh
+curl -sf -m 5 -X POST -H @${shq(authHeaderFile)} -H "Content-Type: application/json" --data-binary @- "${hookUrl}/$1" 2>/dev/null
 exit 0
 `;
 
@@ -43,6 +44,7 @@ export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
   if (i.kind === 'claude') {
     const mcpConfig = join(i.configDir, 'mcp.json');
     const settings = join(i.configDir, 'settings.json');
+    const authHeader = join(i.configDir, 'auth.hdr');
     const hook = join(i.configDir, 'hook.sh');
     const hooks = Object.fromEntries(HOOK_EVENTS.map((ev) => [
       ev, [{ matcher: '', hooks: [{ type: 'command', command: `${shq(hook)} ${ev}` }] }],
@@ -65,7 +67,8 @@ export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
           }),
         },
         { path: settings, content: JSON.stringify({ hooks }) },
-        { path: hook, content: hookScript(i.hookUrl, i.token), mode: 0o700 },
+        { path: authHeader, content: `Authorization: Bearer ${i.token}` },
+        { path: hook, content: hookScript(i.hookUrl, authHeader), mode: 0o700 },
       ],
     };
   }

@@ -187,3 +187,32 @@ test('pendingMessage 형식', () => {
   expect(pendingMessage(['추가됨: "A"', '삭제됨: "B"'])).toBe(
     '[두레] 사용자가 TODO를 바꿨다. 다음 단계부터 반영하라:\n- 추가됨: "A"\n- 삭제됨: "B"\n현재 목록은 todo_list 도구로 확인하라.');
 });
+
+test('takePending 이 실제로 가져간 것이 있으면 delivered 이벤트가 난다', () => {
+  const { todos, front, addWs } = setup();
+  const seen: string[] = [];
+  todos.on('delivered', (workspaceId) => seen.push(workspaceId));
+  todos.takePending(front.id);
+  expect(seen).toEqual([]);
+  addWs('A', 'user');
+  todos.takePending(front.id);
+  expect(seen).toEqual([front.id]);
+});
+
+test('제목과 설명의 제어 문자는 저장하지 않는다 (줄바꿈은 남긴다)', () => {
+  const { todos, front, addWs } = setup();
+  const a = addWs('앞\x1b[201~\r!rm -rf x\x07\x7f뒤\n둘째 줄', 'user', { detail: 'd\x1b[0m' });
+  expect(a.title).toBe('앞[201~!rm -rf x뒤\n둘째 줄');
+  expect(a.detail).toBe('d[0m');
+  const u = todos.update(a.id, { title: 'x\x1by' }, { actor: 'agent', rev: 1 });
+  expect(u.title).toBe('xy');
+  expect(todos.takePending(front.id).join('')).not.toMatch(/[\x00-\x09\x0b-\x1f\x7f]/);
+});
+
+test('restorePending 은 가져갔던 줄을 다시 넣는다', () => {
+  const { todos, front, addWs } = setup();
+  addWs('A', 'user');
+  const lines = todos.takePending(front.id);
+  todos.restorePending(front.id, lines);
+  expect(todos.takePending(front.id)).toEqual(['추가됨: "A"']);
+});

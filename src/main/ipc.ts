@@ -111,12 +111,14 @@ export function registerIpc(core: Core): () => void {
   core.pty.on('exit', onExit);
   core.service.on('changed', onWorkspaceChanged);
   core.todos.on('changed', onTodosChanged);
+  core.todos.on('delivered', onTodosChanged);
 
   return () => {
     core.pty.off('data', onData);
     core.pty.off('exit', onExit);
     core.service.off('changed', onWorkspaceChanged);
     core.todos.off('changed', onTodosChanged);
+    core.todos.off('delivered', onTodosChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));
       else ipcMain.removeHandler(ipcName(channel));

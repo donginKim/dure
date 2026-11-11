@@ -294,6 +294,55 @@ test('두레가 꺼진 뒤 hook.sh 를 실행해도 종료 코드 0 이고 출�
   await boot(); // afterEach 의 dispose 용
 });
 
+// 응답을 끝냈다는 hook 까지 받은, 쉬는 중이 확인된 에이전트를 만든다.
+async function idleConfirmedAgent(name: string) {
+  writeFileSync(join(fakeBin, 'claude'), '#!/bin/sh\nexec cat\n');
+  chmodSync(join(fakeBin, 'claude'), 0o755);
+  const ws = await create({ name });
+  const terminal = await core.service.startAgent(ws.id, SIZE);
+  await runHook(join(dataDir, 'workspaces', ws.id, 'hook.sh'), 'Stop');
+  return { ws, terminal };
+}
+
+test('쉬는 중이 확인된 뒤 다른 hook 이 오면 다시 알릴 수 없다', async () => {
+  const { ws } = await idleConfirmedAgent('nudge-reset');
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  expect(core.service.canNudge(ws.id)).toBe(true);
+  await runHook(join(dataDir, 'workspaces', ws.id, 'hook.sh'), 'PreToolUse');
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'B' }, 'user');
+  expect(core.service.canNudge(ws.id)).toBe(false);
+});
+
+test('알리는 도중 에이전트가 종료되면 변경을 되돌려 놓고 오류를 낸다', async () => {
+  const { ws, terminal } = await idleConfirmedAgent('nudge-dies');
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  const sending = core.service.nudge(ws.id);
+  core.pty.kill(terminal.id);
+  await expect(sending).rejects.toThrow('에이전트가 종료되어 전달하지 못했습니다.');
+  expect(core.todos.takePending(ws.id)).toEqual(['추가됨: "A"']);
+});
+
+test('토큰이 틀려 401 을 받아도 hook.sh 는 출력이 없다', async () => {
+  const ws = await create({ name: 'hook-401' });
+  await core.service.startAgent(ws.id, SIZE);
+  const dir = join(dataDir, 'workspaces', ws.id);
+  // 인증이 통과하면 block 응답이 나올 상황을 만든 뒤, 토큰을 틀리게 바꾼다
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  writeFileSync(join(dir, 'auth.hdr'), 'Authorization: Bearer wrong-token');
+  expect(await runHook(join(dir, 'hook.sh'), 'Stop')).toBe('');
+  expect(core.todos.pendingCount(ws.id)).toBe(1);
+});
+
+test('토큰은 hook.sh 본문에 없고 0600 헤더 파일에만 있다', async () => {
+  const ws = await create({ name: 'hook-token' });
+  await core.service.startAgent(ws.id, SIZE);
+  const dir = join(dataDir, 'workspaces', ws.id);
+  const token = core.workspaces.getToken(ws.id);
+  expect(readFileSync(join(dir, 'hook.sh'), 'utf8')).not.toContain(token);
+  expect(readFileSync(join(dir, 'auth.hdr'), 'utf8')).toBe(`Authorization: Bearer ${token}`);
+  expect(statSync(join(dir, 'auth.hdr')).mode & 0o777).toBe(0o600);
+});
+
 describe('nudge (에이전트에게 알리기)', () => {
   // 입력을 그대로 출력하는 가짜 에이전트
   const echoAgent = (name: string): void => {
@@ -305,6 +354,15 @@ describe('nudge (에이전트에게 알리기)', () => {
     echoAgent('claude');
     const ws = await create({ name: 'nudge-ok' });
     const t = await core.service.startAgent(ws.id, SIZE);
+    core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+    // 시작만 한 상태는 쉬는 중인지 알 수 없다 (폴더 신뢰 창이 떠 있을 수 있다)
+    expect(core.service.canNudge(ws.id)).toBe(false);
+    await expect(core.service.nudge(ws.id)).rejects.toThrow('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
+    expect(core.pty.buffer(t.id)).not.toContain('[두레]');
+    // 한 번 일하고 응답을 끝낸 것이 hook 으로 확인되면 알릴 수 있다
+    const hook = join(dataDir, 'workspaces', ws.id, 'hook.sh');
+    await runHook(hook, 'UserPromptSubmit'); // 이때 미전달 변경이 전달된다
+    await runHook(hook, 'Stop');
     core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
     expect(core.service.canNudge(ws.id)).toBe(true);
     await core.service.nudge(ws.id);
@@ -348,6 +406,7 @@ describe('nudge (에이전트에게 알리기)', () => {
     echoAgent('claude');
     const ws = await create({ name: 'nudge-none' });
     await core.service.startAgent(ws.id, SIZE);
+    await runHook(join(dataDir, 'workspaces', ws.id, 'hook.sh'), 'Stop');
     await expect(core.service.nudge(ws.id)).rejects.toThrow();
   });
 });

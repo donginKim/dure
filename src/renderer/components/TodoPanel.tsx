@@ -119,7 +119,7 @@ export function TodoPanel({ workspace, items, pending }: { workspace: Workspace;
   if (collapsed) {
     return (
       <button className="todo-tab" title="TODO 펼치기" onClick={() => setCollapsed(false)}>
-        TODO {label}{pending && pending.count > 0 ? ` · 미전달 ${pending.count}` : ''}
+        TODO {label}{pending && pending.count > 0 && workspace.status !== 'stopped' ? ` · 미전달 ${pending.count}` : ''}
       </button>
     );
   }
@@ -132,7 +132,8 @@ export function TodoPanel({ workspace, items, pending }: { workspace: Workspace;
         <span className="spacer" />
         <button className="btn ghost" title="TODO 접기" onClick={() => setCollapsed(true)}>접기 ›</button>
       </div>
-      {pending && pending.count > 0 && (
+      {/* 꺼진 에이전트에게는 전달할 것이 없다: 새로 시작하면 목록을 직접 읽는다 */}
+      {pending && pending.count > 0 && workspace.status !== 'stopped' && (
         <div className="todo-pending">
           <div>에이전트에게 아직 전달되지 않은 변경 {pending.count}건</div>
           {pending.canNudge ? (
@@ -142,7 +143,7 @@ export function TodoPanel({ workspace, items, pending }: { workspace: Workspace;
             >에이전트에게 알리기</button>
           ) : (
             <div className="muted">
-              {workspace.status === 'stopped' ? '에이전트를 시작하면 전달됩니다'
+              {workspace.agentKind === 'codex' ? '에이전트가 목록을 다시 읽을 때 전달됩니다'
                 : workspace.status === 'idle' ? '다음 프롬프트 때 전달됩니다' : '다음 단계에 전달됩니다'}
             </div>
           )}

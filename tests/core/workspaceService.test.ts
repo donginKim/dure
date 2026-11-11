@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCore, type Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
@@ -150,7 +150,8 @@ test('startAgent 뒤 status idle, 에이전트 종료 뒤 stopped 이고 changed
   const changed: string[] = [];
   core.service.on('changed', (id) => changed.push(id));
   const t = await core.service.startAgent(ws.id, SIZE);
-  expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+  // 막 띄운 Claude Code 는 폴더 신뢰 창을 띄우고 있을 수 있다. 첫 hook 이 올 때까지는 '시작 중' 이다.
+  expect(core.workspaces.get(ws.id)?.status).toBe('starting');
   expect(changed).toContain(ws.id);
   changed.length = 0;
   core.pty.kill(t.id);
@@ -259,11 +260,11 @@ test('워크스페이스를 지우면 서비스가 그 TODO 를 정리한다', a
 });
 
 // hook 스크립트는 같은 프로세스의 서버를 부른다. 동기 실행은 서버를 멈추므로 비동기로 실행한다.
-async function runHook(hook: string, event: string): Promise<string> {
+async function runHook(hook: string, event: string, body = '{}'): Promise<string> {
   const { execFile } = await import('node:child_process');
   return new Promise((resolve, reject) => {
     const child = execFile(hook, [event], { encoding: 'utf8' }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
-    child.stdin?.end('{}');
+    child.stdin?.end(body);
   });
 }
 
@@ -423,4 +424,100 @@ test('에이전트를 새로 시작하면 꺼져 있던 동안 쌓인 미전달 
   core.todos.add({ projectId, workspaceId: ws.id, title: 'B' }, 'user');
   await core.service.startAgent(ws.id, SIZE);
   expect(core.todos.pendingCount(ws.id)).toBe(1);
+});
+
+test('startAgent 에 첫 프롬프트를 주면 에이전트의 마지막 인자로 전달된다', async () => {
+  const ws = await create({ name: 'boot-prompt' });
+  const t = await core.service.startAgent(ws.id, SIZE, '[두레] 첫 지시');
+  await until(() => core.pty.buffer(t.id).includes('ARGS:'));
+  // 인자에는 여러 줄짜리 실행 지침이 들어 있다. 첫 프롬프트는 그 뒤, 맨 끝에 온다.
+  await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
+  const out = core.pty.buffer(t.id);
+  const at = out.lastIndexOf('[두레] 첫 지시');
+  expect(at).toBeGreaterThan(out.indexOf('--permission-mode acceptEdits'));
+  // 가짜 에이전트는 인자를 다 찍은 뒤 TOKEN_ENV 줄을 찍는다: 그 바로 앞이 마지막 인자다
+  expect(out.slice(at, out.indexOf('TOKEN_ENV:')).trim()).toBe('[두레] 첫 지시');
+});
+
+test('interrupt 는 작업 중인 claude 터미널에 ESC 를 쓰고 상태를 idle 로 한다 (쉬는 중 확인은 아니다)', async () => {
+  const { ws, terminal } = await idleConfirmedAgent('interrupt-me');
+  await runHook(join(dataDir, 'workspaces', ws.id, 'hook.sh'), 'PreToolUse');
+  expect(core.workspaces.get(ws.id)?.status).toBe('working');
+  core.service.interrupt(ws.id);
+  await until(() => core.pty.buffer(terminal.id).includes('\x1b') || core.pty.buffer(terminal.id).includes('^['));
+  expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  expect(core.service.canNudge(ws.id)).toBe(false);
+});
+
+test('interrupt 는 쉬는 중이거나 꺼진 워크스페이스에는 아무것도 쓰지 않는다', async () => {
+  const { ws, terminal } = await idleConfirmedAgent('interrupt-idle');
+  const before = core.pty.buffer(terminal.id);
+  core.service.interrupt(ws.id);
+  await new Promise((r) => setTimeout(r, 200));
+  expect(core.pty.buffer(terminal.id)).toBe(before);
+  const off = await create({ name: 'interrupt-off' });
+  expect(() => core.service.interrupt(off.id)).not.toThrow();
+});
+
+test('시작 중인 Claude Code 는 SessionStart hook 이 오면 쉬는 중이 된다 (신뢰 창을 지났다는 뜻)', async () => {
+  const ws = await create({ name: 'starting-then-idle' });
+  await core.service.startAgent(ws.id, SIZE);
+  expect(core.workspaces.get(ws.id)?.status).toBe('starting');
+  await runHook(join(dataDir, 'workspaces', ws.id, 'hook.sh'), 'SessionStart');
+  expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+});
+
+test('Codex 는 hook 이 없으므로 시작하면 바로 쉬는 중으로 둔다', async () => {
+  const ws = await create({ name: 'codex-idle', agentKind: 'codex' });
+  await core.service.startAgent(ws.id, SIZE);
+  expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+});
+
+test('승인 요청이 아닌 알림(입력 대기 등)은 쉬는 중 확인을 지우지 않는다', async () => {
+  const { ws } = await idleConfirmedAgent('idle-notification');
+  const hook = join(dataDir, 'workspaces', ws.id, 'hook.sh');
+  await runHook(hook, 'Notification', JSON.stringify({ notification_type: 'idle_prompt', message: 'Claude is waiting for your input' }));
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  expect(core.service.canNudge(ws.id)).toBe(true);
+  // 승인 요청은 쉬는 중이 아니다
+  await runHook(hook, 'Notification', JSON.stringify({ notification_type: 'permission_prompt' }));
+  expect(core.service.canNudge(ws.id)).toBe(false);
+});
+
+test('멈춘 대화의 메시지는 직접 시작해도 넣지 않고, 멈춤이 풀리면 꺼진 받는 쪽이 그 메시지로 뜬다', async () => {
+  const receiver = await create({ name: 'gets-mail' });
+  const sender = await create({ name: 'sends-mail' });
+  // 프로젝트를 멈춘 채 보내 자동으로 뜨지 않게 한 뒤, 멈춤을 풀지 않고... 대신 받는 쪽을 직접 시작한다
+  core.messages.pauseProject(projectId, true);
+  const m = core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: sender.id }, toWorkspaceId: receiver.id, body: '시작하면 읽어라' });
+  const held = await core.service.startAgent(receiver.id, SIZE);
+  await until(() => core.pty.buffer(held.id).includes('TOKEN_ENV:'));
+  expect(core.pty.buffer(held.id)).not.toContain('> 시작하면 읽어라'); // 멈춘 대화의 메시지는 넣지 않는다
+  core.pty.kill(held.id);
+  await until(() => core.pty.list(receiver.id).length === 0);
+  core.messages.pauseThread(m.threadId, true); // 재개 때 자동으로 뜨지 않게 스레드만 멈춰 두고
+  core.messages.pauseProject(projectId, false);
+  core.messages.pauseThread(m.threadId, false); // 풀리는 순간 꺼진 받는 쪽은 메시지를 첫 프롬프트로 뜬다
+  await until(() => core.pty.list(receiver.id).length === 1);
+  const t = core.pty.list(receiver.id)[0];
+  await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
+  expect(core.pty.buffer(t.id)).toContain('> 시작하면 읽어라');
+});
+
+test('받은 메시지가 대기 중인 꺼진 워크스페이스를 사용자가 시작하면 그 메시지가 첫 프롬프트로 들어간다', async () => {
+  const receiver = await create({ name: 'manual-start' });
+  const sender = await create({ name: 'manual-sender' });
+  // 자동 시작을 실패시키려고 에이전트 실행 파일을 잠시 없앤다
+  const real = join(fakeBin, 'claude');
+  const hidden = join(fakeBin, 'claude.off');
+  renameSync(real, hidden);
+  const m = core.messages.send({ projectId, from: { kind: 'workspace', workspaceId: sender.id }, toWorkspaceId: receiver.id, body: '수동 시작 때 읽어라' });
+  await new Promise((r) => setTimeout(r, 300));
+  expect(core.messages.messages(m.threadId)[0].deliveredAt).toBeNull(); // 시작 실패 → 미전달로 남는다
+  renameSync(hidden, real);
+  const t = await core.service.startAgent(receiver.id, SIZE);
+  await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
+  expect(core.pty.buffer(t.id)).toContain('> 수동 시작 때 읽어라');
+  expect(core.messages.messages(m.threadId)[0].deliveredAt).not.toBeNull();
 });

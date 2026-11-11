@@ -166,33 +166,13 @@ export function TodoList({ projectId, workspaceId, items }: { projectId: string;
   );
 }
 
-// 접힘 여부는 워크스페이스를 오가도 유지한다 (앱을 다시 켜면 펼침).
-const collapsedState = new Map<string, boolean>();
-
-/** 워크스페이스 화면 오른쪽의 TODO 패널. */
-export function TodoPanel({ workspace, items, pending }: { workspace: Workspace; items: Todo[]; pending?: PendingInfo }) {
-  const [collapsed, setCollapsedRaw] = useState(collapsedState.get(workspace.id) ?? false);
+/** TODO 탭의 본문: 진행 눈금, 미전달 알림, 목록. */
+export function TodoBody({ workspace, items, pending }: { workspace: Workspace; items: Todo[]; pending?: PendingInfo }) {
   const [error, setError] = useState('');
-  const setCollapsed = (v: boolean): void => { collapsedState.set(workspace.id, v); setCollapsedRaw(v); };
-  const { done, total } = progress(items);
-  const label = total > 0 ? `${done}/${total}` : '';
   // 꺼진 에이전트에게는 전달할 것이 없다: 새로 시작하면 목록을 직접 읽는다
   const undelivered = pending && workspace.status !== 'stopped' ? pending.count : 0;
-
-  if (collapsed) {
-    return (
-      <button className="todo-tab" title="TODO 펼치기" onClick={() => setCollapsed(false)}>
-        TODO {label}{undelivered > 0 ? ` · 미전달 ${undelivered}` : ''}
-      </button>
-    );
-  }
-
   return (
-    <aside className="todo-panel">
-      <div className="todo-head">
-        <span className="t">TODO</span>
-        <button className="btn ghost" title="TODO 접기" onClick={() => setCollapsed(true)}>접기</button>
-      </div>
+    <>
       <Ticks items={items} />
       {undelivered > 0 && pending && (
         <div className="todo-pending">
@@ -216,6 +196,6 @@ export function TodoPanel({ workspace, items, pending }: { workspace: Workspace;
       <div className="todo-scroll">
         <TodoList projectId={workspace.projectId} workspaceId={workspace.id} items={items} />
       </div>
-    </aside>
+    </>
   );
 }

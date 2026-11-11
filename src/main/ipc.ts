@@ -65,10 +65,15 @@ export function registerIpc(core: Core): () => void {
     'workspaces.create': (input: CreateWorkspaceInput) => core.service.create(input),
     'workspaces.remove': (id: string, options: { deleteWorktree: boolean }) => core.service.remove(id, options),
     'workspaces.uncommitted': (id: string) => core.service.uncommittedCount(id),
+    'workspaces.interrupt': (id: string) => core.service.interrupt(id),
     'terminals.list': (workspaceId: string) => core.pty.listWithExited(workspaceId),
     'terminals.startAgent': (workspaceId: string, size: TerminalSize) => core.service.startAgent(workspaceId, size),
     'terminals.openShell': (workspaceId: string, size: TerminalSize) => core.service.openShell(workspaceId, size),
-    'terminals.write': (id: string, data: string) => core.pty.write(id, data),
+    'terminals.write': (id: string, data: string) => {
+      // 사용자가 에이전트 터미널에 입력하고 있다: 두레가 그 터미널에 글을 써 넣으면 안 된다.
+      core.service.noteTerminalInput(id);
+      core.pty.write(id, data);
+    },
     'terminals.resize': (id: string, cols: number, rows: number) => core.pty.resize(id, cols, rows),
     'terminals.kill': (id: string) => { core.pty.kill(id); changed('terminals'); },
     'terminals.buffer': (id: string) => core.pty.snapshot(id),
@@ -82,6 +87,27 @@ export function registerIpc(core: Core): () => void {
       core.workspaces.list(projectId).map((w) => [w.id, { count: core.todos.pendingCount(w.id), canNudge: core.service.canNudge(w.id) }]),
     ),
     'todos.nudge': (workspaceId: string) => core.service.nudge(workspaceId),
+    'messages.threads': (projectId: string) => core.messages.threads(projectId),
+    'messages.list': (threadId: string) => core.messages.messages(threadId),
+    // 화면에서 보낸 메시지는 사용자가 보낸 것이다.
+    'messages.send': (i: { projectId: string; toWorkspaceId: string; body: string; threadId?: string }) =>
+      core.messages.send({ projectId: i.projectId, from: { kind: 'user' }, toWorkspaceId: i.toWorkspaceId, body: i.body, threadId: i.threadId }),
+    'messages.pauseThread': (threadId: string, paused: boolean) => core.messages.pauseThread(threadId, paused),
+    'messages.flow': (projectId: string) => core.messages.flow(projectId),
+    'messages.pauseProject': (projectId: string, paused: boolean) => {
+      core.messages.pauseProject(projectId, paused);
+      // 전체 멈춤은 전달만 막는 것이 아니라 하던 일도 멈춘다.
+      if (paused) for (const w of core.workspaces.list(projectId)) core.service.interrupt(w.id);
+    },
+    'messages.resume': (projectId: string) => core.messages.userIntervened(projectId),
+    'messages.delivery': (projectId: string) => Object.fromEntries(core.workspaces.list(projectId).map((w) => [w.id, {
+      state: core.delivery.state(w.id),
+      waiting: core.messages.undelivered(w.id).length,
+      held: core.messages.heldCount(w.id),
+      error: core.delivery.error(w.id),
+    }])),
+    'artifacts.list': (projectId: string) => core.messages.artifacts(projectId),
+    'artifacts.get': (id: string) => core.messages.artifact(id) ?? null,
   };
 
   for (const channel of IPC_CHANNELS) {
@@ -105,13 +131,16 @@ export function registerIpc(core: Core): () => void {
     changed('terminals');
   };
   // 상태가 바뀌면 '알리기' 가능 여부도 바뀌므로 todos 도 함께 알린다.
-  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); };
+  // 상태가 바뀌면 전달 방식도 바뀌므로 messages 도 함께 알린다.
+  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); };
+  const onMessagesChanged = (): void => changed('messages');
   const onTodosChanged = (): void => changed('todos');
   core.pty.on('data', onData);
   core.pty.on('exit', onExit);
   core.service.on('changed', onWorkspaceChanged);
   core.todos.on('changed', onTodosChanged);
   core.todos.on('delivered', onTodosChanged);
+  core.messages.on('changed', onMessagesChanged);
 
   return () => {
     core.pty.off('data', onData);
@@ -119,6 +148,7 @@ export function registerIpc(core: Core): () => void {
     core.service.off('changed', onWorkspaceChanged);
     core.todos.off('changed', onTodosChanged);
     core.todos.off('delivered', onTodosChanged);
+    core.messages.off('changed', onMessagesChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));
       else ipcMain.removeHandler(ipcName(channel));

@@ -4,7 +4,9 @@ import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types
 import { STATUS_LABEL, type Selection } from '../tree';
 import { ConfirmDialog } from './dialogs';
 import { TerminalPane } from './TerminalPane';
-import { TodoPanel, type PendingInfo } from './TodoPanel';
+import type { ConversationData } from './ConversationPanel';
+import { SidePanel } from './SidePanel';
+import type { PendingInfo } from './TodoPanel';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
@@ -18,8 +20,9 @@ export function describeError(message: string): string {
   return message;
 }
 
-export function WorkspaceView({ workspace, project, repo, todos, pending, onSelect }: {
-  workspace: Workspace; project?: Project; repo?: Repo; todos: Todo[]; pending?: PendingInfo; onSelect: (s: Selection) => void;
+export function WorkspaceView({ workspace, workspaces, project, repo, todos, pending, conversation, onSelect }: {
+  workspace: Workspace; workspaces: Workspace[]; project?: Project; repo?: Repo; todos: Todo[]; pending?: PendingInfo;
+  conversation: ConversationData; onSelect: (s: Selection) => void;
 }) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -93,6 +96,9 @@ export function WorkspaceView({ workspace, project, repo, todos, pending, onSele
         <span className="tag">{STATUS_LABEL[workspace.status]}</span>
         <span className="spacer" />
         {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
+        {workspace.agentKind === 'claude' && (workspace.status === 'working' || workspace.status === 'waiting_user') && (
+          <button className="btn" title="하던 일을 멈춥니다. 에이전트는 꺼지지 않습니다" onClick={() => { window.dure.workspaces.interrupt(workspace.id).catch((e: Error) => setError(e.message)); }}>멈춤</button>
+        )}
         <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
       <div className="ws-body">
@@ -121,7 +127,7 @@ export function WorkspaceView({ workspace, project, repo, todos, pending, onSele
         {active && error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}
       </div>
       </div>
-      <TodoPanel workspace={workspace} items={todos} pending={pending} />
+      <SidePanel workspace={workspace} workspaces={workspaces} todos={todos} pending={pending} conversation={conversation} />
       </div>
       {removing && (
         <ConfirmDialog

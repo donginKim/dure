@@ -38,6 +38,7 @@ const api: DureApi = {
     create: (input) => call('workspaces.create', input),
     remove: (id, options) => call('workspaces.remove', id, options),
     uncommitted: (id) => call('workspaces.uncommitted', id),
+    interrupt: (id) => call('workspaces.interrupt', id),
   },
   terminals: {
     list: (workspaceId) => call('terminals.list', workspaceId),
@@ -58,6 +59,20 @@ const api: DureApi = {
     move: (id, direction) => call('todos.move', id, direction),
     pending: (projectId) => call('todos.pending', projectId),
     nudge: (workspaceId) => call('todos.nudge', workspaceId),
+  },
+  messages: {
+    threads: (projectId) => call('messages.threads', projectId),
+    list: (threadId) => call('messages.list', threadId),
+    send: (input) => call('messages.send', input),
+    pauseThread: (threadId, paused) => call('messages.pauseThread', threadId, paused),
+    flow: (projectId) => call('messages.flow', projectId),
+    pauseProject: (projectId, paused) => call('messages.pauseProject', projectId, paused),
+    resume: (projectId) => call('messages.resume', projectId),
+    delivery: (projectId) => call('messages.delivery', projectId),
+  },
+  artifacts: {
+    list: (projectId) => call('artifacts.list', projectId),
+    get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
 };

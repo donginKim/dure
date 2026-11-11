@@ -1,6 +1,6 @@
 import type { Workspace, WorkspaceStatus } from '@shared/types';
 import type { WorkspaceStore } from './stores';
-import { pendingMessage, todoDigest, type TodoService } from './todos';
+import { todoDigest, type TodoService } from './todos';
 
 export type HookEvent = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse' | 'Stop' | 'Notification';
 
@@ -9,10 +9,19 @@ export interface HookDeps {
   todos: TodoService;
   /** 워크스페이스 상태가 실제로 바뀌었을 때 불린다. */
   onStatus(workspaceId: string): void;
+  /** 전달할 글(TODO 변경과 메시지)을 모아 가져간다. 없으면 undefined */
+  collect(workspaceId: string): string | undefined;
+  /** 메시지만 모아 가져간다 */
+  collectMessages(workspaceId: string): string | undefined;
+  /**
+   * 에이전트가 프롬프트를 받았다. 사용자가 직접 넣은 것인지 두레가 넣은 것인지는 부른 쪽이 가린다:
+   * 두레가 붙여 넣은 글은 <pasted_content> 로 감싸여 와서 글만으로는 구분할 수 없다 (실험 13).
+   */
+  onUserPrompt(workspace: Workspace): void;
 }
 
 // 실험 10 (spikes/10-notification.mjs): 승인 창이 뜨면 notification_type 이 'permission_prompt' 로 온다.
-function isPermissionPrompt(payload: unknown): boolean {
+export function isPermissionPrompt(payload: unknown): boolean {
   return typeof payload === 'object' && payload !== null
     && (payload as { notification_type?: unknown }).notification_type === 'permission_prompt';
 }
@@ -29,10 +38,7 @@ export function handleHook(deps: HookDeps, workspace: Workspace, event: string, 
     deps.workspaces.update(workspace.id, { status: next });
     deps.onStatus(workspace.id);
   };
-  const pending = (): string | undefined => {
-    const lines = deps.todos.takePending(workspace.id);
-    return lines.length > 0 ? pendingMessage(lines) : undefined;
-  };
+  const pending = (): string | undefined => deps.collect(workspace.id);
 
   switch (event) {
     case 'SessionStart': {
@@ -43,15 +49,19 @@ export function handleHook(deps: HookDeps, workspace: Workspace, event: string, 
         deps.todos.listWorkspace(workspace.id),
         deps.todos.listProject(workspace.projectId).filter((t) => t.workspaceId === null),
       );
-      if (!digest) return '';
-      deps.todos.takePending(workspace.id); // 목록 전체를 알려줬으니 변경 기록은 다시 전달하지 않는다
-      return JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: digest } });
+      if (digest) deps.todos.takePending(workspace.id); // 목록 전체를 알려주니 변경 기록은 다시 전달하지 않는다
+      // 메시지는 압축 직후에만 함께 넣는다: 그때는 에이전트가 하던 일을 이어 가므로 읽고 행동한다.
+      // 대화를 막 시작했거나 비운 에이전트는 프롬프트 없이는 움직이지 않아, 넣으면 읽히지 않고 사라진다.
+      const source = typeof payload === 'object' && payload !== null ? (payload as { source?: unknown }).source : undefined;
+      const context = [digest, source === 'compact' ? deps.collectMessages(workspace.id) : undefined].filter((x) => x !== undefined).join('\n\n');
+      return context ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) : '';
     }
     case 'PreToolUse':
       setStatus('working');
       return '';
     case 'UserPromptSubmit':
     case 'PostToolUse': {
+      if (event === 'UserPromptSubmit') deps.onUserPrompt(workspace);
       setStatus('working');
       const message = pending();
       return message ? JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: message } }) : '';

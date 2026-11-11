@@ -22,6 +22,8 @@ export interface Git {
   ignoredCount(path: string): Promise<number>;
   /** 작업 폴더에서 바뀐 파일 (스테이징 여부와 무관, 추적 안 된 파일 포함) */
   changedFiles(path: string): Promise<ChangedFile[]>;
+  /** 추적 중인 파일 하나의, 마지막 커밋 대비 변경 (통합 diff). 스테이징 여부와 무관 */
+  fileDiff(path: string, file: string): Promise<string>;
   /** 고른 파일만 커밋한다. 사용자의 git 설정(hook, 서명)을 그대로 따른다 */
   commitFiles(o: { path: string; files: string[]; message: string }): Promise<CommitResult>;
   /** 원격 주소. 그 원격이 없으면 null */
@@ -169,6 +171,11 @@ export function createGit(env?: Record<string, string>): Git {
       return false;
     },
 
+    async fileDiff(path, file) {
+      // --literal-pathspecs: 파일 이름을 패턴으로 읽지 않는다. --no-ext-diff, --no-textconv: 사용자가 건 외부 프로그램을 돌리지 않는다.
+      return raw(['-C', path, '--literal-pathspecs', 'diff', 'HEAD', '--no-color', '--no-ext-diff', '--no-textconv', '--', file]);
+    },
+
     async commonDir(path) {
       const dir = (await raw(['-C', path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
       try { return realpathSync(dir); } catch { return dir; }
@@ -249,5 +256,5 @@ export function createGit(env?: Record<string, string>): Git {
 const defaultGit = createGit();
 export const {
   isGitRepo, listBranches, currentBranch, branchExists, deleteBranch, uncommittedCount, addWorktree, removeWorktree,
-  changedFiles, commitFiles, remoteUrl, aheadCount, push, merging, commonDir,
+  changedFiles, fileDiff, commitFiles, remoteUrl, aheadCount, push, merging, commonDir,
 } = defaultGit;

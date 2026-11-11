@@ -3,7 +3,9 @@ import { ERROR_PREFIX } from '@shared/ipc';
 import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types';
 import { recallView, rememberView, type ViewMode } from '../chatView';
 import { STATUS_LABEL, type Selection } from '../tree';
+import { BrowserPane } from './BrowserPane';
 import { ChatPane } from './ChatPane';
+import { DiffPane } from './DiffPane';
 import { DbRequests } from './DbRequests';
 import { CommitDialog } from './CommitDialog';
 import { ConfirmDialog } from './dialogs';
@@ -79,7 +81,10 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
   const canChat = workspace.agentKind === 'claude';
   // 채팅 방식: 에이전트가 터미널 화면 없이 돈다. 이때 "터미널" 보기는 셸 터미널만 보인다.
   const chatEngine = workspace.engine === 'chat';
-  const [mode, setMode] = useState<ViewMode>(() => (canChat ? recallView(workspace.id, window.localStorage, chatEngine ? 'chat' : 'terminal') : 'terminal'));
+  const [mode, setMode] = useState<ViewMode>(() => {
+    const v = recallView(workspace.id, window.localStorage, canChat && chatEngine ? 'chat' : 'terminal');
+    return v === 'chat' && !canChat ? 'terminal' : v;
+  });
   const switchTo = (next: ViewMode): void => { setMode(next); rememberView(workspace.id, next, window.localStorage); };
   // 커밋 버튼에 보일 것: 바뀐 파일 수와 에이전트가 써 둔 초안이 있는지
   const [commitInfo, setCommitInfo] = useState<{ changed: number; hasDraft: boolean }>({ changed: 0, hasDraft: false });
@@ -175,6 +180,8 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
             title={canChat ? '에이전트와의 대화' : 'Codex 는 아직 채팅 보기를 지원하지 않습니다'}
           >채팅</button>
           <button role="tab" aria-selected={mode === 'terminal'} className={mode === 'terminal' ? 'on' : ''} onClick={() => switchTo('terminal')} title={chatEngine ? '이 작업 폴더의 셸 터미널' : '에이전트가 도는 터미널을 그대로 봅니다'}>{chatEngine ? '셸' : '터미널'}</button>
+          <button role="tab" aria-selected={mode === 'diff'} className={mode === 'diff' ? 'on' : ''} onClick={() => switchTo('diff')} title="마지막 커밋 뒤에 바뀐 파일과 그 내용을 봅니다">변경{commitInfo.changed > 0 && <span className="n">{commitInfo.changed}</span>}</button>
+          <button role="tab" aria-selected={mode === 'browser'} className={mode === 'browser' ? 'on' : ''} onClick={() => switchTo('browser')} title="개발 서버 같은 웹 페이지를 앱 안에서 봅니다">브라우저</button>
         </div>
         {readOnly && <span className="tag">완료된 프로젝트 · 기록만 봅니다</span>}
         {canChat && !hasAgent && !readOnly && (
@@ -215,6 +222,8 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
           {error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}
         </div>
       )}
+      {mode === 'diff' && <div className="ws-terms"><DiffPane workspace={workspace} /></div>}
+      {mode === 'browser' && <div className="ws-terms"><BrowserPane workspace={workspace} /></div>}
       {mode === 'terminal' && (
       <div className="ws-terms">
       <div className="tabs">

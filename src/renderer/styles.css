@@ -629,3 +629,34 @@ input[type='password']:focus { border-color: var(--accent); }
 .db-grid-table th { position: sticky; top: 0; background: var(--panel); text-align: left; font-weight: 600; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .db-grid-table td { padding: 5px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
 .db-grid-table td.null { color: var(--muted); font-style: italic; }
+
+/* 변경 보기 */
+.diff { flex: 1; min-height: 0; display: flex; }
+.diff-files { flex: none; width: 280px; border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.diff-files-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.diff-files-head .btn { margin-left: auto; }
+.diff-files-list { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; }
+.diff-file { display: flex; align-items: center; gap: 7px; text-align: left; background: none; border: 0; border-radius: 6px; padding: 5px 8px; color: inherit; cursor: pointer; font-size: 12.5px; }
+.diff-file:hover, .diff-file.on { background: var(--panel); }
+.diff-st { flex: none; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; }
+.diff-st.added, .diff-st.untracked { color: #7fbf7f; }
+.diff-st.deleted { color: var(--danger); }
+.diff-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+.diff-num { flex: none; font: 11px ui-monospace, 'SF Mono', Menlo, monospace; }
+.diff-num i { font-style: normal; }
+.diff-num .add, .dl.add { color: #8fd18f; }
+.diff-num .del, .dl.del { color: #e08a84; }
+.diff-body { flex: 1; min-width: 0; overflow: auto; }
+.diff-title { position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--line); padding: 8px 14px; font: 12.5px ui-monospace, 'SF Mono', Menlo, monospace; z-index: 1; }
+.diff-text { margin: 0; padding: 8px 0; font: 12px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; min-width: max-content; }
+.dl { padding: 0 14px; white-space: pre; }
+.dl.add { background: rgba(80, 160, 80, 0.13); }
+.dl.del { background: rgba(200, 80, 70, 0.13); }
+.dl.hunk { color: var(--accent); background: rgba(200, 160, 60, 0.08); margin-top: 6px; }
+.dl.meta { color: var(--muted); }
+
+/* 내장 브라우저 */
+.browser { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.browser-bar { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.browser-url { flex: 1; min-width: 0; font: 12.5px ui-monospace, 'SF Mono', Menlo, monospace; }
+.browser-view { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; display: flex; }

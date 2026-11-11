@@ -139,6 +139,15 @@ export interface ProjectFlow {
 export type DeliveryState = 'none' | 'next-hook' | 'waking' | 'starting' | 'waiting-start' | 'waiting-unknown' | 'waiting-codex' | 'held';
 
 /** 작업 폴더에서 바뀐 파일 하나 */
+/** 바뀐 파일 하나의 변경 내용 (통합 diff) */
+export interface FileDiff {
+  /** 통합 diff 글. 이진 파일이면 빈 글 */
+  text: string;
+  binary: boolean;
+  /** 너무 길어 뒤를 잘랐다 */
+  truncated: boolean;
+}
+
 export interface ChangedFile {
   /** 저장소 기준 경로 */
   path: string;

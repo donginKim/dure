@@ -1,6 +1,6 @@
 import type {
   AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
-  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable,
+  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff,
 } from './types';
 
 export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db';
@@ -129,6 +129,8 @@ export interface DureApi {
   /** 커밋 창. 커밋과 push 는 사용자가 화면에서 누를 때만 실행된다 */
   commit: {
     state(workspaceId: string): Promise<CommitState>;
+    /** 바뀐 파일 하나의 변경 내용 */
+    diff(workspaceId: string, file: string): Promise<FileDiff>;
     run(workspaceId: string, input: { files: string[]; message: string }): Promise<CommitResult>;
     /** git 이 낸 글을 돌려준다 */
     push(workspaceId: string): Promise<string>;
@@ -182,7 +184,7 @@ export const IPC_CHANNELS = [
   'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
-  'commit.state', 'commit.run', 'commit.push',
+  'commit.state', 'commit.diff', 'commit.run', 'commit.push',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;

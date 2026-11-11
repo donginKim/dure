@@ -34,6 +34,11 @@
 |---|---|---|---|
 | 11 | `SessionStart` hook 의 `additionalContext` 가 에이전트 컨텍스트에 들어가는가 | ✅ 들어간다. 넣어준 낱말을 그대로 답함 | `spikes/11-sessionstart.mjs` |
 | 11a | 압축(`/compact`) 뒤에도 `SessionStart` 가 오는가 | ✅ 온다. 본문의 `source` 가 처음은 `startup`, 압축 뒤는 `compact`. 이때 넣은 새 낱말도 그대로 답함 | 같음 |
+| 12 | 메시지를 첫 프롬프트 인자로 주며 띄우면 폴더 신뢰 창 뒤에 실행되는가 | ✅ 실행된다. 신뢰 창이 떠 있는 동안에는 hook 이 하나도 오지 않고, 넘긴 뒤 `SessionStart` → `UserPromptSubmit` 순으로 온다. 즉 `SessionStart` 가 왔다면 신뢰 창은 지나간 것이다 | `spikes/12-initial-prompt.mjs` |
+| 12a | `UserPromptSubmit` 본문에 프롬프트 글이 오는가 | ✅ `prompt` 필드. 인자로 준 첫 프롬프트와 터미널에 써 넣은 글 모두 그대로 온다 | 같음, `spikes/out/userpromptsubmit.json` |
+| 12b | `Stop` 을 받은 뒤(쉬는 중 확인) 터미널에 써 넣으면 깨어나는가 | ✅ bracketed paste 뒤 400ms 후 `\r`. 써 넣은 지시대로 도구를 호출함 | 같음 |
+| 12c | 작업 중 Esc 로 중단하면 어떤 hook 이 오는가 | ✅ 아무 hook 도 오지 않는다. 프로세스는 살아 있고 화면에 Interrupted 가 뜬다 | 같음 |
+| 12d | Codex 의 첫 프롬프트 인자 | `codex [OPTIONS] [PROMPT]` (도움말 기준, ⏳ 실행 안 함) | `codex --help` |
 
 ## 설계를 바꾸는 발견
 

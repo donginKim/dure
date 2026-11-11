@@ -164,7 +164,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       <div className="section">
         <div className="section-head">
           <h2>대화</h2>
-          {(conversation.threads.length > 0 || conversation.flow.paused) && (
+          {!done && (conversation.threads.length > 0 || conversation.flow.paused) && (
             <button
               className="btn"
               title={conversation.flow.paused
@@ -174,7 +174,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
             >{conversation.flow.paused ? '전체 재개' : '전체 멈춤'}</button>
           )}
         </div>
-        {conversation.flow.capped && (
+        {!done && conversation.flow.capped && (
           <div className="thread-notice standalone">
             <span className="grow">이 프로젝트에서 에이전트끼리 50번 주고받아 멈췄습니다. 내용을 확인하고 계속할지 정하세요.</span>
             <button className="btn accent" onClick={() => { window.dure.messages.resume(project.id).catch((e: Error) => setError(e.message)); }}>계속</button>
@@ -201,7 +201,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
                 <span className="t">{g.title}</span>
               </div>
               <Ticks items={g.items} />
-              <TodoList projectId={project.id} workspaceId={g.workspaceId} items={g.items} />
+              <TodoList projectId={project.id} workspaceId={g.workspaceId} items={g.items} readOnly={done} />
             </div>
           ))}
         </div>

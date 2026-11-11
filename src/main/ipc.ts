@@ -23,6 +23,10 @@ export function registerIpc(core: Core): () => void {
   const changed = (topic: ChangeTopic): void => broadcast(IPC_EVENTS.changed, topic);
 
   // 완료된 프로젝트는 기록만 본다.
+  const assertTodoOpen = (todoId: string): undefined => {
+    const t = core.todos.get(todoId);
+    return t ? assertOpen(t.projectId) : undefined;
+  };
   const assertOpen = (projectId: string): undefined => {
     if (core.service.isProjectClosed(projectId)) throw new Error('완료된 프로젝트입니다. 다시 열어야 바꿀 수 있습니다.');
     return undefined;
@@ -121,9 +125,9 @@ export function registerIpc(core: Core): () => void {
     // 화면에서 온 TODO 변경은 모두 사용자의 변경이다.
     'todos.list': (projectId: string) => core.todos.listProject(projectId),
     'todos.add': (i: { projectId: string; workspaceId: string | null; title: string; assignee?: TodoAssignee }) => { assertOpen(i.projectId); return core.todos.add(i, 'user'); },
-    'todos.update': (id: string, patch: TodoPatch) => core.todos.update(id, patch, { actor: 'user' }),
-    'todos.remove': (id: string) => core.todos.remove(id, { actor: 'user' }),
-    'todos.move': (id: string, direction: 'up' | 'down') => core.todos.move(id, direction),
+    'todos.update': (id: string, patch: TodoPatch) => assertTodoOpen(id) ?? core.todos.update(id, patch, { actor: 'user' }),
+    'todos.remove': (id: string) => assertTodoOpen(id) ?? core.todos.remove(id, { actor: 'user' }),
+    'todos.move': (id: string, direction: 'up' | 'down') => assertTodoOpen(id) ?? core.todos.move(id, direction),
     'todos.pending': (projectId: string) => Object.fromEntries(
       core.workspaces.listAll(projectId).map((w) => [w.id, { count: core.todos.pendingCount(w.id), canNudge: core.service.canNudge(w.id) }]),
     ),

@@ -40,7 +40,7 @@ export function Ticks({ items }: { items: Todo[] }) {
   );
 }
 
-function StatusMark({ todo, onToggle }: { todo: Todo; onToggle: () => void }) {
+function StatusMark({ todo, onToggle, readOnly }: { todo: Todo; onToggle: () => void; readOnly?: boolean }) {
   const label = todo.status === 'done' ? '완료 취소' : todo.status === 'cancelled' ? '취소된 항목' : '완료로 표시';
   return (
     <button
@@ -49,7 +49,7 @@ function StatusMark({ todo, onToggle }: { todo: Todo; onToggle: () => void }) {
       aria-checked={todo.status === 'done'}
       aria-label={label}
       title={label}
-      disabled={todo.status === 'cancelled'}
+      disabled={todo.status === 'cancelled' || readOnly}
       onClick={onToggle}
     >
       {todo.status === 'done' && <Icon name="check" />}
@@ -57,7 +57,7 @@ function StatusMark({ todo, onToggle }: { todo: Todo; onToggle: () => void }) {
   );
 }
 
-function TodoRow({ todo, first, last, onError }: { todo: Todo; first: boolean; last: boolean; onError: (m: string) => void }) {
+function TodoRow({ todo, first, last, onError, readOnly }: { todo: Todo; first: boolean; last: boolean; onError: (m: string) => void; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(todo.title);
   const run = (p: Promise<unknown>): void => { p.catch((e: Error) => onError(e.message)); };
@@ -72,9 +72,9 @@ function TodoRow({ todo, first, last, onError }: { todo: Todo; first: boolean; l
 
   return (
     <div className={`todo-row ${todo.status}`}>
-      <StatusMark todo={todo} onToggle={() => run(window.dure.todos.update(todo.id, { status: done ? 'todo' : 'done' }))} />
+      <StatusMark todo={todo} readOnly={readOnly} onToggle={() => run(window.dure.todos.update(todo.id, { status: done ? 'todo' : 'done' }))} />
       <div className="todo-main">
-        {editing ? (
+        {editing && !readOnly ? (
           <input
             type="text"
             className="todo-edit"
@@ -88,13 +88,13 @@ function TodoRow({ todo, first, last, onError }: { todo: Todo; first: boolean; l
             }}
           />
         ) : (
-          <div className="todo-title" title="눌러서 고치기" onClick={() => { setDraft(todo.title); setEditing(true); }}>{todo.title}</div>
+          <div className="todo-title" title={readOnly ? undefined : '눌러서 고치기'} onClick={() => { if (!readOnly) { setDraft(todo.title); setEditing(true); } }}>{todo.title}</div>
         )}
         {todo.detail && <div className="todo-detail" title={todo.detail}>{todo.detail}</div>}
       </div>
       {todo.status === 'doing' && <span className="todo-state">{TODO_STATUS_LABEL.doing}</span>}
       {cancelled && <span className="todo-state off">{TODO_STATUS_LABEL.cancelled}</span>}
-      <div className="todo-actions">
+      {!readOnly && <div className="todo-actions">
         <button className="icon" title="위로" aria-label="위로" disabled={first} onClick={() => run(window.dure.todos.move(todo.id, 'up'))}><Icon name="up" /></button>
         <button className="icon" title="아래로" aria-label="아래로" disabled={last} onClick={() => run(window.dure.todos.move(todo.id, 'down'))}><Icon name="down" /></button>
         <button
@@ -110,13 +110,17 @@ function TodoRow({ todo, first, last, onError }: { todo: Todo; first: boolean; l
           onClick={() => run(window.dure.todos.update(todo.id, { status: cancelled ? 'todo' : 'cancelled' }))}
         ><Icon name={cancelled ? 'restore' : 'cancel'} /></button>
         <button className="icon danger" title="삭제" aria-label="삭제" onClick={() => run(window.dure.todos.remove(todo.id))}><Icon name="trash" /></button>
-      </div>
+      </div>}
     </div>
   );
 }
 
 /** 한 범위(워크스페이스 하나 또는 프로젝트)의 항목들과 추가 입력칸. */
-export function TodoList({ projectId, workspaceId, items }: { projectId: string; workspaceId: string | null; items: Todo[] }) {
+export function TodoList({ projectId, workspaceId, items, readOnly }: {
+  projectId: string; workspaceId: string | null; items: Todo[];
+  /** 완료된 프로젝트: 보기만 한다 */
+  readOnly?: boolean;
+}) {
   const [title, setTitle] = useState('');
   const [mine, setMine] = useState(false);
   const [error, setError] = useState('');
@@ -137,7 +141,7 @@ export function TodoList({ projectId, workspaceId, items }: { projectId: string;
       setError((e as Error).message);
     }
   };
-  const row = (t: Todo) => <TodoRow key={t.id} todo={t} first={t.id === firstId} last={t.id === lastId} onError={setError} />;
+  const row = (t: Todo) => <TodoRow key={t.id} todo={t} first={t.id === firstId} last={t.id === lastId} onError={setError} readOnly={readOnly} />;
 
   return (
     <div className="todo-list">
@@ -145,7 +149,8 @@ export function TodoList({ projectId, workspaceId, items }: { projectId: string;
       {agentItems.map(row)}
       {userItems.length > 0 && <div className="todo-sub"><span>내가 할 일</span><span className="n">{userItems.length}</span></div>}
       {userItems.map(row)}
-      <form className={`todo-add${title ? ' typing' : ''}`} onSubmit={(e) => { e.preventDefault(); void add(); }}>
+      {readOnly && items.length === 0 && <div className="muted">할 일이 없습니다.</div>}
+      {!readOnly && <form className={`todo-add${title ? ' typing' : ''}`} onSubmit={(e) => { e.preventDefault(); void add(); }}>
         <span className="mark add"><Icon name="plus" /></span>
         <input
           type="text"
@@ -161,13 +166,13 @@ export function TodoList({ projectId, workspaceId, items }: { projectId: string;
           title="켜면 에이전트가 아니라 내가 할 일로 추가됩니다"
           onClick={() => setMine((v) => !v)}
         ><Icon name="person" />내 몫</button>
-      </form>
+      </form>}
     </div>
   );
 }
 
 /** TODO 탭의 본문: 진행 눈금, 미전달 알림, 목록. */
-export function TodoBody({ workspace, items, pending }: { workspace: Workspace; items: Todo[]; pending?: PendingInfo }) {
+export function TodoBody({ workspace, items, pending, readOnly }: { workspace: Workspace; items: Todo[]; pending?: PendingInfo; readOnly?: boolean }) {
   const [error, setError] = useState('');
   // 꺼진 에이전트에게는 전달할 것이 없다: 새로 시작하면 목록을 직접 읽는다
   const undelivered = pending && workspace.status !== 'stopped' ? pending.count : 0;
@@ -194,7 +199,7 @@ export function TodoBody({ workspace, items, pending }: { workspace: Workspace; 
       )}
       {error && <div className="error" style={{ margin: 10 }}>{error}</div>}
       <div className="todo-scroll">
-        <TodoList projectId={workspace.projectId} workspaceId={workspace.id} items={items} />
+        <TodoList projectId={workspace.projectId} workspaceId={workspace.id} items={items} readOnly={readOnly} />
       </div>
     </>
   );

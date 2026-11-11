@@ -53,7 +53,7 @@ const RESERVED: Record<'claude' | 'codex', { flags: string[]; prefixes?: string[
   claude: { flags: [
     '--mcp-config', '--strict-mcp-config', '--settings', '--setting-sources', '--append-system-prompt', '--system-prompt', '--allowedTools', '--allowed-tools',
     '--permission-mode', '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--permission-prompt-tool',
-    '--output-format', '--input-format', '--include-partial-messages', '--verbose', '--print', '-p', '--resume', '-r', '--continue', '-c', '--session-id', '--model', '--effort',
+    '--output-format', '--input-format', '--include-partial-messages', '--verbose', '--print', '-p', '--resume', '-r', '--continue', '-c', '--session-id', '--model', '--effort', '--disallowedTools', '--disallowed-tools', '--tools',
   ] },
   codex: { flags: [
     '--dangerously-bypass-approvals-and-sandbox', '--sandbox', '-s', '--ask-for-approval', '-a', '--full-auto', '--yolo', '-c', '--config', '--profile', '-p',

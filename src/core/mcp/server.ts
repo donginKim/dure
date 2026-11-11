@@ -4,6 +4,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Project, Workspace } from '@shared/types';
 import type { CleanupService } from '../cleanup';
+import type { CoordinatorService } from '../coordinator';
+import type { Git } from '../git';
 import type { CommitDraftStore } from '../commitDrafts';
 import type { DeliveryService } from '../delivery';
 import type { MessageService } from '../messages';
@@ -25,6 +27,8 @@ export interface McpDeps {
   delivery: DeliveryService;
   commitDrafts: CommitDraftStore;
   cleanup: CleanupService;
+  coordinator: CoordinatorService;
+  git: Git;
   /** 에이전트의 hook 호출. hook 이 표준 출력으로 내보낼 글을 돌려준다. */
   onHook(workspace: Workspace, event: string, payload: unknown): string;
 }

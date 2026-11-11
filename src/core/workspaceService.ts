@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace, Settings, ModelChoice } from '@shared/types';
-import { baseInstructions } from './agents/instructions';
+import { baseInstructions, coordinatorInstructions } from './agents/instructions';
 import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
@@ -70,6 +70,10 @@ function findExecutable(command: string, pathVar: string | undefined): string | 
  * 워크스페이스의 생성·삭제와 그 안의 에이전트·셸 실행을 맡는다.
  * 이벤트: 'changed' (workspaceId)
  */
+
+/** 조율 에이전트의 이름. 보통 워크스페이스는 이 이름을 쓸 수 없다 */
+export const COORDINATOR_NAME = '조율';
+
 export class WorkspaceService extends EventEmitter {
   /** 에이전트 터미널 id → 워크스페이스 id */
   private readonly agentTerminals = new Map<string, string>();
@@ -201,6 +205,7 @@ export class WorkspaceService extends EventEmitter {
   setEngine(id: string, engine: 'chat' | 'terminal'): void {
     const ws = this.mustGet(id);
     if (engine !== 'chat' && engine !== 'terminal') throw new Error('알 수 없는 방식입니다.');
+    this.mustBeWorker(ws, '방식을 바꿀');
     if (engine === 'chat' && ws.agentKind !== 'claude') throw new Error('채팅 방식은 Claude Code 만 지원합니다.');
     if (this.isAgentRunning(id)) throw new Error('에이전트를 끈 뒤에 바꿀 수 있습니다.');
     this.d.workspaces.update(id, { engine });
@@ -344,6 +349,11 @@ export class WorkspaceService extends EventEmitter {
     return ws;
   }
 
+  /** 조율 에이전트에게는 할 수 없는 일을 막는다 (화면에서는 닿지 않지만 IPC 로는 부를 수 있다). */
+  private mustBeWorker(ws: Workspace, what: string): void {
+    if (ws.role === 'coordinator') throw new Error(`조율 에이전트에는 ${what} 수 없습니다.`);
+  }
+
   async create(i: CreateWorkspaceInput): Promise<Workspace> {
     const project = this.d.projects.get(i.projectId);
     if (!project) throw new Error(`프로젝트가 없습니다: ${i.projectId}`);
@@ -352,6 +362,8 @@ export class WorkspaceService extends EventEmitter {
     if (!repo || repo.projectId !== project.id) throw new Error(`이 프로젝트에 등록된 저장소가 아닙니다: ${i.repoId}`);
 
     const typed = i.name?.trim();
+    // 이름은 에이전트끼리 서로를 가리키는 데 쓴다: 조율 에이전트의 이름은 쓸 수 없다 (조율인 척하는 워크스페이스가 생기지 않게).
+    if (typed === COORDINATOR_NAME) throw new Error(`"${COORDINATOR_NAME}" 은 조율 에이전트의 이름이라 쓸 수 없습니다.`);
     const name = typed || `${repo.name}-${this.d.workspaces.list(project.id).length + 1}`;
     const settings = this.settings();
     // 작업 폴더 위치: 설정에 있으면 그곳, 없으면 기본 위치. 이미 만든 워크스페이스는 옮기지 않는다.
@@ -388,8 +400,10 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
-  async remove(id: string, o: { deleteWorktree: boolean }): Promise<void> {
+  async remove(id: string, o: { deleteWorktree: boolean; withCoordinator?: boolean }): Promise<void> {
     const ws = this.mustGet(id);
+    // 조율 에이전트는 프로젝트를 지울 때만 같이 지운다.
+    if (!o.withCoordinator) this.mustBeWorker(ws, '지울');
     // 지우는 동안 메시지가 와도 이 워크스페이스에 에이전트를 띄우지 않게 한다.
     this.removing.add(id);
     try {
@@ -401,11 +415,19 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
+  /** 방금 만든 워크스페이스를 없던 것으로 한다: 작업 폴더와 브랜치까지 지운다. 계획안 승인 도중 실패했을 때 쓴다. */
+  async discard(id: string): Promise<void> {
+    const ws = this.mustGet(id);
+    const repo = this.d.repos.get(ws.repoId);
+    await this.remove(id, { deleteWorktree: true });
+    if (repo && ws.branch && await this.d.git.branchExists(repo.path, ws.branch)) await this.d.git.deleteBranch(repo.path, ws.branch);
+  }
+
   private async removeInner(ws: Workspace, o: { deleteWorktree: boolean }): Promise<void> {
     const id = ws.id;
     // 작업 폴더를 지우기 전에 그 안에서 도는 프로세스를 먼저 끝낸다.
     await this.killTerminals(id);
-    if (o.deleteWorktree) {
+    if (o.deleteWorktree && ws.role !== 'coordinator') {
       const repo = this.d.repos.get(ws.repoId);
       if (repo) await this.d.git.removeWorktree({ repoPath: repo.path, worktreePath: ws.worktreePath });
     }
@@ -431,6 +453,9 @@ export class WorkspaceService extends EventEmitter {
     const resumeSessionId = headless ? this.d.workspaces.getSessionId(id) : undefined;
     if (this.removing.has(id)) throw new Error('지우는 중인 워크스페이스입니다.');
     this.d.pty.forgetExited(id, 'agent'); // 지난 에이전트 탭 기록은 치운다
+    const coordinator = ws.role === 'coordinator';
+    // 조율 에이전트의 폴더는 두레가 관리한다. 없으면 만든다.
+    if (coordinator) mkdirSync(ws.worktreePath, { recursive: true });
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
@@ -444,7 +469,9 @@ export class WorkspaceService extends EventEmitter {
     // 받은 메시지가 기다리고 있으면 그것을 첫 프롬프트로 준다. 실행 파일을 확인한 뒤에 가져가야 실패 시 사라지지 않는다.
     // 이 저장소에 대한 커밋·push 만 막기 위해 저장소의 공용 .git 폴더를 알아 둔다. 못 알아내면 막는 장치 없이 띄운다.
     const realGit = findExecutable('git', this.d.baseEnv.PATH);
-    const gitCommonDir = realGit ? await this.d.git.commonDir(ws.worktreePath).catch(() => undefined) : undefined;
+    // 조율 에이전트의 폴더는 저장소가 아니지만 등록된 저장소를 읽을 수 있다: 그 저장소 전부에 대한 commit·push 를 막는다.
+    const repoPaths = coordinator ? this.d.repos.list(ws.projectId).map((r) => r.path).filter((p) => existsSync(p)) : [];
+    const gitCommonDir = !realGit ? [] : (await Promise.all((coordinator ? repoPaths : [ws.worktreePath]).map((p) => this.d.git.commonDir(p).catch(() => undefined)))).filter((c): c is string => Boolean(c));
     // 기다리는 사이에 지워지거나 닫혔으면 띄우지 않는다.
     if (this.removing.has(id) || this.detached || !this.d.workspaces.get(id)) throw new Error('지우는 중인 워크스페이스입니다.');
     if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
@@ -460,7 +487,12 @@ export class WorkspaceService extends EventEmitter {
       basePath: this.d.baseEnv.PATH ?? '',
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),
-      instructions: baseInstructions(ws, project),
+      instructions: coordinator ? coordinatorInstructions(project) : baseInstructions(ws, project),
+      // 조율 에이전트는 코드를 고치지 않는다: 파일을 고치는 도구를 빼고, 등록된 저장소는 읽을 수 있게 한다.
+      disallowedTools: coordinator ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : undefined,
+      addDirs: coordinator ? repoPaths : undefined,
+      // 조율 에이전트는 사용자의 원본 저장소에 닿는다: 파일을 바꾸는 셸 명령(rm, mv, sed 등)도 하나하나 승인을 받게 한다.
+      manualEdits: coordinator,
       initialPrompt: firstPrompt,
       headless,
       resumeSessionId,
@@ -755,6 +787,7 @@ export class WorkspaceService extends EventEmitter {
 
   async openShell(id: string, size: { cols: number; rows: number }): Promise<TerminalInfo> {
     const ws = this.mustGet(id);
+    this.mustBeWorker(ws, '셸을 열');
     if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
     return this.d.pty.spawn({

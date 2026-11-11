@@ -20,7 +20,8 @@ const DELIVERY_TEXT: Record<DeliveryState, string> = {
 /** 같은 프로젝트의 다른 워크스페이스와 메시지를 주고받는 도구. */
 export const messageTools: ToolBundle = (server, ctx, deps) => {
   const { messages, workspaces, delivery } = deps;
-  const peers = () => workspaces.list(ctx.project.id);
+  // 조율 에이전트도 받는 쪽이 될 수 있다 (워크스페이스가 보고한다).
+  const peers = () => workspaces.listAll(ctx.project.id);
   const nameOf = (id: string): string => workspaces.get(id)?.name ?? '지워진 워크스페이스';
   const senderName = (m: Message): string => (m.from.kind === 'user' ? '사용자' : m.from.kind === 'system' ? '두레' : nameOf(m.from.workspaceId));
   // 이름이 "사용자" 인 워크스페이스와 진짜 사용자를 구분할 수 있게 종류를 함께 준다.

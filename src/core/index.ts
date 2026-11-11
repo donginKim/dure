@@ -1,10 +1,12 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
+import { CoordinatorService } from './coordinator';
+import { coordinatorTools } from './mcp/tools/coordinator';
 import { cleanupTools } from './mcp/tools/cleanup';
 import { SettingsService } from './settings';
 import { ChatEngine } from './chat/engine';
@@ -39,6 +41,7 @@ export interface Core {
   engine: ChatEngine;
   settings: SettingsService;
   cleanup: CleanupService;
+  coordinator: CoordinatorService;
   /** 프로젝트를 완료 처리하기 전에 보여줄 것: 워크스페이스의 상태와 정리 대기에 있는 것 */
   completionPlan(projectId: string): Promise<CompletionPlan>;
   /** 프로젝트를 완료 처리한다: 에이전트를 끄고, 고른 작업 폴더와 정리 대기 항목을 지우고, 프로젝트를 완료로 옮긴다. 기록은 남는다 */
@@ -83,7 +86,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   // 지난 실행에서 살아 있던 터미널은 이제 없다. 남은 상태를 되돌린다.
   for (const p of projects.list()) {
-    for (const w of workspaces.list(p.id)) {
+    for (const w of workspaces.listAll(p.id)) {
       if (w.status !== 'stopped') workspaces.update(w.id, { status: 'stopped' });
     }
   }
@@ -102,7 +105,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const chat = new ChatService({ workspaces, // Claude Code 는 CLAUDE_CONFIG_DIR 가 있으면 그 폴더에 대화 기록을 둔다. 에이전트가 물려받는 환경과 같은 값을 쓴다.
     allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id) });
   const mcp = await startMcpServer({
-    workspaces, projects, repos, todos, messages, commitDrafts, cleanup,
+    workspaces, projects, repos, todos, messages, commitDrafts, cleanup, git,
+    // 조율 서비스는 워크스페이스 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
+    get coordinator() { return coordinator; },
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get delivery() { return delivery; },
     onHook: (workspace, event, payload) => {
@@ -133,7 +138,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -151,6 +156,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       isProjectClosed: (projectId) => service.isProjectClosed(projectId),
     },
   });
+  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators') });
   service.attachDelivery(delivery);
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
@@ -175,7 +181,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 전달이 실패하면 메시지는 미전달로 되돌아가고 이유가 delivery.error 에 남아 화면에 보인다. 여기서는 오류를 삼킨다.
   const kick = (workspaceId: string): void => { delivery.kick(workspaceId).catch(() => undefined); };
   const onSent = (m: { toWorkspaceId: string }): void => kick(m.toWorkspaceId);
-  const onReleased = (projectId: string): void => { for (const w of workspaces.list(projectId)) kick(w.id); };
+  const onReleased = (projectId: string): void => { for (const w of workspaces.listAll(projectId)) kick(w.id); };
   messages.on('sent', onSent);
   messages.on('released', onReleased);
 
@@ -186,7 +192,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {
@@ -207,6 +213,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (!project) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (project.status === 'done') return project;
       const all = workspaces.list(projectId);
+      // 조율 에이전트도 끈다 (작업 폴더가 없어 지울 것은 없다).
+      const everyone = workspaces.listAll(projectId);
       const removeWorktrees = new Set(Array.isArray(choice?.removeWorktrees) ? choice.removeWorktrees : []);
       const removeItems = new Set(Array.isArray(choice?.removeItems) ? choice.removeItems : []);
       const seen = typeof choice?.seen === 'object' && choice.seen !== null ? choice.seen : {};
@@ -216,8 +224,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       service.setCompleting(projectId, true);
       try {
         // 에이전트를 모두 끈다: 지우는 폴더에서 돌고 있으면 안 되고, 완료된 프로젝트에서는 일하지 않는다.
-        for (const w of all) await service.stopAndWait(w.id);
-        const alive = all.filter((w) => service.isAgentRunning(w.id) || pty.list(w.id).length > 0);
+        for (const w of everyone) await service.stopAndWait(w.id);
+        const alive = everyone.filter((w) => service.isAgentRunning(w.id) || pty.list(w.id).length > 0);
         if (alive.length) throw new Error(`에이전트나 터미널이 꺼지지 않았습니다: ${alive.map((w) => w.name).join(', ')}. 잠시 뒤 다시 하세요.`);
         // 지우기 전에 다시 센다. 목록을 본 뒤에 생긴 변경이 있으면 아무것도 지우지 않는다.
         const targets = all.filter((w) => removeWorktrees.has(w.id) && existsSync(w.worktreePath));
@@ -254,8 +262,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
     async removeProject(projectId) {
       // 워크스페이스는 터미널과 에이전트만 끄고 작업 폴더는 남긴다. 정리 대기에 옮겨 둔 것은 함께 지운다.
-      for (const ws of workspaces.list(projectId)) await service.remove(ws.id, { deleteWorktree: false });
+      for (const ws of workspaces.listAll(projectId)) await service.remove(ws.id, { deleteWorktree: false, withCoordinator: true });
       cleanup.removeProject(projectId);
+      // 조율 에이전트의 폴더는 두레의 것이다. 함께 지운다.
+      const coordDir = join(o.dataDir, 'coordinators', projectId);
+      if (coordDir.startsWith(join(o.dataDir, 'coordinators') + sep)) rmSync(coordDir, { recursive: true, force: true });
       projects.remove(projectId);
     },
     models: async (refresh) => (engine.models().length > 0 && !refresh ? engine.models() : service.loadModels()),

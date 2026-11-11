@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { ChatItem, ChatQuestion, ChatStep, ChatView, Message, SlashCommand, Workspace } from '@shared/types';
 import { elapsed, matchCommands, mergeEntries, stepsLabel, stepsRunning, type Entry, type PeerEntry } from '../chatView';
 import { clock, deliveryNote, workspaceName } from '../conversationView';
@@ -182,13 +182,20 @@ const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, w
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.
  * 입력창의 글과 승인 답은 에이전트의 터미널에 써 넣는다.
  */
-export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentTerminalId, readOnly = false, onShowTerminal, onStartAgent }: {
+export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentTerminalId, readOnly = false, blank, banner, attach, onShowTerminal, onStartAgent }: {
   workspace: Workspace; workspaces: Workspace[]; conversation: ConversationData; hasAgent: boolean;
   /** 완료된 프로젝트다: 지난 대화만 보고 에이전트를 시작하지 않는다 */
   readOnly?: boolean;
+  /** 대화가 비어 있을 때 보일 안내 (없으면 기본 안내) */
+  blank?: string;
+  /** 입력창 위에 끼워 보일 것 (조율 에이전트의 계획안 알림) */
+  banner?: ReactNode;
+  /** 파일을 골라 입력창에 넣을 글을 돌려준다 (조율 에이전트의 "기획서 파일"). 없으면 버튼을 보이지 않는다 */
+  attach?: () => Promise<string | null>;
   /** 살아 있는 에이전트 터미널. 고르는 화면이 뜨면 이 터미널을 채팅 안에 끼워 보인다 */
   agentTerminalId?: string;
-  onShowTerminal: () => void; onStartAgent: () => void;
+  /** 터미널 보기로 넘어간다. 없으면 그 버튼들을 보이지 않는다 (조율 에이전트에는 터미널 화면이 없다) */
+  onShowTerminal?: () => void; onStartAgent: () => void;
 }) {
   const [view, setView] = useState<ChatView>(EMPTY);
   const [loaded, setLoaded] = useState(false);
@@ -336,7 +343,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       <div className="chat">
         <div className="chat-empty">
           <div>{view.reason}</div>
-          <button className="btn" onClick={onShowTerminal}>터미널 보기로</button>
+          {onShowTerminal && <button className="btn" onClick={onShowTerminal}>터미널 보기로</button>}
         </div>
       </div>
     );
@@ -394,7 +401,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     composer = (
       <div className="composer-off">
         <span>{status === 'starting' ? '에이전트가 시작하는 중입니다. 오래 걸리면 터미널에서 무엇을 묻고 있는지 확인하세요.' : '터미널에서 확인이 필요합니다.'}</span>
-        <button className="btn" onClick={onShowTerminal}>터미널로</button>
+        {onShowTerminal && <button className="btn" onClick={onShowTerminal}>터미널로</button>}
       </div>
     );
   } else {
@@ -410,6 +417,12 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
             ))}
             <div className="slash-foot">↑↓ 고르기 · Tab 넣기 · Esc 닫기</div>
           </div>
+        )}
+        {attach && (
+          <button
+            className="btn attach" title="기획서 파일을 고릅니다. 내용이 입력창에 들어가고, 보내기를 눌러야 전달됩니다"
+            onClick={() => { setError(''); attach().then((text) => { if (text) { setDraft((d) => (d.trim() ? `${d}\n\n${text}` : text)); input.current?.focus(); } }).catch((e: Error) => setError(e.message)); }}
+          >기획서 파일</button>
         )}
         <textarea
           ref={input}
@@ -440,8 +453,12 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
           {loaded && view.available && entries.length === 0 && view.queued.length === 0 && !view.streaming && (
             <div className="chat-blank">
               <div className="chat-blank-title">아직 대화가 없습니다</div>
-              <div>{hasAgent ? '아래에 시킬 일을 쓰면 여기에 대화가 쌓입니다.' : '에이전트를 시작하면 여기에 대화가 쌓입니다.'}</div>
-              <div>에이전트가 한 일은 한 줄로 접혀 보이고, 누르면 실행한 명령과 출력이 그대로 펼쳐집니다.</div>
+              {blank ? <div>{blank}</div> : (
+                <>
+                  <div>{hasAgent ? '아래에 시킬 일을 쓰면 여기에 대화가 쌓입니다.' : '에이전트를 시작하면 여기에 대화가 쌓입니다.'}</div>
+                  <div>에이전트가 한 일은 한 줄로 접혀 보이고, 누르면 실행한 명령과 출력이 그대로 펼쳐집니다.</div>
+                </>
+              )}
             </div>
           )}
           {entries.map((e) => <EntryView key={e.id} entry={e} workspaceId={workspace.id} workspaces={workspaces} conversation={conversation} />)}
@@ -461,12 +478,13 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       <div className="chat-foot">
         <div className="chat-col">
           {error && <div className="error chat-error">{error}</div>}
+          {banner}
           {showPeek && agentTerminalId && (
             <div className="peek">
               <div className="peek-head">
                 <span className="peek-title">{peekTitle}</span>
                 <span className="peek-hint">이 창을 누르고 ↑↓ 이동 · Enter 선택 · Esc 취소</span>
-                <button className="btn ghost" onClick={onShowTerminal}>크게 보기</button>
+                {onShowTerminal && <button className="btn ghost" onClick={onShowTerminal}>크게 보기</button>}
                 {!mustPeek && <button className="btn ghost" onClick={() => setPeek(null)}>닫기</button>}
               </div>
               <div className="peek-term"><TerminalPane key={agentTerminalId} terminalId={agentTerminalId} /></div>

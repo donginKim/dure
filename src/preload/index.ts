@@ -26,6 +26,12 @@ const api: DureApi = {
     remove: (id) => call('projects.remove', id),
     reopen: (id) => call('projects.reopen', id),
   },
+  coordinator: {
+    get: (projectId) => call('coordinator.get', projectId),
+    approve: (proposalId, decision) => call('coordinator.approve', proposalId, decision),
+    pickSpec: () => call('coordinator.pickSpec'),
+    reject: (proposalId, reason) => call('coordinator.reject', proposalId, reason),
+  },
   cleanup: {
     list: (projectId) => call('cleanup.list', projectId),
     restore: (id) => call('cleanup.restore', id),

@@ -32,7 +32,8 @@ const byCreated = <T extends { createdAt: number }>(a: T, b: T): number => a.cre
 export function buildTree(projects: Project[], workspaces: Workspace[]): TreeNode[] {
   return [...projects].sort(byCreated).map((project) => ({
     project,
-    workspaces: workspaces.filter((w) => w.projectId === project.id).sort(byCreated),
+    // 조율 에이전트는 목록에 보이지 않는다. 프로젝트 화면의 "조율" 탭에 있다.
+    workspaces: workspaces.filter((w) => w.projectId === project.id && w.role !== 'coordinator').sort(byCreated),
   }));
 }
 

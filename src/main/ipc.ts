@@ -4,7 +4,7 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, Settings, TodoAssignee, TodoPatch } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -43,6 +43,14 @@ export function registerIpc(core: Core): () => void {
       changed('projects');
     },
     'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
+    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId) }),
+    'coordinator.approve': (proposalId: string, decision: PlanDecision) => core.coordinator.approve(proposalId, decision),
+    'coordinator.pickSpec': async () => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const res = await dialog.showOpenDialog(win, { properties: ['openFile'], title: '기획서 파일 선택' });
+      return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
+    },
+    'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
     'cleanup.list': (projectId: string) => core.cleanup.list(projectId),
     'cleanup.restore': (id: string) => core.cleanup.restore(id),
     'cleanup.export': async (id: string) => {
@@ -79,9 +87,9 @@ export function registerIpc(core: Core): () => void {
       }
       changed('repos');
     },
-    'workspaces.list': (projectId: string) => core.workspaces.list(projectId),
+    'workspaces.list': (projectId: string) => core.workspaces.listAll(projectId),
     'workspaces.create': (input: CreateWorkspaceInput) => core.service.create(input),
-    'workspaces.remove': (id: string, options: { deleteWorktree: boolean }) => core.service.remove(id, options),
+    'workspaces.remove': (id: string, options: { deleteWorktree: boolean }) => core.service.remove(id, { deleteWorktree: Boolean(options?.deleteWorktree) }),
     'workspaces.uncommitted': (id: string) => core.service.uncommittedCount(id),
     'workspaces.interrupt': (id: string) => core.service.interrupt(id),
     'workspaces.stopAgent': (id: string) => core.service.stopAgent(id),
@@ -105,7 +113,7 @@ export function registerIpc(core: Core): () => void {
     'todos.remove': (id: string) => core.todos.remove(id, { actor: 'user' }),
     'todos.move': (id: string, direction: 'up' | 'down') => core.todos.move(id, direction),
     'todos.pending': (projectId: string) => Object.fromEntries(
-      core.workspaces.list(projectId).map((w) => [w.id, { count: core.todos.pendingCount(w.id), canNudge: core.service.canNudge(w.id) }]),
+      core.workspaces.listAll(projectId).map((w) => [w.id, { count: core.todos.pendingCount(w.id), canNudge: core.service.canNudge(w.id) }]),
     ),
     'todos.nudge': (workspaceId: string) => core.service.nudge(workspaceId),
     'messages.threads': (projectId: string) => core.messages.threads(projectId),
@@ -118,10 +126,11 @@ export function registerIpc(core: Core): () => void {
     'messages.pauseProject': (projectId: string, paused: boolean) => {
       core.messages.pauseProject(projectId, paused);
       // 전체 멈춤은 전달만 막는 것이 아니라 하던 일도 멈춘다.
-      if (paused) for (const w of core.workspaces.list(projectId)) core.service.interrupt(w.id);
+      // 조율 에이전트도 멈춘다.
+      if (paused) for (const w of core.workspaces.listAll(projectId)) core.service.interrupt(w.id);
     },
     'messages.resume': (projectId: string) => core.messages.userIntervened(projectId),
-    'messages.delivery': (projectId: string) => Object.fromEntries(core.workspaces.list(projectId).map((w) => [w.id, {
+    'messages.delivery': (projectId: string) => Object.fromEntries(core.workspaces.listAll(projectId).map((w) => [w.id, {
       state: core.delivery.state(w.id),
       waiting: core.messages.undelivered(w.id).length,
       held: core.messages.heldCount(w.id),
@@ -175,6 +184,7 @@ export function registerIpc(core: Core): () => void {
   const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
   const onChatChanged = (): void => changed('chat');
   const onCleanupChanged = (): void => changed('cleanup');
+  const onCoordinatorChanged = (): void => changed('coordinator');
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
   const onSettingsChanged = (): void => { changed('settings'); changed('messages'); };
   const onMessagesChanged = (): void => changed('messages');
@@ -189,6 +199,7 @@ export function registerIpc(core: Core): () => void {
   core.commit.on('changed', onCommitChanged);
   core.chat.on('changed', onChatChanged);
   core.cleanup.on('changed', onCleanupChanged);
+  core.coordinator.on('changed', onCoordinatorChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
 
@@ -202,6 +213,7 @@ export function registerIpc(core: Core): () => void {
     core.commit.off('changed', onCommitChanged);
     core.chat.off('changed', onChatChanged);
     core.cleanup.off('changed', onCleanupChanged);
+    core.coordinator.off('changed', onCoordinatorChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);
     for (const channel of IPC_CHANNELS) {

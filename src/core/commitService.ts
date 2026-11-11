@@ -28,6 +28,8 @@ export class CommitService extends EventEmitter {
   private mustGet(id: string): Workspace {
     const ws = this.d.workspaces.get(id);
     if (!ws) throw new Error(`워크스페이스가 없습니다: ${id}`);
+    // 조율 에이전트의 폴더는 저장소가 아니다. 그 폴더가 다른 저장소 안에 있으면 바깥 저장소에 커밋될 수 있다.
+    if (ws.role === 'coordinator') throw new Error('조율 에이전트에는 커밋할 저장소가 없습니다.');
     return ws;
   }
 

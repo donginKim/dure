@@ -131,6 +131,20 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  // 프로젝트 조율. 조율 에이전트는 role 이 coordinator 인 워크스페이스다: 저장소가 아니라 두레가 관리하는 폴더에서 돈다.
+  // 워크스페이스는 저장소를 가리켜야 하므로, 그 폴더를 화면에 보이지 않는 내부 저장소(internal)로 적어 둔다.
+  `
+  ALTER TABLE repos ADD COLUMN internal INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE workspaces ADD COLUMN role TEXT NOT NULL DEFAULT 'worker';
+  CREATE TABLE proposals (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    items TEXT NOT NULL,
+    note TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

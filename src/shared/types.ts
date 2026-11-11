@@ -33,9 +33,16 @@ export interface Repo {
 /** 등록된 저장소가 지금도 쓸 수 있는 상태인지. 화면이 등록 결과를 보여주는 데 쓴다. */
 export type RepoStatus = { ok: true; branch: string } | { ok: false; reason: string };
 
+/**
+ * worker: 저장소 하나의 작업 폴더에서 일하는 보통의 워크스페이스.
+ * coordinator: 프로젝트의 조율 에이전트. 프로젝트마다 하나이고, 저장소가 아니라 두레가 관리하는 폴더에서 돈다. 코드를 고치지 않는다.
+ */
+export type WorkspaceRole = 'worker' | 'coordinator';
+
 export interface Workspace {
   id: string;
   projectId: string;
+  role: WorkspaceRole;
   repoId: string;
   name: string;
   nameLocked: boolean;
@@ -373,4 +380,74 @@ export interface CompletionChoice {
    * 목록을 본 뒤에 생긴 변경을 모르고 지우면 안 된다.
    */
   seen: Record<string, number | null>;
+}
+
+/** 계획안에 든 TODO 하나. 승인하면 그대로 만들어진다. */
+export interface PlanTodo {
+  title: string;
+  detail: string;
+  /** agent: 그 워크스페이스의 에이전트가 할 일. user: 사용자가 할 일 (결정, 커밋, 배포 등) */
+  assignee: TodoAssignee;
+}
+
+/** 계획안에 든 워크스페이스 하나와 그 TODO */
+export interface ProposalItem {
+  name: string;
+  /** 등록된 저장소의 id */
+  repoId: string;
+  baseBranch: string;
+  /** 이 워크스페이스가 맡을 일 (한두 줄) */
+  role: string;
+  /** 이 워크스페이스에 만들 TODO */
+  todos: PlanTodo[];
+  /** 이미 있는 워크스페이스다: 새로 만들지 않고 TODO 만 더한다 */
+  existing: boolean;
+}
+
+/**
+ * 조율 에이전트가 기획서를 분석해 올린 계획안. 사용자가 검토하고 승인해야 만들어진다:
+ * 승인하면 두레가 워크스페이스(작업 폴더와 브랜치)와 TODO 를 화면에서 본 그대로 만든다.
+ */
+export interface Proposal {
+  id: string;
+  projectId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  /** 기획서를 정리한 글 (마크다운): 요구사항, 범위, 불확실한 점 */
+  summary: string;
+  items: ProposalItem[];
+  /** 프로젝트 전체의 TODO (어느 워크스페이스에도 속하지 않는 일, 사용자가 결정할 것) */
+  projectTodos: PlanTodo[];
+  /** 조율 에이전트가 덧붙인 설명 (왜 이렇게 나눴는지) */
+  note: string;
+  createdAt: number;
+}
+
+/** 사용자가 검토 화면에서 고친 최종 계획 */
+export interface PlanDecision {
+  items: ProposalItem[];
+  projectTodos: PlanTodo[];
+}
+
+/** 계획안을 승인해 만든 것 */
+export interface PlanResult {
+  created: Workspace[];
+  todos: number;
+}
+
+/** 사용자가 고른 기획서 파일 */
+export interface SpecFile {
+  path: string;
+  name: string;
+  /** 글 파일이면 그 내용. 글이 아니면(PDF 등) null: 에이전트가 경로로 직접 읽는다 */
+  text: string | null;
+  /** 너무 길어 뒤를 잘랐는가 */
+  truncated: boolean;
+}
+
+/** 프로젝트 화면의 "조율" 탭이 받는 것 */
+export interface CoordinatorInfo {
+  /** 조율 에이전트의 워크스페이스 (채팅 화면이 이것으로 대화한다) */
+  workspace: Workspace;
+  /** 승인을 기다리는 제안. 없으면 null */
+  proposal: Proposal | null;
 }

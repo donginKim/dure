@@ -2,7 +2,7 @@ import { deliveryLabel, deliveryNote, senderName, threadNotice, threadsFor } fro
 import type { Message, ProjectFlow, Thread, Workspace } from '@shared/types';
 
 const ws = (id: string, name: string): Workspace => ({
-  id, projectId: 'p', repoId: 'r', name, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
+  id, projectId: 'p', role: 'worker', repoId: 'r', name, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
   worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', status: 'stopped', createdAt: 0,
 });
 const msg = (id: string, threadId: string, from: Message['from'], to: string): Message => ({

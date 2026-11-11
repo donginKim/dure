@@ -3,7 +3,7 @@ import type { Project, Workspace } from '@shared/types';
 
 const project = (id: string, createdAt: number): Project => ({ id, name: id, createdAt, status: 'active', completedAt: null });
 const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
-  id, projectId, repoId: 'r', name: id, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
+  id, projectId, role: 'worker', repoId: 'r', name: id, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
   worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', status: 'stopped', createdAt,
 });
 

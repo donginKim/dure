@@ -32,6 +32,18 @@ const api: DureApi = {
     pickSpec: () => call('coordinator.pickSpec'),
     reject: (proposalId, reason) => call('coordinator.reject', proposalId, reason),
   },
+  db: {
+    list: (projectId) => call('db.list', projectId),
+    canStoreSecrets: () => call('db.canStoreSecrets'),
+    save: (input) => call('db.save', input),
+    remove: (id) => call('db.remove', id),
+    test: (id) => call('db.test', id),
+    tables: (id) => call('db.tables', id),
+    columns: (id, schema, table) => call('db.columns', id, schema, table),
+    query: (id, sql) => call('db.query', id, sql),
+    requests: (projectId) => call('db.requests', projectId),
+    decide: (requestId, allow, always) => call('db.decide', requestId, allow, always),
+  },
   cleanup: {
     list: (projectId) => call('cleanup.list', projectId),
     restore: (id) => call('cleanup.restore', id),

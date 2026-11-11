@@ -4,6 +4,7 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
   expect([...IPC_CHANNELS].sort()).toEqual([
     'projects.create', 'projects.list', 'projects.remove', 'projects.reopen',
     'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+    'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',
     'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
     'repos.add', 'repos.branches', 'repos.list', 'repos.pickFolder', 'repos.remove', 'repos.status',
     'terminals.buffer', 'terminals.kill', 'terminals.list', 'terminals.openShell', 'terminals.resize',

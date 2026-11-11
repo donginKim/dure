@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage } from 'electron';
 import { createCore, type Core } from '@core/index';
 import { resolveShellEnv } from '@core/shellEnv';
 import { registerIpc } from './ipc';
@@ -39,6 +39,14 @@ async function start(): Promise<void> {
       dataDir: process.env.DURE_DATA_DIR || app.getPath('userData'),
       worktreeRoot: process.env.DURE_WORKTREE_ROOT || join(homedir(), 'dure', 'worktrees'),
       repoRoot: process.env.DURE_REPO_ROOT || undefined,
+      // DB 비밀번호는 macOS 키체인의 열쇠로 암호화해 둔다. 쓸 수 없는 환경이면 저장을 거절한다 (평문으로 두지 않는다).
+      secrets: {
+        encrypt: (plain) => {
+          if (!safeStorage.isEncryptionAvailable()) throw new Error('이 환경에서는 비밀번호를 안전하게 저장할 수 없습니다 (키체인을 쓸 수 없음).');
+          return safeStorage.encryptString(plain).toString('base64');
+        },
+        decrypt: (stored) => safeStorage.decryptString(Buffer.from(stored, 'base64')),
+      },
       baseEnv: await resolveShellEnv(),
     });
   } catch (e) {

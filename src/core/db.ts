@@ -145,6 +145,23 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE db_connections (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    database TEXT NOT NULL DEFAULT '',
+    user TEXT NOT NULL,
+    ssl INTEGER NOT NULL DEFAULT 0,
+    agent_access TEXT NOT NULL DEFAULT 'ask',
+    secret TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    UNIQUE (project_id, name)
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

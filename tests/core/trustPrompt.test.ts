@@ -33,9 +33,17 @@ test('다른 폴더를 묻는 창에는 답하지 않는다', () => {
   expect(trustPrompt(dialog('no'), [''])).toBe('none');
 });
 
-test('커서가 안 보이거나 둘 다로 보이면 판단하지 않는다', () => {
+test('커서가 안 보이면 판단하지 않는다', () => {
   expect(trustPrompt(dialog('none'), [FOLDER])).toBe('none');
-  expect(trustPrompt(dialog('both'), [FOLDER])).toBe('none');
+  expect(trustPrompt(`${dialog('none')}\n ❯ 다른 무언가`, [FOLDER])).toBe('none');
+});
+
+test('바뀐 줄만 다시 그려져 옛 커서 표시가 남아 있으면 나중에 그려진 커서를 본다', () => {
+  // 실제 화면: 아래로 내리면 두 선택지 줄만 다시 그려진다
+  const moved = `${dialog('no')}\n   No, exit\n ❯ Yes, I trust this folder\n   Enter to confirm · Esc to cancel`;
+  expect(trustPrompt(moved, [FOLDER])).toBe('on-yes');
+  const movedBack = `${moved}\n ❯ No, exit\n   Yes, I trust this folder`;
+  expect(trustPrompt(movedBack, [FOLDER])).toBe('on-no');
 });
 
 test('표지가 하나라도 없으면 신뢰 창이 아니다', () => {

@@ -42,8 +42,11 @@ export function trustPrompt(screen: string, folders: string[]): TrustPrompt {
   // 경로는 화면 폭에 따라 줄이 나뉜다. 공백을 모두 빼고 견준다.
   const flat = squeeze(dialog);
   if (!folders.some((f) => f && flat.includes(squeeze(f)))) return 'none';
-  const yes = /❯\s*Yes, I trust this folder/.test(dialog);
-  const no = /❯\s*No, exit/.test(dialog);
-  if (yes === no) return 'none'; // 커서가 안 보이거나 둘 다로 보이면 판단하지 않는다
-  return yes ? 'on-yes' : 'on-no';
+  // 화면은 바뀐 줄만 다시 그려진다 (실험 15: 커서를 옮기면 옛 표시가 기록에 남는다). 가장 나중에 그려진 커서를 본다.
+  const cursor = dialog.lastIndexOf('❯');
+  if (cursor < 0) return 'none';
+  const after = dialog.slice(cursor + 1);
+  if (/^\s*Yes, I trust this folder/.test(after)) return 'on-yes';
+  if (/^\s*No, exit/.test(after)) return 'on-no';
+  return 'none';
 }

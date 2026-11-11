@@ -41,7 +41,13 @@
 | 12d | Codex 의 첫 프롬프트 인자 | `codex [OPTIONS] [PROMPT]` (도움말 기준, ⏳ 실행 안 함) | `codex --help` |
 | 13 | 실제 에이전트 둘로 장면 1 의 대화 부분이 되는가 | ✅ 프론트가 `message_send` → 꺼져 있던 백엔드가 그 메시지를 첫 프롬프트로 뜸 → 백엔드가 자료(`api-spec`, 파일 경로)를 올리고 답장 → 프론트가 답장을 받아 README 에 형식을 적고 TODO 를 추가하고 후속 질문을 보냄. 왕복 3건. 전체 멈춤을 누르자 작업 중이던 백엔드가 Interrupted 로 멈춤. 두 저장소에 두레가 남긴 파일 없음 | 검증 인스턴스 손 확인 |
 | 13a | 쉬는 중 확인이 왜 풀렸나 | 승인 요청이 아닌 `Notification` 이 오면 확인을 지우던 것이 원인으로 판단해 고침(⚠️ 그 알림의 실제 본문은 기록하지 못함). 고친 뒤에는 꺼진 쪽을 직접 시작해 답장이 전달되는 경로로 확인했고, 쉬는 중인 실제 에이전트를 써 넣어 깨우는 것은 실험 12b 로만 확인 | 같음 |
-| 14 | 여러 줄짜리 전달 글을 붙여 넣어 깨우면 `UserPromptSubmit` 의 `prompt` 가 어떻게 오는가 | ✅ `<pasted_content id="…">` 로 감싸여 온다. 글 앞머리로는 두레가 넣은 것인지 사용자가 넣은 것인지 가릴 수 없다. 에이전트는 내용을 읽고 지시대로 답했다 | `spikes/13-wake-multiline.mjs` |
+| 14 | 여러 줄짜리 전달 글을 붙여 넣어 깨우면 `UserPromptSubmit` 의 `prompt` 가 어떻게 오는가 | ✅ `<pasted_content id="…">` 로 감싸여 온다. 글 앞머리로는 두레가 넣은 것인지 사용자가 넣은 것인지 가릴 수 없다. 에이전트는 내용을 읽고 지시대로 답했다 | `spikes/13-wake-multiline.mjs` || 15 | Claude Code 대화 기록 파일(JSONL)에서 채팅에 쓸 것을 읽을 수 있는가 (Claude Code 2.1.322) | ✅ `type` 이 `user`(프롬프트 글 또는 `tool_result` 블록), `assistant`(`text`, `thinking`, `tool_use` 블록), `attachment`, `system` 인 줄에 다 있다. 줄마다 `uuid`, `timestamp`. 도구 호출과 결과는 `tool_use.id` = `tool_result.tool_use_id` 로 짝지어진다. 그 밖의 종류(`session-owner`, `atis-latch`, `bridge-session`, `tools-used`, `queue-operation` 등)가 절반 이상이라 모르는 줄은 건너뛰어야 한다 | `spikes/14-chat-source.mjs`, `tests/fixtures/transcript-basic.jsonl` |
+| 15a | 기록은 언제 쓰이는가 | ✅ 에이전트의 글은 쓰는 도중에는 기록되지 않고 한 덩어리가 끝난 뒤(관측: `Stop` hook 과 거의 같은 때) 한 줄로 기록된다. 즉 채팅 보기에서 글은 한 글자씩 흐르지 않고 덩어리로 나타난다. `tool_use` 줄은 `PreToolUse` hook 뒤 0.5초 안, `tool_result` 줄은 `PostToolUse` hook 뒤 0.5초 안에 보였다(0.5초 간격으로 봄). 쓰는 도중의 잘린 줄은 이 실험에서 한 번도 보지 못했다 | 같음, `spikes/out/14-lines.json` |
+| 15b | 사용자가 넣은 글과 두레가 넣은 글을 기록의 필드로 가릴 수 있는가 | ❌ 필드로는 못 가린다. 실행 인자, 한 줄 입력, 여러 줄 붙여넣기, `[두레]` 붙여넣기 모두 `promptSource: "typed"`, `origin: {"kind":"human"}`. 글 앞머리(`<pasted_content>` 감싸기를 벗긴 뒤 `[두레]` 로 시작하는지)로 가린다. 3줄 붙여넣기는 감싸이지 않았고 4줄짜리 `[두레]` 글은 감싸였다 | 같음 |
+| 15c | hook 이 넣은 글은 어떻게 기록되는가 | ✅ `additionalContext` 는 `attachment.type: "hook_additional_context"` 의 `content` 배열로. 같은 이벤트의 여러 hook 글이 한 배열에 함께 담긴다(사용자의 다른 도구가 넣은 글과 두레의 글이 섞여 있다). `Stop` 을 막으며 준 글은 `attachment.type: "hook_blocking_error"` 의 `blockingError.blockingError` 와, `isMeta: true` 인 `user` 줄(`Stop hook feedback:\n…`) 두 군데에 기록된다 | 같음 |
+| 15d | 작업 중에 써 넣은 글은 버려지는가 | ✅ 버려지지 않는다. Enter 를 친 순간 `UserPromptSubmit` hook 이 오고, 기록에는 `queue-operation`(enqueue) 줄이 생긴다. 진행 중인 도구가 끝나면 `attachment.type: "queued_command"`(`prompt`, 친 시각의 `timestamp`)로 같은 차례 안에 전달되고 에이전트가 반영했다. 따로 `user` 줄은 생기지 않는다 | 같음 |
+| 15e | 승인 창을 터미널 입력으로 답할 수 있는가 | ✅ 승인 창이 뜨면 `PreToolUse`(도구 이름과 입력) 뒤 약 6초 지나 `Notification`(`permission_prompt`)이 온다. 커서는 `1. Yes` 에 있고 `\r` 로 허용되어 `PostToolUse` → `Stop` 이 온다. `\x1b` 로 거부하면 **hook 이 하나도 오지 않는다**. 기록에는 `tool_result`(`is_error: true`, `toolDenialKind: "user-rejected"`)와 `[Request interrupted by user for tool use]` 줄이 남고 에이전트는 입력을 기다린다. 선택지는 명령에 따라 다르다(이번에는 `1. Yes` / `2. Yes, and don't ask again for: curl *` / `3. Yes, and switch to auto mode` / `4. No`) | 같음 |
+| 15f | 대화가 압축되거나 비워지면 기록 파일은 어떻게 되는가 | ✅ `/compact`: 같은 파일, 같은 세션 id 에 이어 쓴다. `system`/`compact_boundary` 줄 뒤에 `isCompactSummary: true` 인 `user` 줄(요약)이 온다. `/clear`: 새 세션 id 와 새 파일로 바뀌고 `SessionStart`(`source: "clear"`)의 `transcript_path` 가 새 파일을 가리킨다. 슬래시 명령의 흔적은 `<command-name>…`, `<local-command-stdout>…` 로 시작하는 `user` 줄로 남는다 | `spikes/14b-compact-clear.mjs` |
 
 ## 설계를 바꾸는 발견
 
@@ -50,6 +56,9 @@
 3. **새 작업 폴더마다 신뢰 창이 뜬다.** 두 에이전트 모두, 승인 생략 모드에서도 뜬다. 워크스페이스를 만든 뒤 첫 에이전트 시작은 사용자가 터미널에서 직접 눌러야 한다. 두레가 대신 누르지 않는다. 신뢰 기록은 에이전트가 자기 전역 설정(`~/.claude.json`, `~/.codex/config.toml`)에 스스로 쓴다.
 4. **`Stop` 신호만으로는 "쉬는 중" 을 다 잡지 못한다.** 중단과 모델 오류 때는 오지 않는다. 두레가 직접 중단시킨 경우는 두레가 상태를 바꾸면 되고, 그 밖에는 "한동안 신호가 없으면 상태 모름" 으로 두고 터미널 써 넣기를 하지 않는다.
 5. **Codex `ask` 모드에서는 서버 실행이 승인 없이 안 된다.** 장면 1에서 백엔드가 Codex이고 `ask` 모드면, 깨어난 에이전트가 서버를 띄우는 순간 승인을 기다리며 멈춘다. 두레는 이를 "사용자 기다림" 으로 보여줘야 한다. 끊김 없이 돌리려면 그 워크스페이스를 `bypass` 로 둬야 한다.
+
+- 승인 창을 Esc 로 거부하면 hook 이 오지 않아(15e), hook 만 보는 상태 표시는 "승인 대기" 에 머문다. 사용자가 터미널에서 직접 거부해도 같다. 대화 기록의 중단 줄을 읽어 상태를 되돌린다(3C).
+- 에이전트의 글은 덩어리가 끝난 뒤에야 기록된다(15a). 채팅 보기는 글이 한 글자씩 흐르는 화면이 될 수 없다. 흐르는 모습이 필요하면 터미널 보기를 쓴다.
 
 ## 확정된 실행 방식
 

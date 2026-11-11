@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Project, Repo, Workspace } from '@shared/types';
+import { ProjectsHome } from './components/ProjectsHome';
 import { ProjectView } from './components/ProjectView';
 import { Sidebar } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
@@ -70,12 +71,7 @@ export function App() {
             onSelect={setSelection}
           />
         )}
-        {!node && !workspace && (
-          <div className="empty">
-            왼쪽에서 프로젝트나 워크스페이스를 고르세요.<br />
-            프로젝트를 고르면 프로젝트에, 워크스페이스를 고르면 그 에이전트에게 일을 시킵니다.
-          </div>
-        )}
+        {!node && !workspace && <ProjectsHome tree={tree} repos={repos} onSelect={setSelection} />}
       </main>
     </div>
   );

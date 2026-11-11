@@ -6,7 +6,9 @@ export function Sidebar({ tree, repos, selection, onSelect, onCreateProject }: {
   tree: TreeNode[]; repos: Repo[]; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState('');
+  const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const repoName = (id: string): string => repos.find((r) => r.id === id)?.name ?? '';
 
   const create = async (): Promise<void> => {
@@ -14,6 +16,7 @@ export function Sidebar({ tree, repos, selection, onSelect, onCreateProject }: {
     try {
       await onCreateProject(name);
       setName('');
+      setAdding(false);
       setError('');
     } catch (e) {
       setError((e as Error).message);
@@ -23,41 +26,60 @@ export function Sidebar({ tree, repos, selection, onSelect, onCreateProject }: {
   return (
     <aside className="sidebar">
       <div className="sidebar-head">
-        <div className="brand">두레<small>dure</small></div>
+        <button className="brand" title="프로젝트 전체 보기" onClick={() => onSelect(null)}>두레<small>dure</small></button>
       </div>
-      <div className="tree">
-        {tree.length === 0 && <div className="tree-empty" style={{ paddingLeft: 8 }}>프로젝트가 없습니다. 아래에서 만드세요.</div>}
-        {tree.map(({ project, workspaces }) => (
-          <div key={project.id}>
-            <div
-              className={`tree-project${selection?.type === 'project' && selection.id === project.id ? ' selected' : ''}`}
-              onClick={() => onSelect({ type: 'project', id: project.id })}
-            >
-              {project.name}
-            </div>
-            {workspaces.length === 0 && <div className="tree-empty">워크스페이스 없음 · 프로젝트를 눌러 만드세요</div>}
-            {workspaces.map((w) => (
-              <div
-                key={w.id}
-                className={`tree-ws${selection?.type === 'workspace' && selection.id === w.id ? ' selected' : ''}`}
-                title={`저장소 ${repoName(w.repoId)} · ${w.branch} · ${STATUS_LABEL[w.status]}`}
-                onClick={() => onSelect({ type: 'workspace', id: w.id, projectId: project.id })}
-              >
-                <span className={`dot ${w.status}`} />
-                <div style={{ minWidth: 0 }}>
-                  <div className="ws-name">{w.name}</div>
-                  <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
+      <div className="side-section">
+        <button className={`side-title${selection === null ? ' selected' : ''}`} title="프로젝트 전체 보기" onClick={() => onSelect(null)}>
+          프로젝트 <span className="count">{tree.length}</span>
+        </button>
+        <button className="btn ghost" title="새 프로젝트 만들기" onClick={() => setAdding((v) => !v)}>+ 새 프로젝트</button>
       </div>
+      {adding && (
+        <form className="new-project" onSubmit={(e) => { e.preventDefault(); void create(); }}>
+          <input type="text" autoFocus value={name} placeholder="프로젝트 이름 (예: 쇼핑몰)" onChange={(e) => setName(e.target.value)} />
+          <button className="btn primary" type="submit" disabled={!name.trim()}>만들기</button>
+        </form>
+      )}
       {error && <div className="error" style={{ margin: '0 10px 8px' }}>{error}</div>}
-      <form className="new-project" onSubmit={(e) => { e.preventDefault(); void create(); }}>
-        <input type="text" value={name} placeholder="새 프로젝트 이름" onChange={(e) => setName(e.target.value)} />
-        <button className="btn" type="submit" disabled={!name.trim()}>추가</button>
-      </form>
+      <div className="tree">
+        {tree.length === 0 && <div className="tree-empty" style={{ paddingLeft: 10 }}>프로젝트가 없습니다. 위의 "+ 새 프로젝트"로 만드세요.</div>}
+        {tree.map(({ project, workspaces }) => {
+          const closed = collapsed[project.id] === true;
+          return (
+            <div key={project.id} className="tree-group">
+              <div
+                className={`tree-project${selection?.type === 'project' && selection.id === project.id ? ' selected' : ''}`}
+                title="프로젝트 화면 열기: 저장소와 워크스페이스 관리"
+                onClick={() => onSelect({ type: 'project', id: project.id })}
+              >
+                <span
+                  className="chev"
+                  title={closed ? '펼치기' : '접기'}
+                  onClick={(e) => { e.stopPropagation(); setCollapsed((c) => ({ ...c, [project.id]: !closed })); }}
+                >{closed ? '▸' : '▾'}</span>
+                <span className="folder" />
+                <span className="pname">{project.name}</span>
+                <span className="count" title="워크스페이스 수">{workspaces.length}</span>
+              </div>
+              {!closed && workspaces.length === 0 && <div className="tree-empty">워크스페이스 없음 · 프로젝트를 눌러 만드세요</div>}
+              {!closed && workspaces.map((w) => (
+                <div
+                  key={w.id}
+                  className={`tree-ws${selection?.type === 'workspace' && selection.id === w.id ? ' selected' : ''}`}
+                  title={`저장소 ${repoName(w.repoId)} · ${w.branch} · ${STATUS_LABEL[w.status]}`}
+                  onClick={() => onSelect({ type: 'workspace', id: w.id, projectId: project.id })}
+                >
+                  <span className={`dot ${w.status}`} />
+                  <div style={{ minWidth: 0 }}>
+                    <div className="ws-name">{w.name}</div>
+                    <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
     </aside>
   );
 }

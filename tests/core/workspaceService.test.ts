@@ -293,3 +293,61 @@ test('두레가 꺼진 뒤 hook.sh 를 실행해도 종료 코드 0 이고 출�
   expect(await runHook(hook, 'Stop')).toBe('');
   await boot(); // afterEach 의 dispose 용
 });
+
+describe('nudge (에이전트에게 알리기)', () => {
+  // 입력을 그대로 출력하는 가짜 에이전트
+  const echoAgent = (name: string): void => {
+    writeFileSync(join(fakeBin, name), '#!/bin/sh\nexec cat\n');
+    chmodSync(join(fakeBin, name), 0o755);
+  };
+
+  test('쉬는 중인 claude 에 미전달 변경이 있으면 터미널에 [두레] 글이 들어가고 미전달 변경이 비워진다', async () => {
+    echoAgent('claude');
+    const ws = await create({ name: 'nudge-ok' });
+    const t = await core.service.startAgent(ws.id, SIZE);
+    core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+    expect(core.service.canNudge(ws.id)).toBe(true);
+    await core.service.nudge(ws.id);
+    await until(() => core.pty.buffer(t.id).includes('추가됨: "A"'));
+    const out = core.pty.buffer(t.id);
+    expect(out).toContain('[두레] 사용자가 TODO를 바꿨다');
+    expect(core.todos.pendingCount(ws.id)).toBe(0);
+    expect(core.workspaces.get(ws.id)?.status).toBe('working'); // 같은 내용을 두 번 누르지 못하게
+    expect(core.service.canNudge(ws.id)).toBe(false);
+  });
+
+  test('상태가 working 이면 오류이고 미전달 변경이 남는다', async () => {
+    echoAgent('claude');
+    const ws = await create({ name: 'nudge-busy' });
+    await core.service.startAgent(ws.id, SIZE);
+    core.workspaces.update(ws.id, { status: 'working' });
+    core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+    await expect(core.service.nudge(ws.id)).rejects.toThrow('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
+    expect(core.todos.pendingCount(ws.id)).toBe(1);
+  });
+
+  test('에이전트가 꺼져 있으면 오류', async () => {
+    const ws = await create({ name: 'nudge-off' });
+    core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+    expect(core.service.canNudge(ws.id)).toBe(false);
+    await expect(core.service.nudge(ws.id)).rejects.toThrow();
+    expect(core.todos.pendingCount(ws.id)).toBe(1);
+  });
+
+  test('codex 워크스페이스는 오류 (상태를 확인할 수 없다)', async () => {
+    echoAgent('codex');
+    const ws = await create({ name: 'nudge-codex', agentKind: 'codex' });
+    await core.service.startAgent(ws.id, SIZE);
+    core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+    expect(core.service.canNudge(ws.id)).toBe(false);
+    await expect(core.service.nudge(ws.id)).rejects.toThrow();
+    expect(core.todos.pendingCount(ws.id)).toBe(1);
+  });
+
+  test('미전달 변경이 없으면 오류', async () => {
+    echoAgent('claude');
+    const ws = await create({ name: 'nudge-none' });
+    await core.service.startAgent(ws.id, SIZE);
+    await expect(core.service.nudge(ws.id)).rejects.toThrow();
+  });
+});

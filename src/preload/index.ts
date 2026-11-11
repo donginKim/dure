@@ -50,6 +50,15 @@ const api: DureApi = {
     onData: (cb) => subscribe<[string, string, number]>(IPC_EVENTS.terminalData, cb),
     onExit: (cb) => subscribe<[string, number]>(IPC_EVENTS.terminalExit, cb),
   },
+  todos: {
+    list: (projectId) => call('todos.list', projectId),
+    add: (input) => call('todos.add', input),
+    update: (id, patch) => call('todos.update', id, patch),
+    remove: (id) => call('todos.remove', id),
+    move: (id, direction) => call('todos.move', id, direction),
+    pending: (projectId) => call('todos.pending', projectId),
+    nudge: (workspaceId) => call('todos.nudge', workspaceId),
+  },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
 };
 

@@ -9,7 +9,7 @@ import type { Git } from './git';
 import type { PtyManager } from './pty';
 import { slugify, uniqueSlug } from './slug';
 import type { ProjectStore, RepoStore, WorkspaceStore } from './stores';
-import type { TodoService } from './todos';
+import { pendingMessage, type TodoService } from './todos';
 
 export type { CreateWorkspaceInput };
 
@@ -193,6 +193,32 @@ export class WorkspaceService extends EventEmitter {
     this.d.workspaces.update(id, { status: 'idle' });
     this.emit('changed', id);
     return terminal;
+  }
+
+  /**
+   * 쉬는 에이전트에게 미전달 TODO 변경을 바로 알릴 수 있는가.
+   * 터미널에 글을 써 넣는 방식이라, hook 신호로 쉬는 중임이 확인된 Claude Code 에서만 허용한다.
+   * (선택 창이 떠 있을 수 있는 터미널에 써 넣으면 의도하지 않은 동작이 실행된다.)
+   */
+  canNudge(id: string): boolean {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || ws.agentKind !== 'claude' || ws.status !== 'idle') return false;
+    if (!this.d.pty.list(id).some((t) => t.kind === 'agent')) return false;
+    return this.d.todos.pendingCount(id) > 0;
+  }
+
+  /** 미전달 TODO 변경을 쉬는 에이전트의 터미널에 써 넣어 깨운다. */
+  async nudge(id: string): Promise<void> {
+    if (!this.canNudge(id)) throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
+    const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent')!;
+    const message = pendingMessage(this.d.todos.takePending(id));
+    // 쓰기 전에 상태를 바꿔 같은 내용을 두 번 보내지 못하게 한다.
+    this.d.workspaces.update(id, { status: 'working' });
+    this.emit('changed', id);
+    // 여러 줄은 붙여넣기로 묶어 넣고, 잠시 뒤 Enter 를 따로 보낸다 (실험 03).
+    this.d.pty.write(terminal.id, `\x1b[200~${message}\x1b[201~`);
+    await new Promise((r) => setTimeout(r, 400));
+    this.d.pty.write(terminal.id, '\r');
   }
 
   /** 작업 폴더에 커밋하지 않은 변경이 몇 건인지. 폴더가 없으면 0. */

@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
-import type { CreateWorkspaceInput } from '@shared/types';
+import type { CreateWorkspaceInput, TodoAssignee, TodoPatch } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -72,6 +72,16 @@ export function registerIpc(core: Core): () => void {
     'terminals.resize': (id: string, cols: number, rows: number) => core.pty.resize(id, cols, rows),
     'terminals.kill': (id: string) => { core.pty.kill(id); changed('terminals'); },
     'terminals.buffer': (id: string) => core.pty.snapshot(id),
+    // 화면에서 온 TODO 변경은 모두 사용자의 변경이다.
+    'todos.list': (projectId: string) => core.todos.listProject(projectId),
+    'todos.add': (i: { projectId: string; workspaceId: string | null; title: string; assignee?: TodoAssignee }) => core.todos.add(i, 'user'),
+    'todos.update': (id: string, patch: TodoPatch) => core.todos.update(id, patch, { actor: 'user' }),
+    'todos.remove': (id: string) => core.todos.remove(id, { actor: 'user' }),
+    'todos.move': (id: string, direction: 'up' | 'down') => core.todos.move(id, direction),
+    'todos.pending': (projectId: string) => Object.fromEntries(
+      core.workspaces.list(projectId).map((w) => [w.id, { count: core.todos.pendingCount(w.id), canNudge: core.service.canNudge(w.id) }]),
+    ),
+    'todos.nudge': (workspaceId: string) => core.service.nudge(workspaceId),
   };
 
   for (const channel of IPC_CHANNELS) {
@@ -94,15 +104,19 @@ export function registerIpc(core: Core): () => void {
     broadcast(IPC_EVENTS.terminalExit, id, exitCode);
     changed('terminals');
   };
-  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); };
+  // 상태가 바뀌면 '알리기' 가능 여부도 바뀌므로 todos 도 함께 알린다.
+  const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); };
+  const onTodosChanged = (): void => changed('todos');
   core.pty.on('data', onData);
   core.pty.on('exit', onExit);
   core.service.on('changed', onWorkspaceChanged);
+  core.todos.on('changed', onTodosChanged);
 
   return () => {
     core.pty.off('data', onData);
     core.pty.off('exit', onExit);
     core.service.off('changed', onWorkspaceChanged);
+    core.todos.off('changed', onTodosChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));
       else ipcMain.removeHandler(ipcName(channel));

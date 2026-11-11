@@ -1,6 +1,6 @@
-import type { CreateWorkspaceInput, Project, Repo, RepoStatus, TerminalInfo, Workspace } from './types';
+import type { CreateWorkspaceInput, Project, Repo, RepoStatus, TerminalInfo, Todo, TodoAssignee, TodoPatch, Workspace } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos';
 export interface TerminalSize { cols: number; rows: number }
 
 /** 화면(renderer)이 `window.dure` 로 쓰는 API. */
@@ -38,6 +38,17 @@ export interface DureApi {
     onData(cb: (id: string, chunk: string, end: number) => void): () => void;
     onExit(cb: (id: string, exitCode: number) => void): () => void;
   };
+  /** TODO. 화면에서 온 변경은 모두 사용자의 변경으로 기록된다. */
+  todos: {
+    list(projectId: string): Promise<Todo[]>;
+    add(input: { projectId: string; workspaceId: string | null; title: string; assignee?: TodoAssignee }): Promise<Todo>;
+    update(id: string, patch: TodoPatch): Promise<Todo>;
+    remove(id: string): Promise<void>;
+    move(id: string, direction: 'up' | 'down'): Promise<void>;
+    /** 워크스페이스 id → 에이전트에게 아직 전달되지 않은 변경 수, 그리고 바로 알릴 수 있는지 */
+    pending(projectId: string): Promise<Record<string, { count: number; canNudge: boolean }>>;
+    nudge(workspaceId: string): Promise<void>;
+  };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
 }
 
@@ -48,6 +59,7 @@ export const IPC_CHANNELS = [
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
+  'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.pending', 'todos.nudge',
 ] as const;
 export type IpcChannel = (typeof IPC_CHANNELS)[number];
 

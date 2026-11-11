@@ -36,6 +36,8 @@ export interface AgentLaunchInput {
   resumeSessionId?: string;
   /** 설정에서 고른 모델 (Claude Code). 없으면 Claude Code 의 기본 */
   model?: string;
+  /** 설정에서 고른 effort (Claude Code). 없으면 Claude Code 의 기본 */
+  effort?: string;
   /** 설정에서 준 추가 인자. 두레가 정하는 인자와 겹치지 않는 것만 온다 (설정에서 걸러진다) */
   extraArgs?: string[];
 }
@@ -66,6 +68,7 @@ const toml = (s: string): string => JSON.stringify(s);
 export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
   const launch = buildBase(i);
   if (i.kind === 'claude' && i.model) launch.args.push('--model', i.model);
+  if (i.kind === 'claude' && i.effort) launch.args.push('--effort', i.effort);
   if (i.extraArgs?.length) launch.args.push(...i.extraArgs);
   if (i.headless) {
     if (i.kind !== 'claude') throw new Error('채팅 방식은 Claude Code 만 지원합니다.');

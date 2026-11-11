@@ -2,9 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace, Settings } from '@shared/types';
+import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace, Settings, ModelChoice } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
-import { buildAgentLaunch } from './agents/launch';
+import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
 import type { ChatEngine } from './chat/engine';
@@ -119,6 +119,15 @@ export class WorkspaceService extends EventEmitter {
     const found = findExecutable(kind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
     if (!found) throw new AgentNotInstalledError(kind);
     return found;
+  }
+
+  /** Claude Code 에게 모델 목록을 물어 온다 (설정 화면용). 워크스페이스와 무관하게 잠깐 띄웠다 끈다. */
+  async loadModels(): Promise<ModelChoice[]> {
+    if (!this.engine) return [];
+    if (this.detached) return this.engine.models();
+    const executable = this.agentExecutable('claude', this.settings());
+    mkdirSync(this.d.dataDir, { recursive: true });
+    return this.engine.probeModels({ command: executable, args: [...HEADLESS_ARGS], cwd: this.d.dataDir, env: { ...this.d.baseEnv } });
   }
 
   /** 에이전트가 살아 있는가 (터미널 방식이든 채팅 방식이든). */
@@ -434,6 +443,7 @@ export class WorkspaceService extends EventEmitter {
       headless,
       resumeSessionId,
       model: settings.claudeModel || undefined,
+      effort: settings.claudeEffort || undefined,
       extraArgs,
     });
 

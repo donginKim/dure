@@ -36,8 +36,8 @@ export interface Core {
   chat: ChatService;
   engine: ChatEngine;
   settings: SettingsService;
-  /** 설정 화면이 고르게 보여줄 모델 목록 (채팅 방식의 에이전트가 한 번이라도 떠야 채워진다) */
-  models(): ModelChoice[];
+  /** 설정 화면이 고르게 보여줄 모델 목록. 받아 둔 것이 없으면 Claude Code 에게 물어 온다. refresh: 받아 둔 것이 있어도 다시 묻는다 */
+  models(refresh?: boolean): Promise<ModelChoice[]>;
   /** 채팅 화면이 받는 것: 대화, 쓰는 중인 글, 승인·질문 대기 */
   chatView(workspaceId: string): ChatView;
   slashCommands(workspaceId: string): SlashCommand[];
@@ -156,6 +156,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
   });
   service.attachEngine(engine);
+  // 받아 둔 모델 목록은 저장해 두고, 다음에 켰을 때 곧바로 보인다.
+  engine.seedModels(settings.savedModels());
+  engine.on('models', (models: ModelChoice[]) => { try { settings.saveModels(models); } catch { /* 닫는 중 */ } });
   // 전달이 실패하면 메시지는 미전달로 되돌아가고 이유가 delivery.error 에 남아 화면에 보인다. 여기서는 오류를 삼킨다.
   const kick = (workspaceId: string): void => { delivery.kick(workspaceId).catch(() => undefined); };
   const onSent = (m: { toWorkspaceId: string }): void => kick(m.toWorkspaceId);
@@ -171,7 +174,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   let disposed = false;
   return {
     projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, commitDrafts, commit,
-    models: () => engine.models(),
+    models: async (refresh) => (engine.models().length > 0 && !refresh ? engine.models() : service.loadModels()),
     chatView(workspaceId) {
       const snap = chat.snapshot(workspaceId);
       const ws = workspaces.get(workspaceId);

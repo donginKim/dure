@@ -6,6 +6,7 @@ import { openDatabase } from './db';
 import { handleHook } from './hooks';
 import { createGit, type Git } from './git';
 import { startMcpServer } from './mcp/server';
+import { todoTools } from './mcp/tools/todo';
 import { workspaceTools } from './mcp/tools/workspace';
 import { PtyManager } from './pty';
 import { ProjectStore, RepoStore, WorkspaceStore } from './stores';
@@ -58,7 +59,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const mcp = await startMcpServer({
     workspaces, projects, repos, todos,
     onHook: (workspace, event, payload) => handleHook({ workspaces, todos, onStatus: (id) => onStatus(id) }, workspace, event, payload),
-  }, [workspaceTools]);
+  }, [workspaceTools, todoTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });

@@ -115,3 +115,11 @@ test('codex: 실행 정보는 hook 과 무관하다', () => {
   expect(l.files).toEqual([]);
   expect(l.args.join(' ')).not.toContain('hook');
 });
+
+test('지침에 두레 TODO 사용 문단이 있다', () => {
+  const text = baseInstructions({ name: 'w' } as Workspace, { name: 'p' } as Project);
+  expect(text).toContain('두레의 TODO 로 관리하라');
+  expect(text).toContain('todo_add');
+  expect(text).toContain('todo_list 로 목록과 userChanges 를 확인하라');
+  expect(text).toContain('assignee 를 user 로 적어라');
+});

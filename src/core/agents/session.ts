@@ -11,7 +11,8 @@ export interface SessionSpawn {
   env: Record<string, string>;
 }
 
-const MAX_LINE = 64 << 20; // 줄바꿈 없이 이보다 길어지면 버린다
+/** 줄바꿈 없이 이보다 길어지면 그 줄을 버린다. 한 줄이 끝없이 오면 메모리가 계속 찬다 */
+export const MAX_LINE = 16 << 20;
 const STDERR_KEEP = 4000;
 
 /**
@@ -22,13 +23,16 @@ const STDERR_KEEP = 4000;
 export class AgentSession extends EventEmitter {
   private readonly child: ChildProcessWithoutNullStreams;
   private buffer = '';
+  /** 너무 긴 줄을 버리는 중: 다음 줄바꿈까지 받은 것을 버린다 */
+  private skipping = false;
   private stderr = '';
   private exited = false;
   private readonly waiting = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
 
   constructor(spec: SessionSpawn) {
     super();
-    this.child = spawn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    // 자기 프로세스 묶음으로 띄운다: 끌 때 에이전트가 띄운 자식(개발 서버, 테스트 등)까지 함께 끝낼 수 있다.
+    this.child = spawn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
     this.child.stdout.setEncoding('utf8');
     this.child.stderr.setEncoding('utf8');
     this.child.stdout.on('data', (chunk: string) => this.onData(chunk));
@@ -48,6 +52,13 @@ export class AgentSession extends EventEmitter {
   }
 
   private onData(chunk: string): void {
+    if (this.skipping) {
+      // 버리는 줄의 나머지: 줄바꿈이 올 때까지 쌓지 않는다.
+      const end = chunk.indexOf('\n');
+      if (end < 0) return;
+      this.skipping = false;
+      chunk = chunk.slice(end + 1);
+    }
     this.buffer += chunk;
     let at: number;
     while ((at = this.buffer.indexOf('\n')) >= 0) {
@@ -55,7 +66,7 @@ export class AgentSession extends EventEmitter {
       this.buffer = this.buffer.slice(at + 1);
       if (line.trim()) this.onLine(line);
     }
-    if (this.buffer.length > MAX_LINE) this.buffer = '';
+    if (this.buffer.length > MAX_LINE) { this.buffer = ''; this.skipping = true; }
   }
 
   private onLine(line: string): void {
@@ -83,6 +94,8 @@ export class AgentSession extends EventEmitter {
     this.exited = true;
     for (const [, w] of this.waiting) { clearTimeout(w.timer); w.reject(new Error('에이전트가 종료되었습니다.')); }
     this.waiting.clear();
+    // 에이전트가 스스로 끝났어도 그 자식이 남아 있을 수 있다: 묶음에 끝내라고 알린다.
+    try { if (this.child.pid) process.kill(-this.child.pid, 'SIGTERM'); } catch { /* 남은 것이 없음 */ }
     this.emit('exit', code, stderr.slice(-STDERR_KEEP));
   }
 
@@ -128,8 +141,13 @@ export class AgentSession extends EventEmitter {
   kill(): void {
     if (this.exited) return;
     try { this.child.stdin.end(); } catch { /* 이미 닫힘 */ }
-    const t = setTimeout(() => { if (!this.exited) this.child.kill('SIGKILL'); }, 2000);
+    // 묶음 전체에 보낸다 (음수 pid). 에이전트가 끝난 뒤에도 자식이 남아 있을 수 있으므로, 끝난 뒤의 강제 종료도 묶음에 보낸다.
+    const pid = this.child.pid;
+    const signal = (sig: NodeJS.Signals): void => {
+      try { if (pid) process.kill(-pid, sig); else this.child.kill(sig); } catch { try { this.child.kill(sig); } catch { /* 이미 끝남 */ } }
+    };
+    const t = setTimeout(() => signal('SIGKILL'), 2000);
     t.unref();
-    this.child.kill('SIGTERM');
+    signal('SIGTERM');
   }
 }

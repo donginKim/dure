@@ -106,3 +106,49 @@ test('없는 실행 파일이면 exit 이 난다 (던지지 않는다)', async (
   await until(() => got);
   expect(s.alive).toBe(false);
 });
+
+test('끄면 에이전트가 띄운 자식 프로세스까지 끝난다', async () => {
+  const dir = tempDir();
+  const pidFile = join(dir, 'child.pid');
+  const parent = join(dir, 'parent.js');
+  // 자식은 SIGTERM 을 무시하지 않는 보통의 오래 도는 프로세스다 (개발 서버 같은 것).
+  writeFileSync(parent, `
+const { spawn } = require('node:child_process');
+const child = spawn('/bin/sh', ['-c', 'sleep 300'], { stdio: 'ignore' });
+require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+process.stdout.write(JSON.stringify({ type: 'system', subtype: 'init' }) + '\\n');
+process.stdin.resume();
+`);
+  const s = new AgentSession({ command: process.execPath, args: [parent], cwd: dir, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } as Record<string, string> });
+  const got: AgentEvent[] = [];
+  s.on('event', (e: AgentEvent) => got.push(e));
+  await until(() => got.length >= 1);
+  const childPid = Number((await import('node:fs')).readFileSync(pidFile, 'utf8'));
+  const aliveNow = (pid: number): boolean => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  expect(aliveNow(childPid)).toBe(true);
+  s.kill();
+  await until(() => !s.alive && !aliveNow(childPid), 5000);
+  expect(aliveNow(childPid)).toBe(false);
+});
+
+test('줄바꿈 없이 너무 긴 줄은 버리고, 그 뒤의 줄은 정상으로 받는다', async () => {
+  const dir = tempDir();
+  const big = join(dir, 'big.js');
+  writeFileSync(big, `
+const chunk = 'x'.repeat(1 << 20);
+let n = 0;
+const more = () => {
+  if (n++ < 18) { process.stdout.write(chunk, more); return; }
+  process.stdout.write('tail of the long line\\n' + JSON.stringify({ type: 'result', result: 'after' }) + '\\n');
+};
+more();
+process.stdin.resume();
+`);
+  const s = new AgentSession({ command: process.execPath, args: [big], cwd: dir, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } as Record<string, string> });
+  const got: AgentEvent[] = [];
+  s.on('event', (e: AgentEvent) => got.push(e));
+  await until(() => got.length >= 1, 15000);
+  expect(got).toEqual([{ type: 'result', result: 'after' }]);
+  expect((s as unknown as { buffer: string }).buffer.length).toBeLessThan(1 << 20);
+  s.kill();
+}, 20000);

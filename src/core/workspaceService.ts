@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { USER_NAME } from '@shared/messages';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -225,6 +226,7 @@ export class WorkspaceService extends EventEmitter {
     const name = String(raw ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, MAX_NAME);
     if (!name) throw new Error('이름이 비어 있습니다.');
     if (name === COORDINATOR_NAME) throw new Error(`"${COORDINATOR_NAME}" 은 조율 에이전트의 이름이라 쓸 수 없습니다.`);
+    if (name === USER_NAME) throw new Error(`"${USER_NAME}" 는 에이전트가 사용자를 가리키는 이름이라 쓸 수 없습니다.`);
     // 이름은 에이전트끼리 서로를 가리키는 데 쓴다: 바꾼 이름이 다른 워크스페이스와 같으면 메시지를 보낼 수 없게 된다.
     if (this.d.workspaces.list(ws.projectId).some((w) => w.id !== ws.id && w.name === name)) throw new Error(`이미 있는 워크스페이스 이름입니다: ${name}`);
     return name;
@@ -439,6 +441,7 @@ export class WorkspaceService extends EventEmitter {
     const typed = i.name?.trim();
     // 이름은 에이전트끼리 서로를 가리키는 데 쓴다: 조율 에이전트의 이름은 쓸 수 없다 (조율인 척하는 워크스페이스가 생기지 않게).
     if (typed === COORDINATOR_NAME) throw new Error(`"${COORDINATOR_NAME}" 은 조율 에이전트의 이름이라 쓸 수 없습니다.`);
+    if (typed === USER_NAME) throw new Error(`"${USER_NAME}" 는 에이전트가 사용자를 가리키는 이름이라 쓸 수 없습니다.`);
     const name = typed || `${repo.name}-${this.d.workspaces.list(project.id).length + 1}`;
     const settings = this.settings();
     // 작업 폴더 위치: 설정에 있으면 그곳, 없으면 기본 위치. 이미 만든 워크스페이스는 옮기지 않는다.

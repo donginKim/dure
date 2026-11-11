@@ -22,8 +22,8 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
     // 완료된 프로젝트는 현황부터 보인다 ("다시 열기" 가 거기 있다).
     if (project.status === 'done') return 'status';
     try { const v = window.localStorage.getItem(tabKey); if (v === 'coord' || v === 'status') return v; } catch { /* 기억하지 못해도 된다 */ }
-    // 저장소가 없으면 조율 에이전트가 할 수 있는 일이 없다. 현황에서 저장소부터 등록한다.
-    return repos.length === 0 ? 'status' : 'coord';
+    // 저장소가 없어도 조율에서 시작할 수 있다 (계획안이 새 저장소를 만든다).
+    return 'coord';
   });
   const switchTab = (next: 'coord' | 'status'): void => { setTab(next); try { window.localStorage.setItem(tabKey, next); } catch { /* 위와 같다 */ } };
   const [statuses, setStatuses] = useState<Record<string, RepoStatus>>({});

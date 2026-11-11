@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CoordinatorInfo, PlanDecision, PlanTodo, Project, Proposal, ProposalItem, Repo, Workspace } from '@shared/types';
+import { isNewRepoId, newRepoId, newRepoName } from '@shared/plan';
+import type { CoordinatorInfo, PlanDecision, PlanRepo, PlanTodo, Project, Proposal, ProposalItem, Repo, Workspace } from '@shared/types';
 import { approveLabel, planCounts, planProblem, specMessage, tidyPlan } from '../planView';
 import { STATUS_LABEL } from '../tree';
 import { ChatPane } from './ChatPane';
@@ -35,8 +36,8 @@ function TodoEditor({ todos, onChange, agentLabel }: { todos: PlanTodo[]; onChan
  * 계획안 검토 화면. 조율 에이전트가 기획서를 분석해 올린 것을 보여 준다: 기획서 정리, 만들 워크스페이스, TODO.
  * 여기서 고치고 승인해야 만들어진다. 승인하면 두레가 본 그대로 만든다.
  */
-function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Repo[]; onBack: () => void }) {
-  const [plan, setPlan] = useState<PlanDecision>({ items: proposal.items, projectTodos: proposal.projectTodos });
+function PlanReview({ proposal, repos, newRepoDir, onBack }: { proposal: Proposal; repos: Repo[]; newRepoDir: string; onBack: () => void }) {
+  const [plan, setPlan] = useState<PlanDecision & { newRepos: PlanRepo[] }>({ newRepos: proposal.newRepos, items: proposal.items, projectTodos: proposal.projectTodos });
   const [branches, setBranches] = useState<Record<string, string[]>>({});
   // 저장소마다 지금 체크아웃된 브랜치. 새로 더하거나 저장소를 바꿀 때의 기본 기준 브랜치다.
   const [current, setCurrent] = useState<Record<string, string>>({});
@@ -46,7 +47,7 @@ function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Re
   const [reason, setReason] = useState('');
 
   // 저장소마다 고를 수 있는 브랜치를 받아 둔다.
-  const repoIds = [...new Set([...repos.map((r) => r.id), ...plan.items.map((i) => i.repoId)])].join(',');
+  const repoIds = [...new Set([...repos.map((r) => r.id), ...plan.items.map((i) => i.repoId)])].filter((id) => !isNewRepoId(id)).join(',');
   useEffect(() => {
     let alive = true;
     for (const id of repoIds.split(',').filter(Boolean)) {
@@ -59,8 +60,15 @@ function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Re
   const patchItem = (i: number, p: Partial<ProposalItem>): void => setPlan((d) => ({ ...d, items: d.items.map((it, k) => (k === i ? { ...it, ...p } : it)) }));
   const addItem = (): void => {
     const repo = repos[0];
+    const fresh = plan.newRepos[0];
     if (repo) setPlan((d) => ({ ...d, items: [...d.items, { name: '', repoId: repo.id, baseBranch: current[repo.id] ?? '', role: '', todos: [], existing: false }] }));
+    else if (fresh) setPlan((d) => ({ ...d, items: [...d.items, { name: '', repoId: newRepoId(fresh.name), baseBranch: 'main', role: '', todos: [], existing: false }] }));
   };
+  // 새 저장소의 이름을 고치면, 그 저장소를 쓰는 워크스페이스도 따라간다.
+  const renameRepo = (i: number, name: string): void => setPlan((d) => {
+    const old = newRepoId(d.newRepos[i]!.name);
+    return { ...d, newRepos: d.newRepos.map((r, k) => (k === i ? { ...r, name } : r)), items: d.items.map((it) => (it.repoId === old ? { ...it, repoId: newRepoId(name) } : it)) };
+  });
   const approve = async (): Promise<void> => {
     setBusy(true); setError('');
     try { await window.dure.coordinator.approve(proposal.id, tidyPlan(plan)); } catch (e) { setError(describeError((e as Error).message)); } finally { setBusy(false); }
@@ -71,7 +79,7 @@ function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Re
   };
   const problem = planProblem(plan);
   const counts = planCounts(plan);
-  const repoName = (id: string): string => repos.find((r) => r.id === id)?.name ?? '(알 수 없는 저장소)';
+  const repoName = (id: string): string => (isNewRepoId(id) ? newRepoName(id) : repos.find((r) => r.id === id)?.name ?? '(알 수 없는 저장소)');
 
   return (
     <div className="plan">
@@ -93,6 +101,26 @@ function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Re
 
           <div className="plan-section">
             <div className="plan-label">
+              새 저장소 <span className="count">{plan.newRepos.length}</span>
+              <span className="plan-hint">이 PC 에 빈 git 저장소(폴더)를 만들어 이 프로젝트에 등록합니다. 원격 저장소는 만들지 않습니다</span>
+            </div>
+            {plan.newRepos.map((r, i) => (
+              <div key={i} className="plan-ws">
+                <div className="plan-ws-line">
+                  <span className="plan-kind">새로 만듦</span>
+                  <input type="text" className="plan-ws-name" value={r.name} placeholder="저장소 이름 (영문, 숫자, . _ -)" onChange={(e) => renameRepo(i, e.target.value)} />
+                  <button className="btn ghost" title="이 저장소는 만들지 않습니다. 이 저장소를 쓰는 워크스페이스는 다른 저장소를 골라야 합니다" onClick={() => setPlan((d) => ({ ...d, newRepos: d.newRepos.filter((_, k) => k !== i) }))}>빼기</button>
+                </div>
+                <input type="text" className="plan-role" value={r.description} placeholder="무엇이 들어가는 저장소인지 (README 에 적힙니다)" onChange={(e) => setPlan((d) => ({ ...d, newRepos: d.newRepos.map((x, k) => (k === i ? { ...x, description: e.target.value } : x)) }))} />
+                <div className="plan-path" title="이 위치에 폴더가 만들어집니다">만들 위치: <code>{newRepoDir}/{r.name || '…'}</code> · README.md 와 첫 커밋, 브랜치 main</div>
+              </div>
+            ))}
+            {plan.newRepos.length === 0 && <div className="plan-none">새로 만들 저장소가 없습니다. 등록된 저장소를 씁니다.</div>}
+            <button className="btn ghost plan-add" onClick={() => setPlan((d) => ({ ...d, newRepos: [...d.newRepos, { name: '', description: '' }] }))}>+ 새 저장소 더하기</button>
+          </div>
+
+          <div className="plan-section">
+            <div className="plan-label">
               워크스페이스 <span className="count">{plan.items.length}</span>
               <span className="plan-hint">새로 만드는 것마다 그 저장소에 새 브랜치와 작업 폴더(worktree)가 생깁니다</span>
             </div>
@@ -106,14 +134,19 @@ function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Re
                     : <input type="text" className="plan-ws-name" value={it.name} placeholder="워크스페이스 이름" onChange={(e) => patchItem(i, { name: e.target.value })} />}
                   {it.existing ? <span className="muted">저장소 {repoName(it.repoId)}</span> : (
                     <>
-                      <select value={it.repoId} title="저장소" onChange={(e) => patchItem(i, { repoId: e.target.value, baseBranch: current[e.target.value] ?? '' })}>
+                      <select value={it.repoId} title="저장소" onChange={(e) => patchItem(i, { repoId: e.target.value, baseBranch: isNewRepoId(e.target.value) ? 'main' : current[e.target.value] ?? '' })}>
+                        {!isNewRepoId(it.repoId) && !repos.some((r) => r.id === it.repoId) && <option value={it.repoId}>(저장소를 고르세요)</option>}
+                        {isNewRepoId(it.repoId) && !plan.newRepos.some((r) => newRepoId(r.name) === it.repoId) && <option value={it.repoId}>(저장소를 고르세요)</option>}
                         {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        {plan.newRepos.filter((r) => r.name).map((r) => <option key={newRepoId(r.name)} value={newRepoId(r.name)}>{r.name} (새 저장소)</option>)}
                       </select>
+                      {isNewRepoId(it.repoId) ? <select value="main" disabled title="새 저장소는 첫 커밋이 있는 main 에서 시작합니다"><option value="main">main</option></select> : (
                       <select value={it.baseBranch} title="기준 브랜치: 이 브랜치에서 새 브랜치와 작업 폴더를 만듭니다" onChange={(e) => patchItem(i, { baseBranch: e.target.value })}>
                         <option value="">현재 브랜치{current[it.repoId] ? ` (${current[it.repoId]})` : ''}</option>
                         {it.baseBranch && !(branches[it.repoId] ?? []).includes(it.baseBranch) && <option value={it.baseBranch}>{it.baseBranch}</option>}
                         {(branches[it.repoId] ?? []).map((b) => <option key={b} value={b}>{b}</option>)}
                       </select>
+                      )}
                     </>
                   )}
                   <button className="btn ghost" title={it.existing ? '이 워크스페이스에는 TODO 를 더하지 않습니다' : '이 워크스페이스와 그 TODO 는 만들지 않습니다'} onClick={() => setPlan((d) => ({ ...d, items: d.items.filter((_, k) => k !== i) }))}>빼기</button>
@@ -123,7 +156,7 @@ function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Re
                 <TodoEditor todos={it.todos} agentLabel={`"${it.name || '이 워크스페이스'}" 에이전트`} onChange={(next) => patchItem(i, { todos: next })} />
               </div>
             ))}
-            <button className="btn" disabled={repos.length === 0} onClick={addItem}>+ 워크스페이스 더하기</button>
+            <button className="btn" disabled={repos.length === 0 && plan.newRepos.length === 0} onClick={addItem}>+ 워크스페이스 더하기</button>
           </div>
 
           <div className="plan-section">
@@ -143,7 +176,7 @@ function PlanReview({ proposal, repos, onBack }: { proposal: Proposal; repos: Re
             </>
           ) : (
             <>
-              <span className="plan-count">{problem ?? `승인하면 워크스페이스 ${counts.workspaces}개와 TODO ${counts.todos}개가 만들어집니다`}</span>
+              <span className="plan-count">{problem ?? `승인하면 ${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다`}</span>
               <button className="btn" disabled={busy} onClick={() => setRejecting(true)}>거절</button>
               <button className="btn primary" disabled={busy || problem !== null} onClick={() => void approve()}>{busy ? '만드는 중…' : approveLabel(plan)}</button>
             </>
@@ -212,18 +245,18 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
       </div>
       {error && <div className="error" style={{ margin: '8px 16px 0' }}>{error}</div>}
       {proposal && reviewing
-        ? <PlanReview key={proposal.id} proposal={proposal} repos={repos} onBack={() => setReviewing(false)} />
+        ? <PlanReview key={proposal.id} proposal={proposal} repos={repos} newRepoDir={info.newRepoDir} onBack={() => setReviewing(false)} />
         : (
           <ChatPane
             workspace={ws} workspaces={everyone} conversation={conversation} hasAgent={hasAgent} readOnly={readOnly}
             onStartAgent={start}
             attach={readOnly ? undefined : attach}
             blank={repos.length === 0
-              ? '먼저 "현황" 탭에서 저장소를 등록하세요. 조율 에이전트는 등록된 저장소를 보고 계획을 세웁니다.'
+              ? '기획서 파일을 넣거나 할 일을 쓰세요. 등록된 저장소가 없어도 됩니다: 조율 에이전트가 계획안에 새 저장소를 넣고, 승인하면 두레가 만듭니다. 이미 있는 코드로 일하려면 "현황" 탭에서 그 폴더를 먼저 등록하세요.'
               : '기획서 파일을 넣거나 할 일을 쓰세요. 조율 에이전트가 분석해 계획안(정리, 워크스페이스, TODO)을 올립니다. 검토하고 승인해야 만들어집니다.'}
             banner={proposal ? (
               <div className="plan-banner">
-                <span><b>계획안이 승인을 기다립니다.</b> 워크스페이스 {proposal.items.filter((i) => !i.existing).length}개, TODO {proposal.items.reduce((n, i) => n + i.todos.length, 0) + proposal.projectTodos.length}개. 아직 만들어진 것은 없습니다.</span>
+                <span><b>계획안이 승인을 기다립니다.</b> {proposal.newRepos.length > 0 && `새 저장소 ${proposal.newRepos.length}개, `}워크스페이스 {proposal.items.filter((i) => !i.existing).length}개, TODO {proposal.items.reduce((n, i) => n + i.todos.length, 0) + proposal.projectTodos.length}개. 아직 만들어진 것은 없습니다.</span>
                 <button className="btn primary" onClick={() => setReviewing(true)}>검토하기</button>
               </div>
             ) : null}

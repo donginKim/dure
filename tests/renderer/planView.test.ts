@@ -6,7 +6,7 @@ const todo = (title: string, assignee: 'agent' | 'user' = 'agent') => ({ title, 
 
 test('planCounts 와 approveLabel: 새로 만들 워크스페이스와 제목이 있는 TODO 만 센다', () => {
   const d: PlanDecision = { items: [item({ todos: [todo('폼'), todo(' ')] }), item({ name: '이미 있던 것', existing: true, todos: [todo('고치기')] })], projectTodos: [todo('결정', 'user')] };
-  expect(planCounts(d)).toEqual({ workspaces: 1, todos: 3 });
+  expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 3 });
   expect(approveLabel(d)).toBe('승인하고 워크스페이스 1개, TODO 3개 만들기');
   expect(approveLabel({ items: [], projectTodos: [todo('결정')] })).toBe('승인하고 TODO 1개 만들기');
   expect(approveLabel({ items: [], projectTodos: [] })).toBe('만들 것이 없습니다');
@@ -25,7 +25,7 @@ test('planProblem: 빈 이름, 겹친 이름, 빈 저장소, 만들 것이 없�
 
 test('tidyPlan: 빈 제목의 TODO 를 빼고 공백을 다듬는다', () => {
   expect(tidyPlan({ items: [item({ name: ' 화면 ', role: ' 폼 ', todos: [todo(' 폼 만들기 '), todo('')] })], projectTodos: [todo('  '), todo('결정')] })).toEqual({
-    items: [item({ name: '화면', role: '폼', todos: [todo('폼 만들기')] })], projectTodos: [todo('결정')],
+    newRepos: [], items: [item({ name: '화면', role: '폼', todos: [todo('폼 만들기')] })], projectTodos: [todo('결정')],
   });
 });
 
@@ -40,4 +40,16 @@ test('specMessage: 글 파일은 내용을 블록에 넣고, 아니면 경로만
 test('specMessage: 내용에 ``` 가 있어도 블록이 일찍 닫히지 않는다', () => {
   const m = specMessage({ path: '/a.md', name: 'a.md', text: '예시:\n```js\nx\n```\n끝', truncated: false });
   expect(m).toContain('\n````\n예시:\n```js\nx\n```\n끝\n````\n');
+});
+
+test('새 저장소: 수에 들어가고, 이름을 확인하고, 없는 새 저장소를 가리키는 워크스페이스를 잡는다', () => {
+  const d: PlanDecision = { newRepos: [{ name: 'web', description: ' 웹 ' }], items: [item({ repoId: 'new:web' })], projectTodos: [] };
+  expect(planCounts(d)).toEqual({ repos: 1, workspaces: 1, todos: 0 });
+  expect(approveLabel(d)).toBe('승인하고 저장소 1개, 워크스페이스 1개 만들기');
+  expect(planProblem(d)).toBeNull();
+  expect(tidyPlan(d).newRepos).toEqual([{ name: 'web', description: '웹' }]);
+  expect(planProblem({ ...d, newRepos: [{ name: '웹 사이트', description: '' }] })).toContain('영문, 숫자');
+  expect(planProblem({ ...d, newRepos: [{ name: 'web', description: '' }, { name: 'Web', description: '' }] })).toContain('겹칩니다');
+  expect(planProblem({ ...d, newRepos: [] })).toContain('새 저장소 목록에 없습니다');
+  expect(planProblem({ newRepos: [{ name: 'web', description: '' }], items: [], projectTodos: [] })).toBeNull();
 });

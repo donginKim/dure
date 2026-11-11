@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCore, type Core } from '@core/index';
 import { MAX_SPEC_BYTES } from '@core/coordinator';
@@ -9,6 +9,7 @@ const SIZE = { cols: 100, rows: 30 };
 let core: Core;
 let dataDir: string;
 let fakeBin: string;
+let repoRoot: string;
 let projectId: string;
 let front: Repo;
 let back: Repo;
@@ -60,7 +61,8 @@ beforeEach(async () => {
   writeFileSync(js, FAKE);
   writeFileSync(join(fakeBin, 'claude'), `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec '${process.execPath}' '${js}' "$@"\n`);
   chmodSync(join(fakeBin, 'claude'), 0o755);
-  core = await createCore({ dataDir, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: `${fakeBin}:/usr/bin:/bin`, SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir() });
+  repoRoot = join(tempDir(), 'new repos');
+  core = await createCore({ dataDir, repoRoot, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: `${fakeBin}:/usr/bin:/bin`, SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir() });
   projectId = core.projects.create('쇼핑몰').id;
   const frontPath = makeRepo('shop-front');
   gitOut(frontPath, 'branch', 'develop');
@@ -160,7 +162,7 @@ describe('계획안', () => {
     const p = await core.coordinator.propose(projectId, { summary: '', workspaces: [W('프론트', 'nope', { todos: ['버튼 고치기'] })] });
     expect(p.items).toMatchObject([{ name: '프론트', repoId: front.id, existing: true, todos: [todo('버튼 고치기')] }]);
     const res = await core.coordinator.approve(p.id, { items: p.items, projectTodos: [] });
-    expect(res).toEqual({ created: [], todos: 1 });
+    expect(res).toEqual({ repos: [], created: [], todos: 1 });
     expect(core.workspaces.list(projectId).map((w) => w.id)).toEqual([ws.id]);
     expect(core.todos.listProject(projectId).map((t) => [t.title, t.workspaceId])).toEqual([['버튼 고치기', ws.id]]);
   });
@@ -264,7 +266,7 @@ describe('계획안', () => {
     const p = await core.coordinator.propose(projectId, { summary: '', workspaces: [W('하나', 'shop-front', { todos: ['a'] })] });
     const add = vi.spyOn(core.todos, 'add').mockImplementation(() => { throw new Error('실패'); });
     const discard = vi.spyOn(core.service, 'discard').mockRejectedValue(new Error('지울 수 없음'));
-    await expect(core.coordinator.approve(p.id, { items: p.items, projectTodos: [] })).rejects.toThrow('남은 워크스페이스: 하나');
+    await expect(core.coordinator.approve(p.id, { items: p.items, projectTodos: [] })).rejects.toThrow('남은 것: 워크스페이스 하나');
     add.mockRestore(); discard.mockRestore();
   });
 
@@ -293,6 +295,87 @@ describe('계획안', () => {
     expect(() => core.coordinator.readSpec('spec.md')).toThrow('파일을 찾을 수 없습니다');
     expect(() => core.coordinator.readSpec(dir)).toThrow('파일을 찾을 수 없습니다');
     expect(() => core.coordinator.readSpec(join(dir, 'none.md'))).toThrow();
+  });
+});
+
+describe('새 저장소', () => {
+  test('등록된 저장소가 없어도 계획안에 새 저장소를 넣을 수 있다. 승인하면 만들어 등록하고 그 위에 워크스페이스를 만든다', async () => {
+    const empty = core.projects.create('빈 프로젝트').id;
+    const c = core.coordinator.ensure(empty);
+    const dir = core.coordinator.newRepoDir(empty);
+    expect(dir.startsWith(repoRoot)).toBe(true);
+    const p = await core.coordinator.propose(empty, {
+      summary: '웹 하나', new_repos: [{ name: 'shop-web', description: '웹 사이트' }],
+      workspaces: [W('웹', 'shop-web', { base_branch: 'develop', todos: ['첫 화면'] })],
+    });
+    expect(p.newRepos).toEqual([{ name: 'shop-web', description: '웹 사이트' }]);
+    expect(p.items).toMatchObject([{ name: '웹', repoId: 'new:shop-web', baseBranch: 'main', existing: false }]);
+    // 승인 전에는 폴더도 저장소도 없다
+    expect(existsSync(join(dir, 'shop-web'))).toBe(false);
+    expect(core.repos.list(empty)).toEqual([]);
+
+    const res = await core.coordinator.approve(p.id, { newRepos: p.newRepos, items: p.items, projectTodos: [] });
+    const path = join(dir, 'shop-web');
+    expect(res.repos.map((r) => [r.name, r.path])).toEqual([['shop-web', path]]);
+    expect(core.repos.list(empty).map((r) => r.name)).toEqual(['shop-web']);
+    expect(readFileSync(join(path, 'README.md'), 'utf8')).toBe('# shop-web\n\n웹 사이트\n');
+    expect(gitOut(path, 'rev-list', '--count', 'main')).toBe('1');
+    expect(gitOut(path, 'status', '--porcelain')).toBe('');
+    expect(gitOut(path, 'remote')).toBe('');
+    expect(res.created.map((w) => [w.name, w.repoId, w.baseBranch])).toEqual([['웹', res.repos[0]!.id, 'main']]);
+    expect(existsSync(join(res.created[0]!.worktreePath, 'README.md'))).toBe(true);
+    expect(res.todos).toBe(1);
+    await until(() => said(c.id).some((t) => t.includes('승인했다')), 8000);
+    expect(said(c.id).find((t) => t.includes('승인했다'))).toContain(`새 저장소 "shop-web" (${path})`);
+  });
+
+  test('쓸 수 없는 이름, 겹치는 이름, 이미 폴더가 있는 자리는 올리지 않는다', async () => {
+    const bad = (new_repos: unknown, workspaces: unknown = []) => core.coordinator.propose(projectId, { summary: '', new_repos, workspaces });
+    for (const name of ['../x', 'a/b', '.git', '.hidden', '한글', 'a b', '', 'x.', '-x']) await expect(bad([{ name }])).rejects.toThrow('영문, 숫자');
+    await expect(bad([{ name: 'web' }, { name: 'WEB' }])).rejects.toThrow('새 저장소 이름이 겹친다');
+    await expect(bad([{ name: 'Shop-Front' }])).rejects.toThrow('이미 등록된 저장소의 이름');
+    await expect(bad(Array.from({ length: 6 }, (_, i) => ({ name: `r${i}` })))).rejects.toThrow('5개까지');
+    await expect(bad([{ name: 'web' }], [W('a', 'new:nope')])).rejects.toThrow('계획안에 없다');
+    mkdirSync(join(core.coordinator.newRepoDir(projectId), 'taken'), { recursive: true });
+    await expect(bad([{ name: 'taken' }])).rejects.toThrow('이미 폴더나 파일이 있다');
+    expect(core.coordinator.pending(projectId)).toBeNull();
+  });
+
+  test('도중에 실패하면 새로 만든 저장소 폴더와 등록을 되돌린다. 다른 폴더는 건드리지 않는다', async () => {
+    const dir = core.coordinator.newRepoDir(projectId);
+    mkdirSync(join(dir, 'keep'), { recursive: true });
+    writeFileSync(join(dir, 'keep', 'mine.txt'), 'x');
+    const p = await core.coordinator.propose(projectId, { summary: '', new_repos: [{ name: 'api' }, { name: 'web' }], workspaces: [W('서버', 'api', { todos: ['a'] }), W('화면', 'web', { todos: ['b'] })] });
+    const spy = vi.spyOn(core.todos, 'add').mockImplementation(() => { throw new Error('실패'); });
+    await expect(core.coordinator.approve(p.id, { newRepos: p.newRepos, items: p.items, projectTodos: [] })).rejects.toThrow('실패');
+    spy.mockRestore();
+    expect(readdirSync(dir)).toEqual(['keep']);
+    expect(readFileSync(join(dir, 'keep', 'mine.txt'), 'utf8')).toBe('x');
+    expect(core.repos.list(projectId).map((r) => r.name)).toEqual(['shop-front', 'shop-back']);
+    expect(core.workspaces.list(projectId)).toEqual([]);
+    expect(core.coordinator.pending(projectId)?.id).toBe(p.id);
+    // 다시 승인하면 된다
+    const res = await core.coordinator.approve(p.id, { newRepos: p.newRepos, items: p.items, projectTodos: [] });
+    expect(res.repos.map((r) => r.name)).toEqual(['api', 'web']);
+    expect(res.created.map((w) => w.name)).toEqual(['서버', '화면']);
+  });
+
+  test('승인하는 사이에 그 자리에 폴더가 생겼으면 만들지 않고, 그 폴더를 지우지도 않는다', async () => {
+    const p = await core.coordinator.propose(projectId, { summary: '', new_repos: [{ name: 'web' }], workspaces: [W('화면', 'web')] });
+    const path = join(core.coordinator.newRepoDir(projectId), 'web');
+    mkdirSync(path, { recursive: true });
+    writeFileSync(join(path, 'mine.txt'), 'x');
+    await expect(core.coordinator.approve(p.id, { newRepos: p.newRepos, items: p.items, projectTodos: [] })).rejects.toThrow('이미 폴더나 파일이 있다');
+    expect(readFileSync(join(path, 'mine.txt'), 'utf8')).toBe('x');
+    // 사용자가 화면에서 새 저장소를 빼면, 그것을 쓰던 워크스페이스는 만들 수 없다
+    await expect(core.coordinator.approve(p.id, { newRepos: [], items: p.items, projectTodos: [] })).rejects.toThrow('계획안에 없다');
+  });
+
+  test('plan_propose 도구로 새 저장소를 올릴 수 있다', async () => {
+    const c = core.coordinator.ensure(projectId);
+    const res = (await call(c.id, 'plan_propose', { summary: 's', new_repos: [{ name: 'infra', description: '봇 차단' }], workspaces: [{ name: '인프라', repo: 'infra', role: '', todos: [] }] })).text;
+    expect(res).toContain('newRepos');
+    expect(core.coordinator.pending(projectId)).toMatchObject({ newRepos: [{ name: 'infra', description: '봇 차단' }], items: [{ repoId: 'new:infra' }] });
   });
 });
 

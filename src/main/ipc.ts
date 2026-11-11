@@ -43,7 +43,7 @@ export function registerIpc(core: Core): () => void {
       changed('projects');
     },
     'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
-    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId) }),
+    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId) }),
     'coordinator.approve': (proposalId: string, decision: PlanDecision) => core.coordinator.approve(proposalId, decision),
     'coordinator.pickSpec': async () => {
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
@@ -184,7 +184,8 @@ export function registerIpc(core: Core): () => void {
   const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
   const onChatChanged = (): void => changed('chat');
   const onCleanupChanged = (): void => changed('cleanup');
-  const onCoordinatorChanged = (): void => changed('coordinator');
+  // 승인으로 새 저장소가 등록될 수 있다.
+  const onCoordinatorChanged = (): void => { changed('coordinator'); changed('repos'); };
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
   const onSettingsChanged = (): void => { changed('settings'); changed('messages'); };
   const onMessagesChanged = (): void => changed('messages');

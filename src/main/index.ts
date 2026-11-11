@@ -38,6 +38,7 @@ async function start(): Promise<void> {
       // 개발·검증용으로 다른 폴더를 쓸 수 있게 한다. 평소에는 설정하지 않는다.
       dataDir: process.env.DURE_DATA_DIR || app.getPath('userData'),
       worktreeRoot: process.env.DURE_WORKTREE_ROOT || join(homedir(), 'dure', 'worktrees'),
+      repoRoot: process.env.DURE_REPO_ROOT || undefined,
       baseEnv: await resolveShellEnv(),
     });
   } catch (e) {

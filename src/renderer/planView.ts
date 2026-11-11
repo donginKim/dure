@@ -1,8 +1,10 @@
+import { isNewRepoId, newRepoName, REPO_NAME } from '@shared/plan';
 import type { PlanDecision, SpecFile } from '@shared/types';
 
 /** 승인하면 만들어질 것의 수. */
-export function planCounts(d: PlanDecision): { workspaces: number; todos: number } {
+export function planCounts(d: PlanDecision): { repos: number; workspaces: number; todos: number } {
   return {
+    repos: d.newRepos?.length ?? 0,
     workspaces: d.items.filter((i) => !i.existing).length,
     todos: d.items.reduce((n, i) => n + i.todos.filter((t) => t.title.trim()).length, 0) + d.projectTodos.filter((t) => t.title.trim()).length,
   };
@@ -10,8 +12,9 @@ export function planCounts(d: PlanDecision): { workspaces: number; todos: number
 
 /** 승인 버튼의 글. */
 export function approveLabel(d: PlanDecision): string {
-  const { workspaces, todos } = planCounts(d);
+  const { repos, workspaces, todos } = planCounts(d);
   const parts: string[] = [];
+  if (repos) parts.push(`저장소 ${repos}개`);
   if (workspaces) parts.push(`워크스페이스 ${workspaces}개`);
   if (todos) parts.push(`TODO ${todos}개`);
   return parts.length ? `승인하고 ${parts.join(', ')} 만들기` : '만들 것이 없습니다';
@@ -19,6 +22,12 @@ export function approveLabel(d: PlanDecision): string {
 
 /** 지금 상태로 승인할 수 있는가. 안 되면 이유. */
 export function planProblem(d: PlanDecision): string | null {
+  const repoNames = new Set<string>();
+  for (const r of d.newRepos ?? []) {
+    if (!REPO_NAME.test(r.name)) return `새 저장소 이름 "${r.name}": 영문, 숫자, . _ - 만 쓸 수 있습니다.`;
+    if (repoNames.has(r.name.toLowerCase())) return `새 저장소 이름이 겹칩니다: ${r.name}`;
+    repoNames.add(r.name.toLowerCase());
+  }
   const names = new Set<string>();
   for (const i of d.items) {
     const name = i.name.trim();
@@ -27,15 +36,16 @@ export function planProblem(d: PlanDecision): string | null {
     names.add(name);
     // 기준 브랜치가 비어 있으면 그 저장소의 현재 브랜치에서 만든다.
     if (!i.existing && !i.repoId) return `"${name}" 의 저장소가 비어 있습니다.`;
+    if (!i.existing && isNewRepoId(i.repoId) && !repoNames.has(newRepoName(i.repoId).toLowerCase())) return `"${name}" 의 저장소 "${newRepoName(i.repoId)}" 가 새 저장소 목록에 없습니다. 저장소를 다시 고르세요.`;
   }
-  const { workspaces, todos } = planCounts(d);
-  return workspaces + todos === 0 ? '만들 것이 없습니다. 더하거나 거절하세요.' : null;
+  const { repos, workspaces, todos } = planCounts(d);
+  return repos + workspaces + todos === 0 ? '만들 것이 없습니다. 더하거나 거절하세요.' : null;
 }
 
 /** 빈 제목의 TODO 는 빼고, 앞뒤 공백을 다듬어 보낼 모양으로. */
 export function tidyPlan(d: PlanDecision): PlanDecision {
   const todos = (list: PlanDecision['projectTodos']): PlanDecision['projectTodos'] => list.filter((t) => t.title.trim()).map((t) => ({ ...t, title: t.title.trim() }));
-  return { items: d.items.map((i) => ({ ...i, name: i.name.trim(), role: i.role.trim(), todos: todos(i.todos) })), projectTodos: todos(d.projectTodos) };
+  return { newRepos: (d.newRepos ?? []).map((r) => ({ name: r.name.trim(), description: r.description.trim() })), items: d.items.map((i) => ({ ...i, name: i.name.trim(), role: i.role.trim(), todos: todos(i.todos) })), projectTodos: todos(d.projectTodos) };
 }
 
 /**

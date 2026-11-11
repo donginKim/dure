@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, symlinkSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCore, type Core } from '@core/index';
 import { MAX_SPEC_BYTES } from '@core/coordinator';
@@ -369,6 +369,17 @@ describe('새 저장소', () => {
     expect(readFileSync(join(path, 'mine.txt'), 'utf8')).toBe('x');
     // 사용자가 화면에서 새 저장소를 빼면, 그것을 쓰던 워크스페이스는 만들 수 없다
     await expect(core.coordinator.approve(p.id, { newRepos: [], items: p.items, projectTodos: [] })).rejects.toThrow('계획안에 없다');
+  });
+
+  test('그 자리에 끊어진 심볼릭 링크가 있어도 올리지 않는다. 전역 무시 규칙이 README 를 무시해도 만든다', async () => {
+    const dir = core.coordinator.newRepoDir(projectId);
+    mkdirSync(dir, { recursive: true });
+    symlinkSync(join(dir, 'nowhere'), join(dir, 'link'));
+    await expect(core.coordinator.propose(projectId, { summary: '', new_repos: [{ name: 'link' }] })).rejects.toThrow('이미 폴더나 파일이 있다');
+    const p = await core.coordinator.propose(projectId, { summary: '', new_repos: [{ name: 'web' }] });
+    const res = await core.coordinator.approve(p.id, { newRepos: p.newRepos, items: [], projectTodos: [] });
+    expect(gitOut(res.repos[0]!.path, 'rev-list', '--count', 'main')).toBe('1');
+    expect(gitOut(res.repos[0]!.path, 'ls-files')).toBe('README.md');
   });
 
   test('plan_propose 도구로 새 저장소를 올릴 수 있다', async () => {

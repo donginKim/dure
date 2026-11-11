@@ -1,5 +1,5 @@
 import type { PlanDecision, ProposalItem } from '@shared/types';
-import { approveLabel, planCounts, planProblem, specMessage, tidyPlan } from '../../src/renderer/planView';
+import { approveLabel, draftRepoId, fromDraft, planCounts, planProblem, specMessage, tidyPlan, toDraft } from '../../src/renderer/planView';
 
 const item = (o: Partial<ProposalItem> = {}): ProposalItem => ({ name: '로그인 화면', repoId: 'r1', baseBranch: 'main', role: '', todos: [], existing: false, ...o });
 const todo = (title: string, assignee: 'agent' | 'user' = 'agent') => ({ title, detail: '', assignee });
@@ -52,4 +52,28 @@ test('새 저장소: 수에 들어가고, 이름을 확인하고, 없는 새 저
   expect(planProblem({ ...d, newRepos: [{ name: 'web', description: '' }, { name: 'Web', description: '' }] })).toContain('겹칩니다');
   expect(planProblem({ ...d, newRepos: [] })).toContain('새 저장소 목록에 없습니다');
   expect(planProblem({ newRepos: [{ name: 'web', description: '' }], items: [], projectTodos: [] })).toBeNull();
+});
+
+test('고치는 중인 계획: 새 저장소 이름을 치는 도중 다른 저장소와 같아져도 워크스페이스가 옮겨 가지 않는다', () => {
+  let d = toDraft({ newRepos: [{ name: 'a', description: '' }], items: [item({ name: 'w', repoId: 'new:a' })], projectTodos: [] });
+  expect(d.items[0]!.repoId).toBe(draftRepoId('r0'));
+  // 새 저장소를 더하고 이름을 a, ab 순서로 친다
+  d = { ...d, newRepos: [...d.newRepos, { name: '', description: '', key: 'n0' }] };
+  for (const name of ['a', 'ab']) {
+    d = { ...d, newRepos: d.newRepos.map((r) => (r.key === 'n0' ? { ...r, name } : r)) };
+    expect(fromDraft(d).items[0]!.repoId).toBe('new:a');
+  }
+  expect(planProblem(fromDraft(d))).toBeNull();
+  // 원래 저장소의 이름을 고치면 따라온다
+  d = { ...d, newRepos: d.newRepos.map((r) => (r.key === 'r0' ? { ...r, name: 'api' } : r)) };
+  expect(fromDraft(d).items[0]!.repoId).toBe('new:api');
+  // 그 저장소를 빼면 문제로 잡힌다
+  d = { ...d, newRepos: d.newRepos.filter((r) => r.key !== 'r0') };
+  expect(fromDraft(d).items[0]!.repoId).toBe('new:');
+  expect(planProblem(fromDraft(d))).toContain('새 저장소 목록에 없습니다');
+});
+
+test('새 저장소 이름: 화면도 코어와 같은 규칙으로 본다', () => {
+  for (const name of ['x.', '.git', '-x', 'a b', '']) expect(planProblem({ newRepos: [{ name, description: '' }], items: [], projectTodos: [] })).toContain('영문, 숫자');
+  expect(planProblem({ newRepos: [{ name: ' web ', description: '' }], items: [], projectTodos: [] })).toBeNull();
 });

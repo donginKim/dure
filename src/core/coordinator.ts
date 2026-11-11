@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, isAbsolute, join, sep } from 'node:path';
+import { closeSync, lstatSync, mkdirSync, openSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
-import { isNewRepoId, newRepoId, newRepoName, REPO_NAME } from '@shared/plan';
+import { isNewRepoId, newRepoId, newRepoName, validRepoName } from '@shared/plan';
 import type { PlanDecision, PlanRepo, PlanResult, PlanTodo, Proposal, ProposalItem, Repo, SpecFile, Workspace } from '@shared/types';
 import type { Git } from './git';
 import type { MessageService } from './messages';
@@ -38,6 +38,15 @@ function toProposal(r: Row): Proposal {
     note: r.note, createdAt: r.created_at,
   };
 }
+
+/** 그 자리에 무엇이든 있는가. 끊어진 심볼릭 링크도 있는 것으로 본다. */
+const taken = (path: string): boolean => { try { lstatSync(path); return true; } catch { return false; } };
+/** 새 저장소를 만드는 git 명령 하나가 기다릴 시간. 서명 프로그램이나 hook 이 입력을 기다리며 멈추면 승인이 끝나지 않는다 */
+const GIT_STEP_MS = 30_000;
+const within = <T>(p: Promise<T>, what: string): Promise<T> => new Promise<T>((done, fail) => {
+  const timer = setTimeout(() => fail(new Error(`${what} 이(가) 시간 안에 끝나지 않았습니다.`)), GIT_STEP_MS);
+  p.then((v) => { clearTimeout(timer); done(v); }, (e) => { clearTimeout(timer); fail(e); });
+});
 
 export { COORDINATOR_NAME };
 
@@ -97,7 +106,7 @@ export class CoordinatorService extends EventEmitter {
   newRepoDir(projectId: string): string {
     const project = this.d.projects.get(projectId);
     if (!project) throw new Error(`프로젝트가 없습니다: ${projectId}`);
-    return join(this.d.repoRoot, slugify(project.name));
+    return join(resolve(this.d.repoRoot), slugify(project.name));
   }
 
   /** 계획안의 새 저장소를 확인한다: 폴더 이름이 될 수 있고, 등록된 저장소와 겹치지 않고, 그 자리에 아무것도 없어야 한다. */
@@ -111,11 +120,11 @@ export class CoordinatorService extends EventEmitter {
     for (const x of raw) {
       const o: Record<string, unknown> = isObj(x) ? x : { name: x };
       const name = oneLine(o.name, 80);
-      if (!REPO_NAME.test(name) || name.endsWith('.') || name.toLowerCase() === '.git') { problems.push(`새 저장소 이름 "${name}": 영문, 숫자, . _ - 만 쓸 수 있다 (60자까지, 폴더 이름이 된다)`); continue; }
+      if (!validRepoName(name)) { problems.push(`새 저장소 이름 "${name}": 영문, 숫자, . _ - 만 쓸 수 있다 (60자까지, 폴더 이름이 된다)`); continue; }
       // 대소문자를 가리지 않는 디스크에서 같은 폴더가 되지 않게 한다.
       if (out.some((r) => r.name.toLowerCase() === name.toLowerCase())) { problems.push(`새 저장소 이름이 겹친다: "${name}"`); continue; }
       if (registered.some((r) => r.name.toLowerCase() === name.toLowerCase())) { problems.push(`"${name}" 은 이미 등록된 저장소의 이름이다. 그 저장소를 쓰거나 다른 이름을 써라`); continue; }
-      if (existsSync(join(dir, name))) { problems.push(`새 저장소 "${name}": 그 자리에 이미 폴더나 파일이 있다 (${join(dir, name)}). 다른 이름을 써라`); continue; }
+      if (taken(join(dir, name))) { problems.push(`새 저장소 "${name}": 그 자리에 이미 폴더나 파일이 있다 (${join(dir, name)}). 다른 이름을 써라`); continue; }
       out.push({ name, description: text(o.description, 500) });
     }
     return out;
@@ -127,15 +136,24 @@ export class CoordinatorService extends EventEmitter {
     mkdirSync(dir, { recursive: true });
     const path = join(dir, r.name);
     // 있으면 실패한다: 이미 있는 폴더를 건드리지 않는다. 여기서 만든 폴더만 되돌릴 때 지운다.
-    mkdirSync(path);
+    try { mkdirSync(path); } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`새 저장소 "${r.name}": 그 자리에 이미 폴더나 파일이 있습니다 (${path}).`);
+      throw e;
+    }
     const entry: { path: string; repo?: Repo } = { path };
     made.push(entry);
-    await this.d.git.raw(['-C', path, 'init', '-b', 'main']);
+    const git = (args: string[]): Promise<string> => within(this.d.git.raw(['-C', path, ...args]), `git ${args.find((a) => !a.startsWith('-') && !a.includes('=')) ?? ''}`);
+    await git(['init', '-b', 'main']);
     writeFileSync(join(path, 'README.md'), `# ${r.name}\n${r.description ? `\n${r.description}\n` : ''}`);
-    await this.d.git.raw(['-C', path, 'add', 'README.md']);
+    // -f: 사용자의 전역 무시 규칙이 README 를 무시해도 넣는다.
+    await git(['add', '-f', 'README.md']);
     const commit = ['commit', '-m', 'chore: initial commit (created by dure)'];
-    // 사용자의 git 설정으로 커밋한다. 이름·이메일이 없거나 서명·hook 때문에 안 되면 두레의 이름으로 한다.
-    await this.d.git.raw(['-C', path, ...commit]).catch(() => this.d.git.raw(['-C', path, '-c', 'user.name=dure', '-c', 'user.email=dure@localhost', '-c', 'commit.gpgsign=false', ...commit, '--no-verify']));
+    // 사용자의 git 설정으로 커밋한다. 서명이나 hook 때문에 안 되면 그것 없이 한다. 이름·이메일은 설정이 없을 때만 두레의 것을 쓴다.
+    await git(commit).catch(async () => {
+      const has = async (key: string): Promise<boolean> => Boolean((await git(['config', key]).catch(() => '')).trim());
+      const who = [...(await has('user.name') ? [] : ['-c', 'user.name=dure']), ...(await has('user.email') ? [] : ['-c', 'user.email=dure@localhost'])];
+      await git([...who, '-c', 'commit.gpgsign=false', ...commit, '--no-verify']);
+    });
     entry.repo = this.d.repos.add(projectId, path);
     return entry.repo;
   }
@@ -277,13 +295,14 @@ export class CoordinatorService extends EventEmitter {
         const left: string[] = [];
         for (const ws of created) await this.d.service.discard(ws.id).catch(() => { left.push(`워크스페이스 ${ws.name}`); });
         // 여기서 만든 저장소도 치운다. 이 승인에서 새로 만든 빈 폴더만 지운다 (mkdir 이 성공한 것만 목록에 있다).
-        const root = this.d.repoRoot + sep;
+        const root = resolve(this.d.repoRoot) + sep;
         for (const m of madeRepos.reverse()) {
           try {
             if (m.repo) this.d.repos.remove(m.repo.id);
-            if (m.path.startsWith(root)) rmSync(m.path, { recursive: true, force: true });
+            if (!m.path.startsWith(root)) throw new Error('새 저장소 폴더 밖');
+            rmSync(m.path, { recursive: true, force: true });
             for (const it of items) if (m.repo && it.repoId === m.repo.id) it.repoId = newRepoId(m.repo.name);
-          } catch { left.push(`저장소 ${basename(m.path)}`); }
+          } catch { left.push(`저장소 폴더 ${m.path}`); }
         }
         const why = e instanceof Error ? e.message : (e as { detail?: string })?.detail ?? String(e);
         throw new Error(left.length ? `${why} (만들던 것을 되돌리지 못했습니다. 남은 것: ${left.join(', ')}. "현황" 에서 지운 뒤 다시 승인하세요)` : why);

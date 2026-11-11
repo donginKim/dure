@@ -1,5 +1,30 @@
-import { isNewRepoId, newRepoName, REPO_NAME } from '@shared/plan';
-import type { PlanDecision, SpecFile } from '@shared/types';
+import { isNewRepoId, newRepoId, newRepoName, validRepoName } from '@shared/plan';
+import type { PlanDecision, PlanRepo, PlanTodo, ProposalItem, SpecFile } from '@shared/types';
+
+/**
+ * 검토 화면에서 고치는 중인 계획. 새 저장소는 이름이 아니라 바뀌지 않는 key 로 가리킨다:
+ * 이름으로 이으면, 이름을 치는 도중 잠깐 다른 저장소와 같아질 때 그 저장소의 워크스페이스까지 따라온다.
+ */
+export interface DraftRepo extends PlanRepo { key: string }
+export interface PlanDraft { newRepos: DraftRepo[]; items: ProposalItem[]; projectTodos: PlanTodo[] }
+/** 고치는 중인 계획에서 새 저장소를 가리키는 저장소 id. 저장소 이름은 @ 로 시작할 수 없어 겹치지 않는다. */
+export const draftRepoId = (key: string): string => newRepoId(`@${key}`);
+
+export function toDraft(p: { newRepos: PlanRepo[]; items: ProposalItem[]; projectTodos: PlanTodo[] }): PlanDraft {
+  const newRepos = p.newRepos.map((r, i) => ({ ...r, key: `r${i}` }));
+  const byName = new Map(newRepos.map((r) => [newRepoId(r.name), draftRepoId(r.key)]));
+  return { newRepos, items: p.items.map((it) => ({ ...it, repoId: byName.get(it.repoId) ?? it.repoId })), projectTodos: p.projectTodos };
+}
+
+/** 보낼 모양으로: key 를 지금의 이름으로 바꾼다. 빠진 저장소를 가리키면 빈 이름이 되어 planProblem 이 잡는다. */
+export function fromDraft(d: PlanDraft): PlanDecision {
+  const byKey = new Map(d.newRepos.map((r) => [draftRepoId(r.key), newRepoId(r.name.trim())]));
+  return {
+    newRepos: d.newRepos.map((r) => ({ name: r.name, description: r.description })),
+    items: d.items.map((it) => (isNewRepoId(it.repoId) ? { ...it, repoId: byKey.get(it.repoId) ?? newRepoId('') } : it)),
+    projectTodos: d.projectTodos,
+  };
+}
 
 /** 승인하면 만들어질 것의 수. */
 export function planCounts(d: PlanDecision): { repos: number; workspaces: number; todos: number } {
@@ -24,9 +49,9 @@ export function approveLabel(d: PlanDecision): string {
 export function planProblem(d: PlanDecision): string | null {
   const repoNames = new Set<string>();
   for (const r of d.newRepos ?? []) {
-    if (!REPO_NAME.test(r.name)) return `새 저장소 이름 "${r.name}": 영문, 숫자, . _ - 만 쓸 수 있습니다.`;
-    if (repoNames.has(r.name.toLowerCase())) return `새 저장소 이름이 겹칩니다: ${r.name}`;
-    repoNames.add(r.name.toLowerCase());
+    if (!validRepoName(r.name.trim())) return `새 저장소 이름 "${r.name}": 영문, 숫자, . _ - 만 쓸 수 있습니다.`;
+    if (repoNames.has(r.name.trim().toLowerCase())) return `새 저장소 이름이 겹칩니다: ${r.name}`;
+    repoNames.add(r.name.trim().toLowerCase());
   }
   const names = new Set<string>();
   for (const i of d.items) {
@@ -36,7 +61,7 @@ export function planProblem(d: PlanDecision): string | null {
     names.add(name);
     // 기준 브랜치가 비어 있으면 그 저장소의 현재 브랜치에서 만든다.
     if (!i.existing && !i.repoId) return `"${name}" 의 저장소가 비어 있습니다.`;
-    if (!i.existing && isNewRepoId(i.repoId) && !repoNames.has(newRepoName(i.repoId).toLowerCase())) return `"${name}" 의 저장소 "${newRepoName(i.repoId)}" 가 새 저장소 목록에 없습니다. 저장소를 다시 고르세요.`;
+    if (!i.existing && isNewRepoId(i.repoId) && !repoNames.has(newRepoName(i.repoId).toLowerCase())) return `"${name}" 의 저장소 "${newRepoName(i.repoId)}" 가 새 저장소 목록에 없습니다. 저장소를 다시 고르세요.`.replace('저장소 "" 가', '저장소가');
   }
   const { repos, workspaces, todos } = planCounts(d);
   return repos + workspaces + todos === 0 ? '만들 것이 없습니다. 더하거나 거절하세요.' : null;

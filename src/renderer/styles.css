@@ -147,42 +147,84 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 .ws-body { display: flex; flex: 1; min-height: 0; }
 .ws-terms { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .todo-panel { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
-.todo-head { display: flex; align-items: center; gap: 8px; padding: 9px 8px 9px 14px; border-bottom: 1px solid var(--line); }
-.todo-head .t { font-weight: 600; letter-spacing: 0.04em; }
-.todo-head .spacer { flex: 1; }
-.todo-scroll { flex: 1; overflow-y: auto; padding: 10px 10px 14px; }
+.todo-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 8px 4px 16px; }
+.todo-head .t { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); }
+.todo-scroll { flex: 1; overflow-y: auto; padding: 6px 8px 16px; }
 .todo-tab { flex: none; width: 30px; border: 0; border-left: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; writing-mode: vertical-rl; padding: 12px 0; font-size: 12px; letter-spacing: 0.06em; }
 .todo-tab:hover { color: var(--text); background: var(--panel-2); }
-.todo-pending { margin: 10px 10px 0; padding: 9px 10px; border: 1px solid #6b5a2a; background: #2a2413; color: var(--warn); border-radius: var(--radius); display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
-.todo-pending .btn { align-self: flex-start; }
 
-.todo-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 6px; border-radius: var(--radius); position: relative; }
-.todo-row:hover { background: var(--panel-2); }
-.todo-row input[type='checkbox'] { margin-top: 3px; accent-color: var(--accent); }
-.todo-main { flex: 1; min-width: 0; }
-.todo-title { cursor: text; word-break: break-word; white-space: pre-wrap; }
-.todo-row.done .todo-title { color: var(--muted); text-decoration: line-through; }
-.todo-row.cancelled .todo-title { color: var(--muted); text-decoration: line-through; }
-.todo-detail { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.todo-edit { width: 100%; padding: 2px 6px !important; }
-.todo-doing { display: flex; align-items: center; gap: 5px; color: var(--accent); font-size: 11.5px; white-space: nowrap; }
-.todo-actions { display: none; position: absolute; right: 4px; top: 3px; gap: 2px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px; }
-.todo-row:hover .todo-actions { display: flex; }
-.icon { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 11.5px; white-space: nowrap; }
+/* 진행 눈금: 항목 하나당 한 칸 */
+.ticks { display: flex; align-items: center; gap: 10px; padding: 2px 16px 12px; }
+.ticks-row { flex: 1; display: flex; gap: 3px; height: 6px; }
+.tick { flex: 1; border-radius: 2px; background: var(--line); }
+.tick.done { background: var(--accent); }
+.tick.doing { background: linear-gradient(90deg, var(--accent) 50%, var(--line) 50%); animation: tick-pulse 1.6s ease-in-out infinite; }
+@keyframes tick-pulse { 50% { opacity: 0.55; } }
+.ticks-num { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+.ticks-num i { font-style: normal; color: var(--muted); margin: 0 1px; }
+
+/* 에이전트가 아직 모르는 변경 */
+.todo-pending { display: flex; align-items: center; gap: 10px; margin: 0 12px 6px 16px; padding: 2px 0 2px 10px; border-left: 2px solid var(--accent); font-size: 12.5px; line-height: 1.45; }
+.todo-pending .grow { flex: 1; min-width: 0; }
+.btn.accent { background: transparent; border-color: var(--accent); color: var(--accent); padding: 3px 10px; font-size: 12px; }
+.btn.accent:hover { background: var(--accent); color: var(--accent-ink); }
+
+/* 항목 한 줄 */
+.todo-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 8px; border-radius: var(--radius); position: relative; }
+.todo-row:hover, .todo-row:focus-within { background: var(--panel-2); }
+.todo-main { flex: 1; min-width: 0; padding-top: 1px; }
+.todo-title { cursor: text; word-break: break-word; white-space: pre-wrap; line-height: 1.45; }
+.todo-row.done .todo-title, .todo-row.cancelled .todo-title { color: var(--muted); }
+.todo-row.cancelled .todo-title { text-decoration: line-through; text-decoration-color: #555c6b; }
+.todo-detail { color: var(--muted); font-size: 11.5px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-edit { width: 100%; padding: 1px 6px !important; margin: -2px 0 -2px -7px; }
+.todo-state { color: var(--accent); font-size: 11.5px; white-space: nowrap; padding-top: 2px; }
+.todo-state.off { color: var(--muted); }
+
+/* 상태 표시: 빈 원 → 도는 호 → 채운 체크 */
+.mark { flex: none; width: 17px; height: 17px; margin-top: 2px; padding: 0; border-radius: 50%; border: 1.5px solid #5a6172; background: transparent; color: var(--accent-ink); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.mark:hover:not(:disabled) { border-color: var(--accent); }
+.mark:focus-visible, .icon:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mark.done { background: var(--accent); border-color: var(--accent); }
+.mark.done svg { width: 12px; height: 12px; stroke-width: 2; }
+.mark.doing { border-color: var(--accent); border-right-color: transparent; animation: spin 1s linear infinite; }
+.mark.cancelled { border-color: #454b59; cursor: default; background: linear-gradient(135deg, transparent 45%, #454b59 45% 55%, transparent 55%); }
+.mark.add { border-style: dashed; color: var(--muted); cursor: default; }
+.mark.add svg { width: 11px; height: 11px; }
+
+/* 줄 오른쪽의 동작: 마우스를 올리거나 키보드로 들어왔을 때만 */
+/* 제목 위에 겹쳐 띄운다: 줄 안에 자리를 차지하면 마우스를 올릴 때마다 제목의 줄바꿈이 바뀐다 */
+.todo-actions { display: none; position: absolute; right: 4px; top: 3px; align-items: center; gap: 1px; padding-left: 22px; background: linear-gradient(90deg, transparent, var(--panel-2) 20px); }
+.todo-row:hover .todo-actions, .todo-row:focus-within .todo-actions { display: flex; }
+.todo-row:hover .todo-state, .todo-row:focus-within .todo-state { display: none; }
+.icon { background: none; border: 0; color: var(--muted); cursor: pointer; width: 24px; height: 24px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; }
 .icon:hover:not(:disabled) { color: var(--text); background: var(--line); }
-.icon:disabled { opacity: 0.35; cursor: default; }
+.icon:disabled { opacity: 0.3; cursor: default; }
 .icon.danger:hover { color: var(--danger); }
-.todo-sub { margin: 10px 6px 3px; color: var(--warn); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; }
-.todo-none { padding: 4px 6px 8px; }
-.todo-add { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 0 2px; }
-.todo-add input[type='text'] { flex: 1; min-width: 0; }
-.todo-mine { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; white-space: nowrap; cursor: pointer; }
+
+/* 내가 할 일 */
+.todo-sub { display: flex; align-items: center; gap: 7px; margin: 14px 8px 4px; color: var(--muted); font-size: 12px; }
+.todo-sub::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.todo-sub .n { font-variant-numeric: tabular-nums; }
+
+/* 추가: 목록의 마지막 줄처럼 */
+.todo-add { display: flex; align-items: center; gap: 10px; padding: 5px 8px; margin-top: 2px; border-radius: var(--radius); }
+.todo-add:focus-within { background: var(--panel-2); }
+.todo-add .mark { margin-top: 0; }
+.todo-add input[type='text'] { flex: 1; min-width: 0; background: transparent; border: 0; padding: 3px 0; outline: none; }
+.todo-add input[type='text']::placeholder { color: #6b7284; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: transparent; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); font-size: 11.5px; padding: 2px 8px 2px 6px; cursor: pointer; visibility: hidden; }
+.todo-add:focus-within .chip, .todo-add.typing .chip, .chip.on { visibility: visible; }
+.chip.on { border-color: var(--accent); color: var(--accent); }
+
 .spin { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--accent); border-top-color: transparent; display: inline-block; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.ws-progress { margin-left: 7px; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; }
+@media (prefers-reduced-motion: reduce) { .mark.doing, .tick.doing, .spin { animation: none; } }
+.ws-progress { margin-left: 7px; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* 프로젝트 화면의 TODO 묶음 */
-.todo-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-.todo-group { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
-.todo-group-head { display: flex; align-items: center; gap: 8px; padding: 2px 6px 8px; }
-.todo-group-head .t { font-weight: 600; }
+.todo-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.todo-group { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px 10px; }
+.todo-group-head { display: flex; align-items: center; gap: 8px; padding: 0 8px 8px; }
+.todo-group-head .t { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-group .ticks { padding: 0 8px 8px; }

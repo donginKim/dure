@@ -24,6 +24,14 @@ const api: DureApi = {
     list: () => call('projects.list'),
     create: (name) => call('projects.create', name),
     remove: (id) => call('projects.remove', id),
+    reopen: (id) => call('projects.reopen', id),
+  },
+  cleanup: {
+    list: (projectId) => call('cleanup.list', projectId),
+    restore: (id) => call('cleanup.restore', id),
+    export: (id) => call('cleanup.export', id),
+    plan: (projectId) => call('cleanup.plan', projectId),
+    complete: (projectId, choice) => call('cleanup.complete', projectId, choice),
   },
   repos: {
     list: (projectId) => call('repos.list', projectId),

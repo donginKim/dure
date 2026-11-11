@@ -171,6 +171,7 @@ const DURE_TOOLS: Record<string, string> = {
   message_send: '메시지 보냄', message_inbox: '받은 메시지 확인', thread_read: '대화 읽음',
   artifact_publish: '자료 올림', artifact_list: '자료 목록 확인', artifact_read: '자료 읽음',
   commit_draft_save: '커밋 메시지 저장',
+  cleanup_stash: '정리 대기로 옮김', cleanup_list: '정리 대기 확인',
 };
 
 const fileName = (p: unknown): string => str(p).split('/').pop() || str(p);

@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Project, Workspace } from '@shared/types';
+import type { CleanupService } from '../cleanup';
 import type { CommitDraftStore } from '../commitDrafts';
 import type { DeliveryService } from '../delivery';
 import type { MessageService } from '../messages';
@@ -23,6 +24,7 @@ export interface McpDeps {
   messages: MessageService;
   delivery: DeliveryService;
   commitDrafts: CommitDraftStore;
+  cleanup: CleanupService;
   /** 에이전트의 hook 호출. hook 이 표준 출력으로 내보낼 글을 돌려준다. */
   onHook(workspace: Workspace, event: string, payload: unknown): string;
 }
@@ -82,6 +84,9 @@ export async function startMcpServer(deps: McpDeps, bundles: ToolBundle[], port 
       return;
     }
 
+    // 완료된 프로젝트는 기록만 본다. 그 프로젝트의 토큰으로 온 도구 호출은 받지 않는다
+    // (완료 뒤에도 살아 있는 프로세스나, 작업 폴더에서 따로 띄운 에이전트).
+    if (ctx.project.status === 'done') { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('완료된 프로젝트입니다.'); return; }
     const mcp = new McpServer({ name: 'dure', version: '0.1.0' });
     for (const bundle of bundles) bundle(mcp, ctx, deps);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });

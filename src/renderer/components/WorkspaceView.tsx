@@ -23,9 +23,12 @@ export function describeError(message: string): string {
   return message;
 }
 
-export function WorkspaceView({ workspace, workspaces, project, repo, todos, pending, conversation, onSelect }: {
+export function WorkspaceView({ workspace, workspaces, project, repo, todos, pending, conversation, readOnly = false, onSelect }: {
   workspace: Workspace; workspaces: Workspace[]; project?: Project; repo?: Repo; todos: Todo[]; pending?: PendingInfo;
-  conversation: ConversationData; onSelect: (s: Selection) => void;
+  conversation: ConversationData;
+  /** 완료된 프로젝트의 워크스페이스다: 기록만 보고, 에이전트를 시작하지 않는다 */
+  readOnly?: boolean;
+  onSelect: (s: Selection) => void;
 }) {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -133,7 +136,8 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
           >채팅</button>
           <button role="tab" aria-selected={mode === 'terminal'} className={mode === 'terminal' ? 'on' : ''} onClick={() => switchTo('terminal')} title={chatEngine ? '이 작업 폴더의 셸 터미널' : '에이전트가 도는 터미널을 그대로 봅니다'}>{chatEngine ? '셸' : '터미널'}</button>
         </div>
-        {canChat && !hasAgent && (
+        {readOnly && <span className="tag">완료된 프로젝트 · 기록만 봅니다</span>}
+        {canChat && !hasAgent && !readOnly && (
           <select
             className="engine-select" value={workspace.engine} onChange={(e) => setEngine(e.target.value as 'chat' | 'terminal')}
             title="에이전트를 돌리는 방식. 채팅: 글이 실시간으로 흐르고 승인과 질문이 버튼으로 옵니다. 터미널: Claude Code 를 터미널에서 그대로 띄웁니다"
@@ -142,7 +146,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
             <option value="terminal">터미널 방식</option>
           </select>
         )}
-        {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
+        {!hasAgent && !readOnly && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
         {hasAgent && chatEngine && (
           <button className="btn ghost" title="에이전트를 끕니다. 대화는 남아 있어 다시 시작하면 이어집니다" onClick={() => { window.dure.workspaces.stopAgent(workspace.id).catch((e: Error) => setError(e.message)); }}>끄기</button>
         )}
@@ -162,7 +166,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
       {mode === 'chat' && (
         <div className="ws-terms">
           <ChatPane
-            workspace={workspace} workspaces={workspaces} conversation={conversation} hasAgent={hasAgent}
+            workspace={workspace} workspaces={workspaces} conversation={conversation} hasAgent={hasAgent} readOnly={readOnly}
             agentTerminalId={terminals.find((t) => t.kind === 'agent' && t.exitCode === undefined)?.id}
             onShowTerminal={() => { const agent = terminals.find((t) => t.kind === 'agent'); if (agent) setActiveId(agent.id); switchTo('terminal'); }}
             onStartAgent={() => void open('agent')}
@@ -180,7 +184,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
             <span className="close" title={t.exitCode === undefined ? '터미널 끄기' : '탭 닫기'} onClick={(e) => { e.stopPropagation(); void window.dure.terminals.kill(t.id); }}>×</span>
           </div>
         ))}
-        <button className="btn ghost" title="셸 터미널 열기" onClick={() => void open('shell')}>+</button>
+        {!readOnly && <button className="btn ghost" title="셸 터미널 열기" onClick={() => void open('shell')}>+</button>}
       </div>
       <div className="term-area" ref={area}>
         {active
@@ -197,7 +201,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
               ) : (
                 <>
                   <div>{hasAgent ? '터미널을 고르세요.' : '에이전트가 꺼져 있습니다.'}</div>
-                  {!hasAgent && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
+                  {!hasAgent && !readOnly && <button className="btn primary" onClick={() => void open('agent')}>에이전트 시작</button>}
                   <div style={{ fontSize: 12 }}>처음 시작할 때 에이전트가 묻는 “이 폴더를 신뢰하는가” 에는 두레가 대신 “신뢰함” 으로 답합니다. 넘어가지 않으면 터미널에서 직접 답하세요.</div>
                 </>
               )}

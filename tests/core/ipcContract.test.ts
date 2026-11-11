@@ -2,7 +2,8 @@ import { IPC_CHANNELS, IPC_EVENTS } from '@shared/ipc';
 
 test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', () => {
   expect([...IPC_CHANNELS].sort()).toEqual([
-    'projects.create', 'projects.list', 'projects.remove',
+    'projects.create', 'projects.list', 'projects.remove', 'projects.reopen',
+    'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
     'repos.add', 'repos.branches', 'repos.list', 'repos.pickFolder', 'repos.remove', 'repos.status',
     'terminals.buffer', 'terminals.kill', 'terminals.list', 'terminals.openShell', 'terminals.resize',
     'terminals.startAgent', 'terminals.write',

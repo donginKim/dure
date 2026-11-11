@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Repo, Todo } from '@shared/types';
+import { useState, type ReactNode } from 'react';
+import type { Project, Repo, Todo, Workspace } from '@shared/types';
 import { deliveryNote } from '../conversationView';
 import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
@@ -12,6 +12,7 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [showDone, setShowDone] = useState(false);
   const repoName = (id: string): string => repos.find((r) => r.id === id)?.name ?? '';
   const progressOf = (workspaceId: string): string => {
     const { done, total } = progress(todos.filter((t) => t.workspaceId === workspaceId));
@@ -30,32 +31,15 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
     }
   };
 
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-head">
-        <button className="brand" title="프로젝트 전체 보기" onClick={() => onSelect(null)}>두레<small>dure</small></button>
-      </div>
-      <div className="side-section">
-        <button className={`side-title${selection === null ? ' selected' : ''}`} title="프로젝트 전체 보기" onClick={() => onSelect(null)}>
-          프로젝트 <span className="count">{tree.length}</span>
-        </button>
-        <button className="btn ghost" title="새 프로젝트 만들기" onClick={() => setAdding((v) => !v)}>+ 새 프로젝트</button>
-      </div>
-      {adding && (
-        <form className="new-project" onSubmit={(e) => { e.preventDefault(); void create(); }}>
-          <input type="text" autoFocus value={name} placeholder="프로젝트 이름 (예: 쇼핑몰)" onChange={(e) => setName(e.target.value)} />
-          <button className="btn primary" type="submit" disabled={!name.trim()}>만들기</button>
-        </form>
-      )}
-      {error && <div className="error" style={{ margin: '0 10px 8px' }}>{error}</div>}
-      <div className="tree">
-        {tree.length === 0 && <div className="tree-empty" style={{ paddingLeft: 10 }}>프로젝트가 없습니다. 위의 "+ 새 프로젝트"로 만드세요.</div>}
-        {tree.map(({ project, workspaces }) => {
+  // 진행 중인 프로젝트와 완료 처리한 프로젝트를 나눠 보인다. 완료는 접혀 있다.
+  const active = tree.filter((n) => n.project.status !== 'done');
+  const done = tree.filter((n) => n.project.status === 'done');
+  const renderProject = (project: Project, workspaces: Workspace[]): ReactNode => {
           const closed = collapsed[project.id] === true;
           return (
             <div key={project.id} className="tree-group">
               <div
-                className={`tree-project${selection?.type === 'project' && selection.id === project.id ? ' selected' : ''}`}
+                className={`tree-project${selection?.type === 'project' && selection.id === project.id ? ' selected' : ''}${project.status === 'done' ? ' done' : ''}`}
                 title="프로젝트 화면 열기: 저장소와 워크스페이스 관리"
                 onClick={() => onSelect({ type: 'project', id: project.id })}
               >
@@ -96,7 +80,37 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
               ))}
             </div>
           );
-        })}
+  };
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-head">
+        <button className="brand" title="프로젝트 전체 보기" onClick={() => onSelect(null)}>두레<small>dure</small></button>
+      </div>
+      <div className="side-section">
+        <button className={`side-title${selection === null ? ' selected' : ''}`} title="프로젝트 전체 보기" onClick={() => onSelect(null)}>
+          진행 중 <span className="count">{active.length}</span>
+        </button>
+        <button className="btn ghost" title="새 프로젝트 만들기" onClick={() => setAdding((v) => !v)}>+ 새 프로젝트</button>
+      </div>
+      {adding && (
+        <form className="new-project" onSubmit={(e) => { e.preventDefault(); void create(); }}>
+          <input type="text" autoFocus value={name} placeholder="프로젝트 이름 (예: 쇼핑몰)" onChange={(e) => setName(e.target.value)} />
+          <button className="btn primary" type="submit" disabled={!name.trim()}>만들기</button>
+        </form>
+      )}
+      {error && <div className="error" style={{ margin: '0 10px 8px' }}>{error}</div>}
+      <div className="tree">
+        {active.length === 0 && <div className="tree-empty" style={{ paddingLeft: 10 }}>{done.length ? '진행 중인 프로젝트가 없습니다.' : '프로젝트가 없습니다. 위의 "+ 새 프로젝트"로 만드세요.'}</div>}
+        {active.map(({ project, workspaces }) => renderProject(project, workspaces))}
+        {done.length > 0 && (
+          <>
+            <button className="tree-done-head" aria-expanded={showDone} onClick={() => setShowDone((v) => !v)} title="완료 처리한 프로젝트. 기록을 볼 수 있고 다시 열 수 있습니다">
+              <span className="chev">{showDone ? '▾' : '▸'}</span>완료 <span className="count">{done.length}</span>
+            </button>
+            {showDone && done.map(({ project, workspaces }) => renderProject(project, workspaces))}
+          </>
+        )}
       </div>
       <button className={`side-settings${selection?.type === 'settings' ? ' selected' : ''}`} onClick={() => onSelect({ type: 'settings' })}>
         <span className="gear" aria-hidden>⚙</span>설정

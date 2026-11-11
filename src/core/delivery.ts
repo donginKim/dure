@@ -17,6 +17,8 @@ export interface DeliveryActions {
   start(workspaceId: string): Promise<void>;
   /** 꺼진 에이전트를 메시지로 스스로 띄워도 되는가 (설정). 없으면 띄운다 */
   autoStart?(): boolean;
+  /** 완료됐거나 완료 처리하는 중인 프로젝트인가. 그런 프로젝트에는 아무것도 전달하지 않는다 */
+  isProjectClosed?(projectId: string): boolean;
 }
 
 interface Taken { text: string; messageIds: string[]; todoLines: string[] }
@@ -127,6 +129,7 @@ export class DeliveryService {
   private route(workspaceId: string, now: number): DeliveryState {
     const ws = this.d.workspaces.get(workspaceId);
     if (!ws || this.d.actions.isRemoving(workspaceId)) return 'none';
+    if (this.d.actions.isProjectClosed?.(ws.projectId)) return 'none';
     if (ws.agentKind === 'codex') return 'waiting-codex';
     if (ws.status === 'stopped') return this.d.actions.autoStart?.() === false ? 'waiting-start' : 'starting';
     if (ws.status === 'working') {

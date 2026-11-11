@@ -11,10 +11,16 @@ export type AgentEngine = 'chat' | 'terminal';
  */
 export type WorkspaceStatus = 'stopped' | 'starting' | 'idle' | 'working' | 'waiting_user';
 
+/** active: 진행 중. done: 완료 처리됨 (기록만 볼 수 있고, 다시 열 수 있다) */
+export type ProjectStatus = 'active' | 'done';
+
 export interface Project {
   id: string;
   name: string;
   createdAt: number;
+  status: ProjectStatus;
+  /** 완료 처리한 시각. 진행 중이면 null */
+  completedAt: number | null;
 }
 
 export interface Repo {
@@ -319,4 +325,52 @@ export interface ModelChoice {
   description: string;
   /** 이 모델이 받는 effort 단계. 비어 있으면 effort 를 고를 수 없는 모델이다 */
   efforts: string[];
+}
+
+/** "정리 대기" 에 옮겨 둔 것 하나. 최종 산출물이 아닌 파일을 지우지 않고 저장소 밖으로 옮겨 둔 것이다. */
+export interface CleanupItem {
+  id: string;
+  projectId: string;
+  /** 옮긴 워크스페이스. 지워졌으면 null */
+  workspaceId: string | null;
+  /** 그때의 워크스페이스 이름 (워크스페이스가 지워져도 알아볼 수 있게) */
+  workspaceName: string;
+  /** 작업 폴더 기준의 원래 경로 */
+  path: string;
+  /** 왜 옮겼는지 (에이전트가 적은 것) */
+  reason: string;
+  /** 크기 (바이트). 폴더면 안의 것을 모두 더한 값 */
+  size: number;
+  isDir: boolean;
+  createdAt: number;
+}
+
+/** 프로젝트를 완료 처리하기 전에 보여줄 것 */
+export interface CompletionPlan {
+  workspaces: {
+    id: string; name: string; branch: string; worktreePath: string;
+    /** 작업 폴더가 아직 있는가 */
+    exists: boolean;
+    /** 커밋하지 않은 변경 수. git 으로 확인하지 못했으면 null (그때는 기본으로 고르지 않는다) */
+    uncommitted: number | null;
+    /** git 이 무시하는 파일·폴더 수 (.env, 빌드 결과 등). 작업 폴더를 지우면 함께 지워진다. 확인하지 못했으면 null */
+    ignored: number | null;
+    /** push 하지 않은 커밋 수. 원격에 이 브랜치가 없으면 null */
+    unpushed: number | null;
+    agentRunning: boolean;
+  }[];
+  items: CleanupItem[];
+}
+
+/** 완료 처리할 때 사용자가 고른 것 */
+export interface CompletionChoice {
+  /** 작업 폴더를 지울 워크스페이스 */
+  removeWorktrees: string[];
+  /** 지울 정리 대기 항목 */
+  removeItems: string[];
+  /**
+   * 목록을 볼 때의 커밋하지 않은 변경 수 (워크스페이스 id → 수). 지우기 직전에 다시 세어 이것과 다르면 지우지 않는다:
+   * 목록을 본 뒤에 생긴 변경을 모르고 지우면 안 된다.
+   */
+  seen: Record<string, number | null>;
 }

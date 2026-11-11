@@ -70,6 +70,9 @@ export class Timeline {
         // 다른 도구의 hook 이 넣은 글은 보여주지 않는다.
         if (p.text.startsWith(DURE_PREFIX)) this.addDure(p.id, p.at, p.text);
         return;
+      case 'command-output':
+        this.add({ kind: 'output', id: p.id, at: p.at, text: p.text });
+        return;
       case 'interrupted':
         this.endRunning(p.at);
         this.add({ kind: 'notice', id: p.id, at: p.at, text: '중단됨' });

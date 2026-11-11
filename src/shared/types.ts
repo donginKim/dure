@@ -195,6 +195,8 @@ export type ChatItem =
   | { kind: 'steps'; id: string; at: number; steps: ChatStep[] }
   /** 두레가 넣은 글 (TODO 변경, 다른 워크스페이스의 메시지, 알림) */
   | { kind: 'dure'; id: string; at: number; title: string; text: string }
+  /** 슬래시 명령이 낸 출력 (/context 등) */
+  | { kind: 'output'; id: string; at: number; text: string }
   /** 중단됨, 대화가 압축됨 등 */
   | { kind: 'notice'; id: string; at: number; text: string };
 

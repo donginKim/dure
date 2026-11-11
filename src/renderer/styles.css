@@ -424,6 +424,13 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 /* 아래: 입력창, 승인 카드 */
 .chat-foot { padding: 8px 24px 16px; }
 .chat-error { margin-bottom: 8px; }
+/* 고르는 화면이 뜬 터미널을 채팅 안에 끼워 보이는 창 */
+.peek { margin-bottom: 8px; border: 1px solid #6b5a2a; border-radius: 12px; overflow: hidden; background: #0f1115; }
+.peek-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 12px; }
+.peek-title { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.peek-hint { color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.peek-term { position: relative; height: 400px; }
+.raw.command-out { color: #b9c0cf; }
 .composer { display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 8px 8px 14px; }
 .composer:focus-within { border-color: var(--accent); }
 .composer textarea { flex: 1; min-width: 0; resize: none; background: none; border: 0; outline: none; color: var(--text); font: inherit; line-height: 1.5; padding: 4px 0; max-height: 200px; }

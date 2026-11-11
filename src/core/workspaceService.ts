@@ -454,6 +454,20 @@ export class WorkspaceService extends EventEmitter {
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');
     const before = this.d.workspaces.get(id);
     if (!this.canSendInput(id) || !terminal || !before) throw new Error('지금은 채팅으로 보낼 수 없습니다. 터미널을 확인하세요.');
+    // 슬래시 명령(/compact, /context 등)은 에이전트의 입력칸에서만 명령으로 실행된다. hook 도 부르지 않는다 (실험 16).
+    const slash = /^\/[A-Za-z][\w:-]*(\s|$)/.test(message) && !message.includes('\n');
+    if (slash && before.status !== 'idle') throw new Error('슬래시 명령은 에이전트가 쉬는 중일 때만 보낼 수 있습니다.');
+    if (slash) {
+      this.confirmedIdle.delete(id);
+      this.synthetic.delete(id);
+      this.d.pty.write(terminal.id, message);
+      await new Promise((r) => setTimeout(r, 400));
+      if (!this.d.pty.list(id).some((t) => t.id === terminal.id)) throw new Error('에이전트가 종료되어 보내지 못했습니다.');
+      this.d.pty.write(terminal.id, '\r');
+      // 상태는 쉬는 중 그대로 둔다: 명령이 끝났다는 신호가 오지 않는다. 출력은 기록에서 읽는다.
+      this.chat?.refreshSoon(id);
+      return;
+    }
     if (before.status === 'working') {
       // 작업 중인 터미널에는 쓰지 않는다: 승인 창이 떠 있을 수 있고, 떴다는 알림은 몇 초 늦게 온다 (실험 15e).
       // 그 틈에 글과 Enter 를 써 넣으면 Enter 가 "허용" 으로 들어간다. 두레가 맡아 두었다가 다음 hook 응답에 싣는다.

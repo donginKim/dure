@@ -8,6 +8,8 @@ export type Piece =
   | { type: 'tool-end'; id: string; at: number; output: string; error: boolean; denied: boolean }
   /** hook 이 넣은 글 */
   | { type: 'hook-context'; id: string; at: number; text: string }
+  /** 슬래시 명령이 낸 출력 */
+  | { type: 'command-output'; id: string; at: number; text: string }
   | { type: 'interrupted'; id: string; at: number }
   | { type: 'compacted'; id: string; at: number };
 
@@ -40,7 +42,34 @@ const SYSTEM_TEXT = /^\s*<(command-name|command-message|command-args|local-comma
 const INTERRUPTED = /^\[Request interrupted by user/;
 const STOP_FEEDBACK = /^Stop hook feedback:\n/;
 
+const COMMAND_NAME = /<command-name>\s*([^<]*?)\s*<\/command-name>/;
+const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
+const COMMAND_STDOUT = /^\s*<local-command-stdout>([\s\S]*?)<\/local-command-stdout>\s*$/;
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;?<=>]*[ -/]*[@-~]/g;
+
+/**
+ * 슬래시 명령의 흔적 (실험 16). 명령 줄은 사용자가 친 것이므로 프롬프트로, 출력은 따로 낸다.
+ * 명령은 hook 을 하나도 부르지 않아, 이 줄들이 채팅에 보이는 유일한 흔적이다.
+ */
+function localCommand(id: string, at: number, raw: string): Piece[] | null {
+  const name = COMMAND_NAME.exec(raw);
+  if (name?.[1]) {
+    const args = (COMMAND_ARGS.exec(raw)?.[1] ?? '').trim();
+    const command = name[1].startsWith('/') ? name[1] : `/${name[1]}`;
+    return [{ type: 'prompt', id, at, text: args ? `${command} ${args}` : command, from: 'user' }];
+  }
+  const out = COMMAND_STDOUT.exec(raw);
+  if (out) {
+    const text = out[1]!.replace(ANSI, '').trim();
+    return text ? [{ type: 'command-output', id, at, text: clip(text) }] : [];
+  }
+  return null;
+}
+
 function promptPiece(id: string, at: number, raw: string): Piece[] {
+  const command = localCommand(id, at, raw);
+  if (command) return command;
   if (SYSTEM_TEXT.test(raw)) return [];
   const text = unwrapPasted(raw);
   if (!text) return [];
@@ -127,7 +156,10 @@ export function parseLine(line: string): Piece[] {
       case 'user': return fromUser(row, id, at);
       case 'assistant': return fromAssistant(row, id, at);
       case 'attachment': return fromAttachment(row, id, at);
-      case 'system': return row.subtype === 'compact_boundary' ? [{ type: 'compacted', id, at }] : [];
+      case 'system':
+        if (row.subtype === 'compact_boundary') return [{ type: 'compacted', id, at }];
+        if (row.subtype === 'local_command') return localCommand(id, at, str(row.content)) ?? [];
+        return [];
       default: return [];
     }
   } catch { return []; }

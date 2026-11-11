@@ -144,6 +144,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         <div className="ws-terms">
           <ChatPane
             workspace={workspace} workspaces={workspaces} conversation={conversation} hasAgent={hasAgent}
+            agentTerminalId={terminals.find((t) => t.kind === 'agent' && t.exitCode === undefined)?.id}
             onShowTerminal={() => { const agent = terminals.find((t) => t.kind === 'agent'); if (agent) setActiveId(agent.id); switchTo('terminal'); }}
             onStartAgent={() => void open('agent')}
           />

@@ -4,6 +4,7 @@ import { elapsed, mergeEntries, stepsLabel, stepsRunning, type Entry, type PeerE
 import { clock, deliveryNote, workspaceName } from '../conversationView';
 import { Attachment, type ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
+import { TerminalPane } from './TerminalPane';
 
 const MAX_SHOWN = 20_000;
 const cut = (s: string): string => (s.length > MAX_SHOWN ? `${s.slice(0, MAX_SHOWN)}\n… (${s.length - MAX_SHOWN}자 생략)` : s);
@@ -118,6 +119,7 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
     case 'assistant': return <div className="say"><Markdown text={entry.text} /></div>;
     case 'steps': return <StepsBlock workspaceId={workspaceId} steps={entry.steps} />;
     case 'dure': return <DureLine item={entry} />;
+    case 'output': return <pre className="raw command-out">{cut(entry.text)}</pre>;
     case 'notice': return <div className="chat-notice"><span>{entry.text}</span></div>;
     case 'peer': return <PeerCard entry={entry} workspaces={workspaces} conversation={conversation} />;
   }
@@ -129,8 +131,10 @@ const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, w
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.
  * 입력창의 글과 승인 답은 에이전트의 터미널에 써 넣는다.
  */
-export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShowTerminal, onStartAgent }: {
+export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentTerminalId, onShowTerminal, onStartAgent }: {
   workspace: Workspace; workspaces: Workspace[]; conversation: ConversationData; hasAgent: boolean;
+  /** 살아 있는 에이전트 터미널. 고르는 화면이 뜨면 이 터미널을 채팅 안에 끼워 보인다 */
+  agentTerminalId?: string;
   onShowTerminal: () => void; onStartAgent: () => void;
 }) {
   const [view, setView] = useState<ChatView>(EMPTY);
@@ -140,6 +144,12 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
   const [error, setError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [behind, setBehind] = useState(false);
+  // 에이전트가 고르는 화면을 띄웠을 때 그 터미널을 채팅 안에 끼워 보이는 창.
+  //  slash: 슬래시 명령을 보냈는데 곧바로 결과가 기록되지 않았다 (/model 처럼 고르는 화면이 떴다). count 는 그때의 항목 수
+  //  manual: 사용자가 직접 열었다 (승인 창의 다른 선택지 등)
+  const [peek, setPeek] = useState<{ why: 'slash'; count: number } | { why: 'manual' } | null>(null);
+  const [startingLong, setStartingLong] = useState(false);
+  const entryCount = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
@@ -193,6 +203,11 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
     setError('');
     try {
       await window.dure.chat.send(workspace.id, text);
+      if (text.startsWith('/') && !text.includes('\n')) {
+        // 바로 끝나는 명령(/context 등)은 1초 안에 결과가 기록된다. 그렇지 않으면 고르는 화면이 떠 있는 것이다.
+        const count = entryCount.current;
+        setTimeout(() => { if (entryCount.current === count) setPeek({ why: 'slash', count }); }, 1200);
+      }
       setDraft('');
       stick.current = true;
     } catch (e) {
@@ -216,6 +231,20 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
     window.dure.chat.answerPermission(workspace.id, a).catch((e: Error) => setError(e.message));
   };
 
+  entryCount.current = entries.length;
+  // 고르는 화면을 닫으면 명령의 결과가 기록되어 항목이 는다. 그때 끼워 보이던 창을 닫는다.
+  useEffect(() => {
+    if (peek?.why === 'slash' && entries.length > peek.count) setPeek(null);
+  }, [entries.length, peek]);
+  const statusNow = workspace.status;
+  useEffect(() => {
+    if (statusNow !== 'waiting_user') setPeek((p) => (p?.why === 'manual' ? null : p));
+    if (statusNow !== 'starting') { setStartingLong(false); return; }
+    // 시작이 오래 걸리면 무언가를 묻고 있는 것이다 (로그인, 넘기지 못한 신뢰 창 등).
+    const t = setTimeout(() => setStartingLong(true), 5000);
+    return () => clearTimeout(t);
+  }, [statusNow]);
+
   if (loaded && !view.available) {
     return (
       <div className="chat">
@@ -230,6 +259,12 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
   const status = workspace.status;
   const permission = status === 'waiting_user' ? view.pendingPermission : null;
   const working = status === 'working' && view.workingSince !== null;
+  // 채팅만으로는 답할 수 없는 창이 떠 있다: 그 터미널을 여기에 끼워 보인다.
+  const mustPeek = status === 'waiting_user' ? !permission?.canAnswer : status === 'starting' && startingLong;
+  const showPeek = Boolean(agentTerminalId) && hasAgent && (mustPeek || peek !== null);
+  const peekTitle = status === 'starting' ? '에이전트가 시작하면서 무언가를 묻고 있습니다'
+    : status === 'waiting_user' ? '에이전트가 고르기를 기다립니다'
+      : '고르는 화면이 열려 있습니다';
 
   let composer;
   if (!hasAgent) {
@@ -252,9 +287,8 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
         <div className="permit-actions">
           {permission?.canAnswer && <button className="btn primary" onClick={() => answer('allow')}>허용</button>}
           {permission?.canAnswer && <button className="btn" onClick={() => answer('deny')}>거부</button>}
-          <button className="btn" onClick={onShowTerminal}>터미널에서 보기</button>
-          {permission && !permission.canAnswer && <span className="permit-hint">선택지가 여럿이거나 터미널에서 이미 조작했습니다. 터미널에서 답하세요.</span>}
-          {permission?.canAnswer && <span className="permit-hint">"다시 묻지 않기" 같은 다른 선택지는 터미널에 있습니다.</span>}
+          {permission?.canAnswer && !showPeek && <button className="btn" onClick={() => setPeek({ why: 'manual' })} title={'"다시 묻지 않기" 같은 다른 선택지를 직접 고릅니다'}>다른 선택지</button>}
+          {!permission?.canAnswer && <span className="permit-hint">위 창에서 ↑↓ 로 고르고 Enter 를 누르세요.</span>}
         </div>
       </div>
     );
@@ -314,6 +348,17 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, onShow
       <div className="chat-foot">
         <div className="chat-col">
           {error && <div className="error chat-error">{error}</div>}
+          {showPeek && agentTerminalId && (
+            <div className="peek">
+              <div className="peek-head">
+                <span className="peek-title">{peekTitle}</span>
+                <span className="peek-hint">이 창을 누르고 ↑↓ 이동 · Enter 선택 · Esc 취소</span>
+                <button className="btn ghost" onClick={onShowTerminal}>크게 보기</button>
+                {!mustPeek && <button className="btn ghost" onClick={() => setPeek(null)}>닫기</button>}
+              </div>
+              <div className="peek-term"><TerminalPane key={agentTerminalId} terminalId={agentTerminalId} /></div>
+            </div>
+          )}
           {composer}
         </div>
       </div>

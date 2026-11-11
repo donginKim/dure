@@ -111,3 +111,9 @@ test('채팅으로 보낸 글의 전달 꼭지는 내 말풍선이 된다', () =
   t.push([{ type: 'hook-context', id: 'h', at: 1, text: '[두레] 사용자가 채팅으로 보낸 말이다. 하던 일에 반영하라:\n> 이것도\n> 해줘' }]);
   expect(t.items()).toEqual([{ kind: 'user', id: 'h', at: 1, text: '이것도\n해줘' }]);
 });
+
+test('슬래시 명령의 출력은 output 항목이 된다', () => {
+  const t = new Timeline();
+  t.push([{ type: 'prompt', id: 'c', at: 1, text: '/context', from: 'user' }, { type: 'command-output', id: 'o', at: 2, text: 'Context Usage' }]);
+  expect(t.items()).toEqual([{ kind: 'user', id: 'c', at: 1, text: '/context' }, { kind: 'output', id: 'o', at: 2, text: 'Context Usage' }]);
+});

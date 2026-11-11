@@ -334,10 +334,22 @@ export class ChatService extends EventEmitter {
   /** 사용자가 에이전트 터미널에 직접 입력했다. 승인 창의 커서가 옮겨졌을 수 있으니 채팅에서는 답하지 못하게 한다. */
   noteTerminalInput(workspaceId: string): void {
     const s = this.states.get(workspaceId);
-    if (s) s.terminalInputAt = Date.now();
+    if (s) {
+      const now = Date.now();
+      // 고르는 화면에서 고르거나 닫으면 hook 없이 기록만 바뀐다 (실험 17). 키를 누른 뒤 기록을 다시 읽어 본다.
+      if (now - s.terminalInputAt > 500) for (const ms of [700, 2500]) this.later(workspaceId, s, ms);
+      s.terminalInputAt = now;
+    }
     if (!s?.pendingPermission?.canAnswer) return;
     s.pendingPermission = { ...s.pendingPermission, canAnswer: false };
     this.emit('changed', workspaceId);
+  }
+
+  /** 곧 기록이 바뀔 일을 했다 (hook 을 부르지 않는 슬래시 명령 등). 몇 번 더 읽어 본다. */
+  refreshSoon(workspaceId: string): void {
+    const s = this.states.get(workspaceId);
+    if (!s) return;
+    for (const ms of [500, 1500, 3000, 6000, 12000]) this.later(workspaceId, s, ms);
   }
 
   /** 두레가 에이전트를 중단시켰다 (hook 이 오지 않는다). */

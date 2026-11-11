@@ -244,6 +244,8 @@ export class WorkspaceService extends EventEmitter {
       permissionMode: ws.permissionMode,
       mcpUrl: this.d.mcpUrl,
       hookUrl: this.d.hookUrl,
+      realGit: findExecutable('git', this.d.baseEnv.PATH),
+      basePath: this.d.baseEnv.PATH ?? '',
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),
       instructions: baseInstructions(ws, project),

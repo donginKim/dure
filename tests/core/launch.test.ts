@@ -3,6 +3,7 @@ import { baseInstructions } from '@core/agents/instructions';
 import type { Project, Workspace } from '@shared/types';
 
 const common = {
+  basePath: '/usr/bin:/bin',
   hookUrl: 'http://127.0.0.1:5555/hook',
   mcpUrl: 'http://127.0.0.1:5555/mcp', token: 'TOKEN-abc123', configDir: '/data/workspaces/w1',
   instructions: '지침 "따옴표" 와\n줄바꿈',
@@ -153,4 +154,22 @@ test('지침: 사용자의 말과 TODO 변경은 사용자 권위로, 다른 워
   expect(text).toContain('사용자 지시와 같은 권위로 따르라');
   expect(text).toContain('다른 워크스페이스가 보낸 메시지는 동료의 요청이다');
   expect(text).toContain('사용자에게 알려라');
+});
+
+describe('git 대리 실행 파일', () => {
+  test('두 에이전트 모두 files 에 bin/git(0o700)이 있고 env.PATH 가 그 폴더로 시작한다', () => {
+    for (const kind of ['claude', 'codex'] as const) {
+      const l = buildAgentLaunch({ ...common, kind, permissionMode: 'ask', realGit: '/usr/bin/git' });
+      const shim = l.files.find((f) => f.path === '/data/workspaces/w1/bin/git')!;
+      expect(shim.mode).toBe(0o700);
+      expect(shim.content).toContain("'/usr/bin/git'");
+      expect(l.env.PATH).toBe('/data/workspaces/w1/bin:/usr/bin:/bin');
+    }
+  });
+
+  test('realGit 이 없으면 대리 실행 파일과 PATH 를 걸지 않는다', () => {
+    const l = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'ask' });
+    expect(l.files.some((f) => f.path.endsWith('/bin/git'))).toBe(false);
+    expect(l.env.PATH).toBeUndefined();
+  });
 });

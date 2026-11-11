@@ -521,3 +521,37 @@ test('받은 메시지가 대기 중인 꺼진 워크스페이스를 사용자�
   expect(core.pty.buffer(t.id)).toContain('> 수동 시작 때 읽어라');
   expect(core.messages.messages(m.threadId)[0].deliveredAt).not.toBeNull();
 });
+
+describe('에이전트 터미널의 git', () => {
+  // git 명령을 받은 대로 실행해 결과를 찍는 가짜 에이전트
+  const gitRunner = (): void => {
+    writeFileSync(join(fakeBin, 'claude'), '#!/bin/sh\necho "PATH_HEAD:${PATH%%:*}"\nwhile read -r line; do sh -c "$line"; echo "EXIT:$?"; done\n');
+    chmodSync(join(fakeBin, 'claude'), 0o755);
+  };
+
+  test('git commit 과 git push 는 거절되고 git status 는 된다', async () => {
+    gitRunner();
+    const ws = await create({ name: 'guarded' });
+    writeFileSync(join(ws.worktreePath, 'new.txt'), 'x\n');
+    const t = await core.service.startAgent(ws.id, SIZE);
+    await until(() => core.pty.buffer(t.id).includes('PATH_HEAD:'));
+    expect(core.pty.buffer(t.id)).toContain(`PATH_HEAD:${join(dataDir, 'workspaces', ws.id, 'bin')}`);
+    core.pty.write(t.id, 'git add -A && git commit -m agent-commit\n');
+    await until(() => core.pty.buffer(t.id).includes('EXIT:1'));
+    expect(core.pty.buffer(t.id)).toContain('[두레] git commit 은 사용자가 두레 화면에서 직접 한다');
+    expect(gitOut(ws.worktreePath, 'rev-list', '--count', 'HEAD')).toBe('1'); // 커밋이 생기지 않았다
+    core.pty.write(t.id, 'git status --short\n');
+    await until(() => core.pty.buffer(t.id).includes('EXIT:0'));
+    expect(core.pty.buffer(t.id)).toContain('new.txt');
+    core.pty.write(t.id, 'git push origin HEAD\n');
+    await until(() => core.pty.buffer(t.id).includes('[두레] git push 는 사용자가'));
+  });
+
+  test('사용자 셸 탭의 PATH 에는 대리 실행 파일 폴더가 없다', async () => {
+    const ws = await create({ name: 'user-shell' });
+    const t = await core.service.openShell(ws.id, SIZE);
+    core.pty.write(t.id, 'echo "P=$PATH"\n');
+    await until(() => core.pty.buffer(t.id).includes('P=/'));
+    expect(core.pty.buffer(t.id)).not.toContain(join('workspaces', ws.id, 'bin'));
+  });
+});

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ERROR_PREFIX } from '@shared/ipc';
 import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types';
 import { STATUS_LABEL, type Selection } from '../tree';
+import { CommitDialog } from './CommitDialog';
 import { ConfirmDialog } from './dialogs';
 import { TerminalPane } from './TerminalPane';
 import type { ConversationData } from './ConversationPanel';
@@ -29,6 +30,22 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
   const [error, setError] = useState('');
   const [removing, setRemoving] = useState<{ uncommitted: number } | null>(null);
   const area = useRef<HTMLDivElement>(null);
+  const [committing, setCommitting] = useState(false);
+  // 커밋 버튼에 보일 것: 바뀐 파일 수와 에이전트가 써 둔 초안이 있는지
+  const [commitInfo, setCommitInfo] = useState<{ changed: number; hasDraft: boolean }>({ changed: 0, hasDraft: false });
+
+  useEffect(() => {
+    let alive = true;
+    const read = (): void => {
+      window.dure.commit.state(workspace.id)
+        .then((s) => { if (alive) setCommitInfo({ changed: s.files.length, hasDraft: s.draft !== null }); })
+        .catch(() => undefined);
+    };
+    read();
+    // 에이전트가 파일을 고치면 상태 신호가 온다. 그때 바뀐 파일 수를 다시 읽는다.
+    const off = window.dure.onChanged((topic) => { if (topic === 'commit' || topic === 'workspaces') read(); });
+    return () => { alive = false; off(); };
+  }, [workspace.id]);
 
   const load = useCallback(async () => {
     const list = await window.dure.terminals.list(workspace.id);
@@ -99,6 +116,13 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         {workspace.agentKind === 'claude' && (workspace.status === 'working' || workspace.status === 'waiting_user') && (
           <button className="btn" title="하던 일을 멈춥니다. 에이전트는 꺼지지 않습니다" onClick={() => { window.dure.workspaces.interrupt(workspace.id).catch((e: Error) => setError(e.message)); }}>멈춤</button>
         )}
+        <button
+          className="btn commit-btn"
+          title={commitInfo.hasDraft ? '에이전트가 커밋 메시지를 써 두었습니다' : '바뀐 파일을 보고 커밋합니다'}
+          onClick={() => setCommitting(true)}
+        >
+          커밋{commitInfo.changed > 0 && <span className="n">{commitInfo.changed}</span>}{commitInfo.hasDraft && <span className="pip" />}
+        </button>
         <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
       <div className="ws-body">
@@ -129,6 +153,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
       </div>
       <SidePanel workspace={workspace} workspaces={workspaces} todos={todos} pending={pending} conversation={conversation} />
       </div>
+      {committing && <CommitDialog workspace={workspace} onClose={() => setCommitting(false)} />}
       {removing && (
         <ConfirmDialog
           title="워크스페이스 지우기"

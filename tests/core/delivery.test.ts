@@ -103,7 +103,8 @@ test('승인 대기 중인 받는 쪽: waiting-unknown 이고 쓰지 않는다',
 
 test('꺼진 받는 쪽: 메시지를 첫 프롬프트로 에이전트를 띄운다', async () => {
   const m = send(front, back, 'API 형식 정해줘');
-  await until(() => agentBuffer(back).includes('ARGS:'));
+  // 인자가 길어 출력이 여러 조각으로 온다. 앞머리(ARGS:)만 보고 읽으면 뒷부분이 아직 없을 수 있다.
+  await until(() => agentBuffer(back).includes('> API 형식 정해줘'));
   const args = agentBuffer(back);
   expect(args).toContain('[두레] 워크스페이스 "프론트" 이(가) 보낸 메시지다');
   expect(args).toContain('> API 형식 정해줘');

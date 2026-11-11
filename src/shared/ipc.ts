@@ -1,9 +1,9 @@
 import type {
-  Artifact, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  Artifact, CommitResult, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
   TodoAssignee, TodoPatch, Workspace,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -76,6 +76,13 @@ export interface DureApi {
     resume(projectId: string): Promise<void>;
     delivery(projectId: string): Promise<Record<string, DeliveryInfo>>;
   };
+  /** 커밋 창. 커밋과 push 는 사용자가 화면에서 누를 때만 실행된다 */
+  commit: {
+    state(workspaceId: string): Promise<CommitState>;
+    run(workspaceId: string, input: { files: string[]; message: string }): Promise<CommitResult>;
+    /** git 이 낸 글을 돌려준다 */
+    push(workspaceId: string): Promise<string>;
+  };
   artifacts: {
     list(projectId: string): Promise<Artifact[]>;
     get(id: string): Promise<Artifact | null>;
@@ -94,6 +101,7 @@ export const IPC_CHANNELS = [
   'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
+  'commit.state', 'commit.run', 'commit.push',
 ] as const;
 export type IpcChannel = (typeof IPC_CHANNELS)[number];
 

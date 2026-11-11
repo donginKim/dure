@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AgentKind, PermissionMode, Repo, Workspace } from '@shared/types';
 
-export function Dialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+export function Dialog({ title, children, onClose, wide }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -9,7 +9,7 @@ export function Dialog({ title, children, onClose }: { title: string; children: 
   }, [onClose]);
   return (
     <div className="backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="dialog" role="dialog" aria-label={title}>
+      <div className={`dialog${wide ? ' wide' : ''}`} role="dialog" aria-label={title}>
         <h3>{title}</h3>
         {children}
       </div>

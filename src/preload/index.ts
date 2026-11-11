@@ -70,6 +70,11 @@ const api: DureApi = {
     resume: (projectId) => call('messages.resume', projectId),
     delivery: (projectId) => call('messages.delivery', projectId),
   },
+  commit: {
+    state: (workspaceId) => call('commit.state', workspaceId),
+    run: (workspaceId, input) => call('commit.run', workspaceId, input),
+    push: (workspaceId) => call('commit.push', workspaceId),
+  },
   artifacts: {
     list: (projectId) => call('artifacts.list', projectId),
     get: (id) => call('artifacts.get', id),

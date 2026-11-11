@@ -1,0 +1,172 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CommitResult, CommitState, Workspace } from '@shared/types';
+import { fileLabel, pathsToCommit, pushHint, statusLabel } from '../commitView';
+import { clock } from '../conversationView';
+import { Dialog } from './dialogs';
+
+// 창을 닫아도 사용자가 고치던 메시지는 남겨 둔다 (앱을 끄면 사라진다).
+const edits = new Map<string, { message: string; draftAt: number | null }>();
+
+/**
+ * 커밋 창. 에이전트가 써 둔 메시지를 사용자가 고친 뒤, 커밋과 push 를 직접 누른다.
+ * 에이전트는 커밋도 push 도 하지 않는다.
+ */
+export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onClose: () => void }) {
+  const [state, setState] = useState<CommitState | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [message, setMessage] = useState(edits.get(workspace.id)?.message ?? '');
+  const [newDraft, setNewDraft] = useState<string | null>(null); // 고치는 중에 에이전트가 새로 쓴 메시지
+  const [busy, setBusy] = useState<'commit' | 'push' | null>(null);
+  const [committed, setCommitted] = useState<CommitResult | null>(null);
+  const [error, setError] = useState('');
+  const [pushOutput, setPushOutput] = useState('');
+  const [pushError, setPushError] = useState('');
+  const messageRef = useRef(message);
+  messageRef.current = message;
+
+  const load = useCallback(async (selectAll: boolean) => {
+    try {
+      const s = await window.dure.commit.state(workspace.id);
+      setState(s);
+      setChecked((cur) => (selectAll ? new Set(s.files.map((f) => f.path)) : new Set(s.files.map((f) => f.path).filter((p) => cur.has(p)))));
+      const saved = edits.get(workspace.id);
+      const draftAt = s.draft?.updatedAt ?? null;
+      if (!saved) {
+        // 처음 여는 것: 에이전트의 초안으로 채운다.
+        setMessage(s.draft?.message ?? '');
+        edits.set(workspace.id, { message: s.draft?.message ?? '', draftAt });
+      } else if (s.draft && draftAt !== saved.draftAt) {
+        // 에이전트가 초안을 새로 썼다. 사용자가 손대지 않았으면 바꾸고, 고치던 중이면 덮어쓰지 않고 알린다.
+        const untouched = messageRef.current === saved.message;
+        if (untouched) {
+          setMessage(s.draft.message);
+          edits.set(workspace.id, { message: s.draft.message, draftAt });
+        } else {
+          setNewDraft(s.draft.message);
+        }
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [workspace.id]);
+
+  useEffect(() => {
+    void load(true);
+    return window.dure.onChanged((topic) => { if (topic === 'commit') void load(false); });
+  }, [load]);
+
+  const files = state?.files ?? [];
+  const allChecked = files.length > 0 && files.every((f) => checked.has(f.path));
+  const toggle = (path: string): void => setChecked((cur) => {
+    const next = new Set(cur);
+    if (next.has(path)) next.delete(path); else next.add(path);
+    return next;
+  });
+
+  const commit = async (): Promise<void> => {
+    if (!state) return;
+    setBusy('commit'); setError(''); setCommitted(null);
+    try {
+      const res = await window.dure.commit.run(workspace.id, { files: pathsToCommit(files, checked), message });
+      setCommitted(res);
+      setMessage('');
+      setNewDraft(null);
+      edits.delete(workspace.id);
+      await load(true);
+    } catch (e) {
+      setError((e as Error).message); // 고친 메시지는 그대로 둔다
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const push = async (): Promise<void> => {
+    setBusy('push'); setPushError(''); setPushOutput('');
+    try {
+      setPushOutput(await window.dure.commit.push(workspace.id) || 'push 했습니다.');
+      await load(false);
+    } catch (e) {
+      setPushError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const hint = state ? pushHint(state) : null;
+  const edited = (edits.get(workspace.id)?.message ?? '') !== message;
+
+  return (
+    <Dialog title="커밋" onClose={onClose} wide>
+      <div className="commit-branch">{state ? state.branch : '읽는 중…'}</div>
+
+      <div className="commit-files">
+        {files.length === 0 && state && <div className="muted commit-none">커밋할 변경이 없습니다.</div>}
+        {files.length > 0 && (
+          <label className="commit-file all">
+            <input type="checkbox" checked={allChecked} onChange={() => setChecked(allChecked ? new Set() : new Set(files.map((f) => f.path)))} />
+            <span className="grow">전체 선택</span>
+            <span className="muted">{checked.size}/{files.length}</span>
+          </label>
+        )}
+        {files.map((f) => (
+          <label className="commit-file" key={f.path}>
+            <input type="checkbox" checked={checked.has(f.path)} onChange={() => toggle(f.path)} />
+            <span className={`commit-status ${f.status}`}>{statusLabel(f.status)}</span>
+            <span className="commit-path grow" title={fileLabel(f)}>{fileLabel(f)}</span>
+            {f.added !== null && <span className="commit-stat"><i className="plus">+{f.added}</i> <i className="minus">−{f.removed ?? 0}</i></span>}
+          </label>
+        ))}
+      </div>
+
+      <div className="commit-msg-head">
+        <span>커밋 메시지</span>
+        {state?.draft && !edited && <span className="muted">에이전트가 작성 · {clock(state.draft.updatedAt)}</span>}
+        {edited && <span className="muted">고치는 중</span>}
+      </div>
+      {newDraft !== null && (
+        <div className="thread-notice">
+          <span className="grow">에이전트가 메시지를 새로 썼습니다.</span>
+          <button
+            className="btn accent"
+            onClick={() => {
+              setMessage(newDraft);
+              edits.set(workspace.id, { message: newDraft, draftAt: state?.draft?.updatedAt ?? null });
+              setNewDraft(null);
+            }}
+          >불러오기</button>
+        </div>
+      )}
+      <textarea
+        className="commit-msg"
+        rows={9}
+        value={message}
+        spellCheck={false}
+        placeholder={'에이전트에게 "커밋 메시지 써 줘" 라고 하거나 직접 쓰세요.'}
+        onChange={(e) => setMessage(e.target.value)}
+      />
+
+      {error && <pre className="error commit-out">{error}</pre>}
+      {committed && <div className="commit-done">커밋했습니다: <code>{committed.hash}</code> {committed.subject}</div>}
+
+      <div className="commit-actions">
+        <button className="btn primary" disabled={busy !== null || checked.size === 0 || !message.trim()} onClick={() => void commit()}>
+          {busy === 'commit' ? '커밋하는 중…' : '커밋'}
+        </button>
+        <span className="spacer" />
+        <button className="btn" onClick={onClose}>닫기</button>
+      </div>
+
+      <div className="commit-push">
+        <div className="grow">
+          <div className="commit-push-title">push</div>
+          <div className="muted commit-push-hint">{hint?.text ?? ''}</div>
+        </div>
+        <button className="btn" disabled={busy !== null || !hint?.canPush} onClick={() => void push()}>
+          {busy === 'push' ? 'push 하는 중…' : 'push'}
+        </button>
+      </div>
+      {pushError && <pre className="error commit-out">{pushError}</pre>}
+      {pushOutput && <pre className="commit-out ok">{pushOutput}</pre>}
+    </Dialog>
+  );
+}

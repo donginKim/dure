@@ -106,6 +106,9 @@ export function registerIpc(core: Core): () => void {
       held: core.messages.heldCount(w.id),
       error: core.delivery.error(w.id),
     }])),
+    'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
+    'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
+    'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
     'artifacts.list': (projectId: string) => core.messages.artifacts(projectId),
     'artifacts.get': (id: string) => core.messages.artifact(id) ?? null,
   };
@@ -134,6 +137,7 @@ export function registerIpc(core: Core): () => void {
   // 상태가 바뀌면 전달 방식도 바뀌므로 messages 도 함께 알린다.
   const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); };
   const onMessagesChanged = (): void => changed('messages');
+  const onCommitChanged = (): void => changed('commit');
   const onTodosChanged = (): void => changed('todos');
   core.pty.on('data', onData);
   core.pty.on('exit', onExit);
@@ -141,6 +145,7 @@ export function registerIpc(core: Core): () => void {
   core.todos.on('changed', onTodosChanged);
   core.todos.on('delivered', onTodosChanged);
   core.messages.on('changed', onMessagesChanged);
+  core.commit.on('changed', onCommitChanged);
 
   return () => {
     core.pty.off('data', onData);
@@ -149,6 +154,7 @@ export function registerIpc(core: Core): () => void {
     core.todos.off('changed', onTodosChanged);
     core.todos.off('delivered', onTodosChanged);
     core.messages.off('changed', onMessagesChanged);
+    core.commit.off('changed', onCommitChanged);
     for (const channel of IPC_CHANNELS) {
       if (IPC_ONE_WAY.includes(channel)) ipcMain.removeAllListeners(ipcName(channel));
       else ipcMain.removeHandler(ipcName(channel));

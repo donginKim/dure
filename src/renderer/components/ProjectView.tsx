@@ -4,6 +4,7 @@ import { groupTodos } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
 import { CleanupList, CompleteDialog } from './CleanupPanel';
 import { CoordinatorPane } from './CoordinatorPane';
+import { DbPanel } from './DbPanel';
 import { ConversationList, type ConversationData } from './ConversationPanel';
 import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
 import { Ticks, TodoList } from './TodoPanel';
@@ -18,14 +19,14 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
 }) {
   // 조율: 조율 에이전트와 대화. 현황: 저장소, 워크스페이스, TODO, 정리 대기. 고른 탭은 프로젝트마다 기억한다.
   const tabKey = `dure.projectTab.${project.id}`;
-  const [tab, setTab] = useState<'coord' | 'status'>(() => {
+  const [tab, setTab] = useState<'coord' | 'status' | 'db'>(() => {
     // 완료된 프로젝트는 현황부터 보인다 ("다시 열기" 가 거기 있다).
     if (project.status === 'done') return 'status';
-    try { const v = window.localStorage.getItem(tabKey); if (v === 'coord' || v === 'status') return v; } catch { /* 기억하지 못해도 된다 */ }
+    try { const v = window.localStorage.getItem(tabKey); if (v === 'coord' || v === 'status' || v === 'db') return v; } catch { /* 기억하지 못해도 된다 */ }
     // 저장소가 없어도 조율에서 시작할 수 있다 (계획안이 새 저장소를 만든다).
     return 'coord';
   });
-  const switchTab = (next: 'coord' | 'status'): void => { setTab(next); try { window.localStorage.setItem(tabKey, next); } catch { /* 위와 같다 */ } };
+  const switchTab = (next: 'coord' | 'status' | 'db'): void => { setTab(next); try { window.localStorage.setItem(tabKey, next); } catch { /* 위와 같다 */ } };
   const [statuses, setStatuses] = useState<Record<string, RepoStatus>>({});
   const [error, setError] = useState('');
   const [justAdded, setJustAdded] = useState<Repo | null>(null);
@@ -81,9 +82,11 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
         <div className="view-switch" role="tablist" aria-label="프로젝트 화면">
           <button role="tab" aria-selected={tab === 'coord'} className={tab === 'coord' ? 'on' : ''} onClick={() => switchTab('coord')} title="조율 에이전트와 대화합니다. 프로젝트 전체에 일을 시킵니다">조율</button>
           <button role="tab" aria-selected={tab === 'status'} className={tab === 'status' ? 'on' : ''} onClick={() => switchTab('status')} title="저장소, 워크스페이스, TODO, 정리 대기">현황</button>
+          <button role="tab" aria-selected={tab === 'db'} className={tab === 'db' ? 'on' : ''} onClick={() => switchTab('db')} title="DB 연결을 등록하고 표와 데이터를 조회합니다. 조회 전용입니다">DB</button>
         </div>
       </div>
       {tab === 'coord' && <CoordinatorPane project={project} repos={repos} everyone={everyone} conversation={conversation} readOnly={done} />}
+      {tab === 'db' && <DbPanel projectId={project.id} workspaces={everyone} readOnly={done} />}
       {tab === 'status' && (
     <div className="page">
       {done && (

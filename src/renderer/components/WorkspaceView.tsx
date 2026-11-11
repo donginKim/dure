@@ -4,6 +4,7 @@ import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types
 import { recallView, rememberView, type ViewMode } from '../chatView';
 import { STATUS_LABEL, type Selection } from '../tree';
 import { ChatPane } from './ChatPane';
+import { DbRequests } from './DbRequests';
 import { CommitDialog } from './CommitDialog';
 import { ConfirmDialog } from './dialogs';
 import { TerminalPane } from './TerminalPane';
@@ -162,6 +163,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         </button>
         <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
+      <DbRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <div className="ws-body">
       {mode === 'chat' && (
         <div className="ws-terms">

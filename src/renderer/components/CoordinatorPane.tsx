@@ -4,6 +4,7 @@ import type { CoordinatorInfo, PlanTodo, Project, Proposal, ProposalItem, Repo, 
 import { approveLabel, draftRepoId, fromDraft, planCounts, planProblem, specMessage, tidyPlan, toDraft, type PlanDraft } from '../planView';
 import { STATUS_LABEL } from '../tree';
 import { ChatPane } from './ChatPane';
+import { DbRequests } from './DbRequests';
 import type { ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
 import { describeError } from './WorkspaceView';
@@ -243,6 +244,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
         {hasAgent && <button className="btn ghost" title="조율 에이전트를 끕니다. 대화는 남아 있어 다시 시작하면 이어집니다" onClick={() => { window.dure.workspaces.stopAgent(ws.id).catch((e: Error) => setError(e.message)); }}>끄기</button>}
       </div>
       {error && <div className="error" style={{ margin: '8px 16px 0' }}>{error}</div>}
+      {!readOnly && <DbRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
       {proposal && reviewing
         ? <PlanReview key={proposal.id} proposal={proposal} repos={repos} newRepoDir={info.newRepoDir} onBack={() => setReviewing(false)} />
         : (

@@ -102,6 +102,7 @@ const api: DureApi = {
   },
   commit: {
     state: (workspaceId) => call('commit.state', workspaceId),
+    diff: (workspaceId, file) => call('commit.diff', workspaceId, file),
     run: (workspaceId, input) => call('commit.run', workspaceId, input),
     push: (workspaceId) => call('commit.push', workspaceId),
   },

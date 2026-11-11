@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
-import type { CommitResult, CommitState, Workspace } from '@shared/types';
+import { closeSync, lstatSync, openSync, readlinkSync, readSync } from 'node:fs';
+import { join } from 'node:path';
+import type { CommitResult, CommitState, Workspace, FileDiff } from '@shared/types';
 import type { CommitDraftStore } from './commitDrafts';
 import type { Git } from './git';
 import type { MessageService } from './messages';
@@ -12,6 +14,9 @@ const NOTICE_THREAD = '두레 알림';
  * 커밋과 push 는 사용자가 화면에서 누를 때만 실행된다. 에이전트는 하지 않는다.
  * 이벤트: 'changed' (workspaceId)
  */
+/** 화면에 보낼 diff 의 상한 (글자) */
+const MAX_DIFF = 400_000;
+
 export class CommitService extends EventEmitter {
   constructor(private readonly d: {
     workspaces: WorkspaceStore;
@@ -43,6 +48,39 @@ export class CommitService extends EventEmitter {
       this.d.git.merging(ws.worktreePath),
     ]);
     return { branch, files, draft: this.d.drafts.get(workspaceId) ?? null, remoteUrl, ahead, merging };
+  }
+
+  /**
+   * 바뀐 파일 하나의 변경 내용. 화면의 "변경" 보기가 쓴다.
+   * 바뀐 파일 목록에 있는 것만 보여 준다 (화면이 아무 경로나 읽게 하지 않는다).
+   */
+  async diff(workspaceId: string, file: string): Promise<FileDiff> {
+    const ws = this.mustGet(workspaceId);
+    const entry = (await this.d.git.changedFiles(ws.worktreePath)).find((f) => f.path === file);
+    if (!entry) throw new Error('바뀐 파일이 아닙니다 (이미 커밋했거나 되돌렸습니다).');
+    const cut = (text: string): FileDiff => ({ text: text.slice(0, MAX_DIFF), binary: false, truncated: text.length > MAX_DIFF });
+    if (entry.status !== 'untracked') {
+      const text = await this.d.git.fileDiff(ws.worktreePath, file);
+      return /^Binary files .* differ$/m.test(text) && !text.includes('\n@@') ? { text: '', binary: true, truncated: false } : cut(text);
+    }
+    // 추적 안 된 파일: git 이 비교할 것이 없으므로 내용 전체를 추가된 줄로 보여 준다.
+    const abs = join(ws.worktreePath, file);
+    const st = lstatSync(abs);
+    if (st.isSymbolicLink()) return cut(`새 심볼릭 링크 → ${readlinkSync(abs)}`);
+    if (!st.isFile()) return cut('(파일이 아닙니다)');
+    const fd = openSync(abs, 'r');
+    try {
+      const buf = Buffer.alloc(Math.min(st.size, MAX_DIFF));
+      const n = readSync(fd, buf, 0, buf.length, 0);
+      const head = buf.subarray(0, n);
+      if (head.includes(0)) return { text: '', binary: true, truncated: false };
+      const body = head.toString('utf8');
+      const lines = body.split('\n');
+      if (lines.at(-1) === '') lines.pop();
+      return { text: [`새 파일: ${file}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((l) => `+${l}`)].join('\n'), binary: false, truncated: st.size > MAX_DIFF };
+    } finally {
+      closeSync(fd);
+    }
   }
 
   async commit(workspaceId: string, i: { files: string[]; message: string }): Promise<CommitResult> {

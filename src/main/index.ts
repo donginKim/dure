@@ -22,7 +22,17 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // 워크스페이스의 "브라우저" 보기 (개발 서버를 앱 안에서 본다)
+      webviewTag: true,
     },
+  });
+  // 내장 브라우저는 두레의 권한을 갖지 않는 보통의 웹 페이지다: preload 와 node 를 붙이지 않고, http·https 만 연다.
+  win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    if (!/^https?:\/\//i.test(params.src ?? '')) event.preventDefault();
   });
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -33,6 +43,17 @@ function createWindow(): void {
 
 async function start(): Promise<void> {
   await app.whenReady();
+  // 내장 브라우저 안의 페이지: 새 창을 열지 못하게 하고(같은 보기에서 열린다), http·https 밖으로 나가지 못하게 한다.
+  app.on('web-contents-created', (_e, contents) => {
+    if (contents.getType() !== 'webview') return;
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) void contents.loadURL(url);
+      return { action: 'deny' };
+    });
+    contents.on('will-navigate', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault(); });
+    // 카메라, 마이크, 위치 같은 권한은 주지 않는다.
+    contents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  });
   try {
     core = await createCore({
       // 개발·검증용으로 다른 폴더를 쓸 수 있게 한다. 평소에는 설정하지 않는다.

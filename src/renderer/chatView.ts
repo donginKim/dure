@@ -196,14 +196,14 @@ export function mergeEntries(items: ChatItem[], messages: Message[], workspaceId
 
 // ---- 보기 전환 기억 ----
 
-export type ViewMode = 'terminal' | 'chat';
+export type ViewMode = 'terminal' | 'chat' | 'diff' | 'browser';
 const viewKey = (workspaceId: string): string => `dure.view.${workspaceId}`;
 
 /** 기억해 둔 보기. 고른 적이 없으면 fallback (채팅 방식의 워크스페이스는 채팅, 터미널 방식은 터미널). */
 export function recallView(workspaceId: string, storage: Pick<Storage, 'getItem'> | undefined, fallback: ViewMode = 'terminal'): ViewMode {
   try {
     const v = storage?.getItem(viewKey(workspaceId));
-    return v === 'chat' || v === 'terminal' ? v : fallback;
+    return v === 'chat' || v === 'terminal' || v === 'diff' || v === 'browser' ? v : fallback;
   } catch { return fallback; }
 }
 

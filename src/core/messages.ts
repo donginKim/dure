@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { USER_NAME, USER_RECIPIENT } from '@shared/messages';
 import { isAbsolute } from 'node:path';
 import type Database from 'better-sqlite3';
 import type { Artifact, ArtifactKind, Message, ProjectFlow, Sender, Thread } from '@shared/types';
@@ -66,7 +67,9 @@ export function formatDelivery(m: Message, d: { fromName: string; artifacts: Art
     head,
     ...m.body.split('\n').map((line) => `> ${line}`),
     ...attachments,
-    `답하려면 message_send 에 thread_id "${m.threadId}" 를 넣어라. 답이 필요 없으면 보내지 마라.`,
+    m.from.kind === 'user'
+      ? `사용자에게 답하려면 message_send 에 to "${USER_NAME}", thread_id "${m.threadId}" 를 넣어라 (사용자의 대화 패널에 보인다). 답이 필요 없으면 보내지 마라.`
+      : `답하려면 message_send 에 thread_id "${m.threadId}" 를 넣어라. 답이 필요 없으면 보내지 마라.`,
   ].join('\n');
 }
 
@@ -109,7 +112,10 @@ export class MessageService extends EventEmitter {
     for (const id of i.artifactIds ?? []) {
       if (this.artifact(id)?.projectId !== i.projectId) throw new Error(`이 프로젝트의 자료가 아닙니다: ${id}`);
     }
-    const recipient = this.db.prepare('SELECT id FROM workspaces WHERE id = ? AND project_id = ?').get(i.toWorkspaceId, i.projectId);
+    // 받는 쪽이 사용자: 에이전트가 사용자의 대화 패널에 남기는 말이다. 전달할 것이 없으므로 바로 전달된 것으로 둔다.
+    const toUser = i.toWorkspaceId === USER_RECIPIENT;
+    if (toUser && i.from.kind !== 'workspace') throw new Error('사용자에게 보내는 메시지는 워크스페이스만 보낼 수 있습니다.');
+    const recipient = toUser || this.db.prepare('SELECT id FROM workspaces WHERE id = ? AND project_id = ?').get(i.toWorkspaceId, i.projectId);
     if (!recipient) throw new Error('받는 워크스페이스가 없습니다.');
     if (i.from.kind === 'workspace' && i.from.workspaceId === i.toWorkspaceId) throw new Error('자기 자신에게는 보낼 수 없습니다.');
     if (i.threadId) {
@@ -129,12 +135,13 @@ export class MessageService extends EventEmitter {
           .run(threadId, i.projectId, oneLine(i.title ?? body.split('\n')[0], 60), now, now);
       }
       this.db.prepare(
-        `INSERT INTO messages (id, thread_id, project_id, from_workspace_id, to_workspace_id, body, artifact_ids, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (id, thread_id, project_id, from_workspace_id, to_workspace_id, body, artifact_ids, created_at, delivered_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(id, threadId, i.projectId, i.from.kind === 'workspace' ? i.from.workspaceId : fromUser ? null : SYSTEM, i.toWorkspaceId, body,
-        JSON.stringify(i.artifactIds ?? []), now);
+        JSON.stringify(i.artifactIds ?? []), now, toUser ? now : null);
       this.db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(now, threadId);
-      if (fromAgent) {
+      // 사용자에게 보내는 말은 에이전트끼리의 왕복이 아니다: 상한에 세지 않는다.
+      if (fromAgent && !toUser) {
         const caps = this.caps();
         // 메시지는 저장하되, 상한을 넘으면 전달을 멈춘다. 버리지 않는다.
         this.db.prepare('UPDATE threads SET agent_streak = agent_streak + 1, capped = (agent_streak + 1 > ?) WHERE id = ?').run(caps.thread, threadId);

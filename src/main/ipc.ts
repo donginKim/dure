@@ -153,6 +153,7 @@ export function registerIpc(core: Core): () => void {
       error: core.delivery.error(w.id),
     }])),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
+    'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
     'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
     'settings.get': () => core.settings.get(),

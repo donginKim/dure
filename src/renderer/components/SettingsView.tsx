@@ -113,7 +113,7 @@ export function SettingsView() {
     if (!v.trim() || Number.isNaN(n)) { setErrors((e) => ({ ...e, [key]: '숫자를 쓰세요.' })); return; }
     save(key, n);
   };
-  const pick = (key: 'worktreeRoot') => (): void => { void window.dure.settings.pickFolder().then((p) => { if (p) save(key, p); }); };
+  const pick = (key: 'worktreeRoot' | 'repoRoot') => (): void => { void window.dure.settings.pickFolder().then((p) => { if (p) save(key, p); }); };
   const modelKnown = !s.claudeModel || models.some((m) => m.value === s.claudeModel);
   const listed = models.filter((m) => m.value !== 'default');
   const claudeModels = listed.filter(isClaudeModel);
@@ -150,6 +150,10 @@ export function SettingsView() {
           <Row label="작업 폴더를 만드는 위치" help="워크스페이스의 작업 폴더(worktree)가 이 아래에 프로젝트 이름으로 만들어집니다. 비워 두면 기본 위치(~/dure/worktrees)입니다. 이미 만든 워크스페이스는 옮기지 않습니다." {...row('worktreeRoot')}>
             <TextInput wide value={s.worktreeRoot} placeholder="~/dure/worktrees" onCommit={(v) => save('worktreeRoot', v)} />
             <button className="btn" onClick={pick('worktreeRoot')}>고르기</button>
+          </Row>
+          <Row label="새 저장소를 만드는 위치" help="조율 에이전트의 계획안에 든 새 저장소가 이 아래에 프로젝트 이름으로 만들어집니다. 비워 두면 기본 위치(~/dure/repos)입니다. 이미 만든 저장소는 옮기지 않습니다." {...row('repoRoot')}>
+            <TextInput wide value={s.repoRoot} placeholder="~/dure/repos" onCommit={(v) => save('repoRoot', v)} />
+            <button className="btn" onClick={pick('repoRoot')}>고르기</button>
           </Row>
         </div>
       </div>

@@ -4,9 +4,10 @@ import { closeSync, lstatSync, mkdirSync, openSync, readSync, rmSync, statSync, 
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
 import { isNewRepoId, newRepoId, newRepoName, validRepoName } from '@shared/plan';
-import type { PlanDecision, PlanRepo, PlanResult, PlanTodo, Proposal, ProposalItem, Repo, SpecFile, Workspace } from '@shared/types';
+import type { PlanDecision, PlanRepo, PlanResult, PlanTodo, Proposal, ProposalItem, Repo, Settings, SpecFile, Workspace } from '@shared/types';
 import type { Git } from './git';
 import type { MessageService } from './messages';
+import { expandHome } from './settings';
 import { slugify } from './slug';
 import type { ProjectStore, RepoStore, WorkspaceStore } from './stores';
 import type { TodoService } from './todos';
@@ -70,8 +71,9 @@ export class CoordinatorService extends EventEmitter {
     service: WorkspaceService;
     /** 조율 에이전트의 폴더를 두는 곳 (두레 데이터 폴더 아래) */
     dir: string;
-    /** 새 저장소를 만드는 상위 폴더. 그 아래 프로젝트 이름의 폴더에 만든다 */
+    /** 새 저장소를 만드는 상위 폴더의 기본값. 설정에 값이 있으면 그것을 쓴다. 그 아래 프로젝트 이름의 폴더에 만든다 */
     repoRoot: string;
+    settings(): Settings;
   }) {
     super();
   }
@@ -102,11 +104,30 @@ export class CoordinatorService extends EventEmitter {
     return r ? toProposal(r) : null;
   }
 
+  /** 새 저장소를 만드는 상위 폴더: 설정에 있으면 그곳, 없으면 기본 위치. */
+  private repoRoot(): string {
+    const set = this.d.settings().repoRoot;
+    return resolve(set ? expandHome(set) : this.d.repoRoot);
+  }
+
+  /**
+   * 등록된 저장소가 바뀌었다. 조율 에이전트는 띄울 때의 저장소만 읽을 수 있으므로, 쉬는 중이면 다시 띄운다 (대화는 이어진다).
+   * 꺼져 있으면 다음에 뜰 때 반영된다. 일하는 중이면 건드리지 않는다.
+   */
+  async reload(projectId: string): Promise<'reloaded' | 'busy' | 'off'> {
+    const c = this.d.workspaces.coordinator(projectId);
+    if (!c || !this.d.service.isAgentRunning(c.id)) return 'off';
+    if (this.d.workspaces.get(c.id)?.status !== 'idle') return 'busy';
+    await this.d.service.stopAgent(c.id);
+    await this.d.service.startAgent(c.id, { cols: 120, rows: 40 });
+    return 'reloaded';
+  }
+
   /** 이 프로젝트의 새 저장소가 만들어질 폴더. */
   newRepoDir(projectId: string): string {
     const project = this.d.projects.get(projectId);
     if (!project) throw new Error(`프로젝트가 없습니다: ${projectId}`);
-    return join(resolve(this.d.repoRoot), slugify(project.name));
+    return join(this.repoRoot(), slugify(project.name));
   }
 
   /** 계획안의 새 저장소를 확인한다: 폴더 이름이 될 수 있고, 등록된 저장소와 겹치지 않고, 그 자리에 아무것도 없어야 한다. */
@@ -295,7 +316,7 @@ export class CoordinatorService extends EventEmitter {
         const left: string[] = [];
         for (const ws of created) await this.d.service.discard(ws.id).catch(() => { left.push(`워크스페이스 ${ws.name}`); });
         // 여기서 만든 저장소도 치운다. 이 승인에서 새로 만든 빈 폴더만 지운다 (mkdir 이 성공한 것만 목록에 있다).
-        const root = resolve(this.d.repoRoot) + sep;
+        const root = this.repoRoot() + sep;
         for (const m of madeRepos.reverse()) {
           try {
             if (m.repo) this.d.repos.remove(m.repo.id);
@@ -310,12 +331,15 @@ export class CoordinatorService extends EventEmitter {
       this.d.db.prepare("UPDATE proposals SET status = 'approved', items = ? WHERE id = ? AND status = 'pending'")
         .run(JSON.stringify({ summary: toProposal(r).summary, newRepos, items, projectTodos }), proposalId);
       this.emit('changed', r.project_id);
+      // 새 저장소를 조율 에이전트가 읽을 수 있게 다시 띄운다. 못 하면 알림에 적는다.
+      const reloaded = madeRepos.length ? await this.reload(r.project_id).catch(() => 'busy' as const) : 'off';
       const repoName = (id: string): string => this.d.repos.get(id)?.name ?? '';
       this.tell(r.project_id, [
         '사용자가 계획안을 검토하고 승인했다. 두레가 아래를 만들었다. 사용자가 고쳤을 수 있으니 이 목록이 최종이다.',
         ...madeRepos.map((m) => `- 새 저장소 "${basename(m.path)}" (${m.path}): 만들어 프로젝트에 등록했다. README.md 와 첫 커밋만 있다.`),
         ...items.map((it) => `- 워크스페이스 "${it.name}" (저장소 ${repoName(it.repoId)}${it.existing ? ', 이미 있던 것' : ', 새로 만듦'})${it.role ? `: ${it.role}` : ''}${it.todos.length ? `\n${it.todos.map((t) => `  - TODO${t.assignee === 'user' ? '(사용자 몫)' : ''}: ${t.title}`).join('\n')}` : ''}`),
         ...(projectTodos.length ? ['- 프로젝트 TODO:', ...projectTodos.map((t) => `  - ${t.assignee === 'user' ? '(사용자 몫) ' : ''}${t.title}`)] : []),
+        ...(reloaded === 'busy' ? ['새 저장소의 파일은 네가 다시 떠야 읽을 수 있다. 읽어야 하면 사용자에게 조율 에이전트를 껐다 켜 달라고 하라.'] : []),
         'TODO 는 이미 적혀 있다. 다시 적지 마라. 이제 각 워크스페이스에 message_send 로 작업을 시작하라고 알려라 (할 일은 그 워크스페이스의 TODO 에 있다고 알려 주면 된다).',
       ].join('\n'));
       return { repos: madeRepos.flatMap((m) => (m.repo ? [m.repo] : [])), created, todos: todoIds.length };

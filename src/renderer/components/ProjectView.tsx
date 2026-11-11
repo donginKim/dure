@@ -19,6 +19,8 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
   // 조율: 조율 에이전트와 대화. 현황: 저장소, 워크스페이스, TODO, 정리 대기. 고른 탭은 프로젝트마다 기억한다.
   const tabKey = `dure.projectTab.${project.id}`;
   const [tab, setTab] = useState<'coord' | 'status'>(() => {
+    // 완료된 프로젝트는 현황부터 보인다 ("다시 열기" 가 거기 있다).
+    if (project.status === 'done') return 'status';
     try { const v = window.localStorage.getItem(tabKey); if (v === 'coord' || v === 'status') return v; } catch { /* 기억하지 못해도 된다 */ }
     // 저장소가 없으면 조율 에이전트가 할 수 있는 일이 없다. 현황에서 저장소부터 등록한다.
     return repos.length === 0 ? 'status' : 'coord';

@@ -172,7 +172,7 @@ const DURE_TOOLS: Record<string, string> = {
   artifact_publish: '자료 올림', artifact_list: '자료 목록 확인', artifact_read: '자료 읽음',
   commit_draft_save: '커밋 메시지 저장',
   cleanup_stash: '정리 대기로 옮김', cleanup_list: '정리 대기 확인',
-  workspace_propose: '워크스페이스 제안', todo_assign: 'TODO 배정',
+  plan_propose: '계획안 올림', todo_assign: 'TODO 배정',
 };
 
 const fileName = (p: unknown): string => str(p).split('/').pop() || str(p);

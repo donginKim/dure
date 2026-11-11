@@ -145,3 +145,26 @@ test('진짜 git 경로와 작업 폴더 경로에 작은따옴표와 공백이 
   chmodSync(shim, 0o700);
   expect((await runner(shim, dir)(['status'])).out).toContain('REAL-RAN');
 });
+
+test('저장소를 여럿 주면 그 저장소 전부의 커밋을 막고, 그 밖의 저장소는 막지 않는다 (조율 에이전트)', async () => {
+  const a = makeRepo('등록 a');
+  const b = makeRepo("등록 b'");
+  const other = makeRepo('other');
+  const dir = tempDir('shim multi ');
+  const shim = join(dir, 'git');
+  writeFileSync(shim, gitShimScript(REAL_GIT, [join(realpathSync(a), '.git'), join(realpathSync(b), '.git')]));
+  chmodSync(shim, 0o700);
+  const run = runner(shim, dir);
+  for (const repo of [a, b, other]) { writeFileSync(join(repo, 'new.txt'), 'x\n'); gitOut(repo, 'add', '-A'); }
+  for (const repo of [a, b]) {
+    const r = await run(['-C', repo, 'commit', '-m', 'x']);
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('[두레] git commit');
+    expect(gitOut(repo, 'rev-list', '--count', 'HEAD')).toBe('1');
+    expect((await run(['-C', repo, 'push'])).err).toContain('[두레] git push');
+  }
+  expect((await run(['-C', other, 'commit', '-m', 'x'])).code).toBe(0);
+  expect(gitOut(other, 'rev-list', '--count', 'HEAD')).toBe('2');
+  // 표준 입력은 진짜 git 에 그대로 간다 (목록을 읽느라 먹지 않는다)
+  expect((await run(['-C', a, 'hash-object', '--stdin'], { input: 'hello\n' })).out.trim()).toBe('ce013625030ba8dba906f756967f9e9ca394464a');
+});

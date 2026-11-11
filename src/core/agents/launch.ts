@@ -21,8 +21,13 @@ export interface AgentLaunchInput {
   instructions: string;
   /** 진짜 git 의 절대 경로. gitCommonDir 와 함께 주면 에이전트의 commit·push 를 막는 대리 실행 파일을 건다 */
   realGit?: string;
-  /** 이 워크스페이스 저장소의 공용 .git 폴더 (실제 경로). 이 저장소에 대한 commit·push 만 막는다 */
-  gitCommonDir?: string;
+  /** 막을 저장소의 공용 .git 폴더 (실제 경로). 이 저장소들에 대한 commit·push 만 막는다. 조율 에이전트는 등록된 저장소 전부 */
+  gitCommonDir?: string | string[];
+  /**
+   * 파일을 바꾸는 것을 저절로 허용하지 않는다 (Claude Code). 조율 에이전트에 쓴다:
+   * acceptEdits 모드는 rm, mv, cp, sed 같은 셸 명령도 묻지 않고 실행하는데, 조율 에이전트는 사용자의 원본 저장소를 읽을 수 있다.
+   */
+  manualEdits?: boolean;
   /** 에이전트에게 물려줄 PATH. 대리 실행 파일 폴더를 이 앞에 붙인다 */
   basePath: string;
   /** 띄우자마자 실행할 프롬프트. 폴더 신뢰 창이 있으면 그 뒤에 실행된다 (실험 12) */
@@ -84,10 +89,11 @@ export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
     // 두 에이전트 모두 프롬프트는 마지막 위치 인자다.
     launch.args.push(i.initialPrompt);
   }
-  if (i.realGit && i.gitCommonDir) {
+  const commons = (Array.isArray(i.gitCommonDir) ? i.gitCommonDir : [i.gitCommonDir]).filter((c): c is string => Boolean(c));
+  if (i.realGit && commons.length) {
     // 에이전트가 실행하는 git 이 이 파일을 먼저 타게 한다 (실험 09). 사용자 셸 탭에는 걸지 않는다.
     const bin = join(i.configDir, 'bin');
-    launch.files.push({ path: join(bin, 'git'), content: gitShimScript(i.realGit, i.gitCommonDir), mode: 0o700 });
+    launch.files.push({ path: join(bin, 'git'), content: gitShimScript(i.realGit, commons), mode: 0o700 });
     launch.env.PATH = `${bin}:${i.basePath}`;
   }
   return launch;
@@ -109,7 +115,7 @@ function buildBase(i: AgentLaunchInput): AgentLaunch {
         '--allowedTools', 'mcp__dure',
         '--settings', settings,
         '--append-system-prompt', i.instructions,
-        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', 'acceptEdits']),
+        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', i.manualEdits ? 'default' : 'acceptEdits']),
       ],
       env: {},
       files: [

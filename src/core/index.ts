@@ -156,7 +156,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       isProjectClosed: (projectId) => service.isProjectClosed(projectId),
     },
   });
-  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, messages, git, service, dir: join(o.dataDir, 'coordinators') });
+  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators') });
   service.attachDelivery(delivery);
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
@@ -181,7 +181,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 전달이 실패하면 메시지는 미전달로 되돌아가고 이유가 delivery.error 에 남아 화면에 보인다. 여기서는 오류를 삼킨다.
   const kick = (workspaceId: string): void => { delivery.kick(workspaceId).catch(() => undefined); };
   const onSent = (m: { toWorkspaceId: string }): void => kick(m.toWorkspaceId);
-  const onReleased = (projectId: string): void => { for (const w of workspaces.list(projectId)) kick(w.id); };
+  const onReleased = (projectId: string): void => { for (const w of workspaces.listAll(projectId)) kick(w.id); };
   messages.on('sent', onSent);
   messages.on('released', onReleased);
 
@@ -262,7 +262,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
     async removeProject(projectId) {
       // 워크스페이스는 터미널과 에이전트만 끄고 작업 폴더는 남긴다. 정리 대기에 옮겨 둔 것은 함께 지운다.
-      for (const ws of workspaces.listAll(projectId)) await service.remove(ws.id, { deleteWorktree: false });
+      for (const ws of workspaces.listAll(projectId)) await service.remove(ws.id, { deleteWorktree: false, withCoordinator: true });
       cleanup.removeProject(projectId);
       // 조율 에이전트의 폴더는 두레의 것이다. 함께 지운다.
       const coordDir = join(o.dataDir, 'coordinators', projectId);

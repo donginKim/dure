@@ -1,5 +1,5 @@
 import type {
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, ProposalItem, Settings, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace,
 } from './types';
 
@@ -29,9 +29,11 @@ export interface DureApi {
   coordinator: {
     /** 프로젝트의 조율 에이전트(없으면 만든다)와 승인을 기다리는 제안 */
     get(projectId: string): Promise<CoordinatorInfo>;
-    /** 제안을 승인한다. items 는 화면에서 고친 최종 목록. 만들어진 워크스페이스를 돌려준다 */
-    approve(proposalId: string, items: ProposalItem[]): Promise<Workspace[]>;
+    /** 계획안을 승인한다. decision 은 검토 화면에서 고친 최종 계획. 두레가 워크스페이스와 TODO 를 그대로 만든다 */
+    approve(proposalId: string, decision: PlanDecision): Promise<PlanResult>;
     reject(proposalId: string, reason?: string): Promise<void>;
+    /** 기획서 파일을 고르는 창을 띄운다. 글 파일이면 내용까지 돌려준다. 취소하면 null */
+    pickSpec(): Promise<SpecFile | null>;
   };
   /** 정리 대기와 프로젝트 완료 처리 */
   cleanup: {
@@ -148,7 +150,7 @@ export interface DureApi {
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
-  'coordinator.get', 'coordinator.approve', 'coordinator.reject',
+  'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',

@@ -12,13 +12,14 @@ const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
  *   merge, rebase 처럼 커밋을 만드는 다른 명령을 쓰는 것은 막지 않는다.
  *
  * @param realGit 진짜 git 의 절대 경로
- * @param gitCommonDir 이 워크스페이스 저장소의 공용 .git 폴더 (실제 경로)
+ * @param gitCommonDir 막을 저장소의 공용 .git 폴더 (실제 경로). 조율 에이전트는 등록된 저장소 전부를 준다
  */
-export function gitShimScript(realGit: string, gitCommonDir: string): string {
+export function gitShimScript(realGit: string, gitCommonDir: string | string[]): string {
+  const commons = (Array.isArray(gitCommonDir) ? gitCommonDir : [gitCommonDir]).filter((c) => c && !c.includes('\n'));
   return `#!/bin/sh
 # 두레가 만든 파일. 에이전트가 이 워크스페이스의 저장소에 git commit, git push 하는 것을 막는다.
 REAL=${shq(realGit)}
-COMMON=${shq(gitCommonDir)}
+COMMONS=${shq(commons.join('\n'))}
 
 # 하위 명령 찾기: 전역 옵션을 건너뛰고 처음 나오는 낱말. 값을 따로 받는 옵션은 그 값도 건너뛴다.
 sub=""
@@ -68,7 +69,17 @@ case "$sub" in
       [ -n "$target" ] && target=$( (cd "$target" 2>/dev/null && pwd -P) )
     fi
     # --git-dir, --work-tree 로 저장소를 따로 가리킨 경우는 판단할 수 없어 막는다.
-    if [ "$unsure" = 1 ] || [ "$target" = "$COMMON" ]; then
+    blocked=0
+    if [ "$unsure" = 1 ]; then
+      blocked=1
+    elif [ -n "$target" ]; then
+      while IFS= read -r c; do
+        [ "$target" = "$c" ] && blocked=1
+      done <<DURE_COMMONS
+$COMMONS
+DURE_COMMONS
+    fi
+    if [ "$blocked" = 1 ]; then
       if [ "$sub" = commit ]; then
         printf '%s\\n' \\
           '[두레] git commit 은 사용자가 두레 화면에서 직접 한다. 에이전트는 커밋하지 않는다.' \\

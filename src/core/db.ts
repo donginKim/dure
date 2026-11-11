@@ -53,6 +53,48 @@ const MIGRATIONS: string[] = [
     line TEXT NOT NULL
   );
   `,
+  `
+  CREATE TABLE project_flow (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    paused INTEGER NOT NULL DEFAULT 0,
+    capped INTEGER NOT NULL DEFAULT 0,
+    agent_streak INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    paused INTEGER NOT NULL DEFAULT 0,
+    capped INTEGER NOT NULL DEFAULT 0,
+    agent_streak INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  -- 워크스페이스가 지워져도 대화 기록은 남아야 하므로 워크스페이스에는 외래 키를 걸지 않는다.
+  CREATE TABLE messages (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    project_id TEXT NOT NULL,
+    from_workspace_id TEXT,
+    to_workspace_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    artifact_ids TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL,
+    delivered_at INTEGER
+  );
+  CREATE INDEX messages_undelivered ON messages (to_workspace_id, delivered_at);
+  CREATE TABLE artifacts (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    workspace_id TEXT,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    path TEXT,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

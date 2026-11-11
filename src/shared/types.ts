@@ -57,6 +57,61 @@ export interface Todo {
 
 export type TodoPatch = Partial<Pick<Todo, 'title' | 'detail' | 'status' | 'assignee'>>;
 
+/** 메시지를 보낸 쪽. 워크스페이스의 에이전트이거나 사용자다. */
+export type Sender = { kind: 'workspace'; workspaceId: string } | { kind: 'user' };
+
+export interface Thread {
+  id: string;
+  projectId: string;
+  /** 첫 메시지 본문의 첫 줄 (최대 60자) */
+  title: string;
+  /** 사용자가 멈춤 */
+  paused: boolean;
+  /** 에이전트끼리 주고받은 횟수가 상한을 넘어 멈춤 */
+  capped: boolean;
+  /** 사용자 개입 없이 에이전트가 보낸 수 */
+  agentStreak: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Message {
+  id: string;
+  threadId: string;
+  projectId: string;
+  from: Sender;
+  toWorkspaceId: string;
+  body: string;
+  artifactIds: string[];
+  createdAt: number;
+  deliveredAt: number | null;
+}
+
+export type ArtifactKind = 'result' | 'decision' | 'api-spec' | 'note';
+
+/** 프로젝트 안에서 공유하는 자료. 본문이 있는 글이거나 파일 경로 링크다. 파일은 복사하지 않는다. */
+export interface Artifact {
+  id: string;
+  projectId: string;
+  /** 올린 워크스페이스. 지워졌으면 null */
+  workspaceId: string | null;
+  kind: ArtifactKind;
+  title: string;
+  body: string;
+  path: string | null;
+  createdAt: number;
+}
+
+/** 프로젝트 전체의 대화 흐름 상태 */
+export interface ProjectFlow {
+  paused: boolean;
+  capped: boolean;
+  agentStreak: number;
+}
+
+/** 받는 워크스페이스에 메시지가 어떻게 전달될지 */
+export type DeliveryState = 'none' | 'next-hook' | 'waking' | 'starting' | 'waiting-unknown' | 'waiting-codex' | 'held';
+
 export interface TerminalInfo {
   id: string;
   workspaceId: string;

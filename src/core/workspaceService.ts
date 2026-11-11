@@ -74,6 +74,11 @@ function findExecutable(command: string, pathVar: string | undefined): string | 
 /** 조율 에이전트의 이름. 보통 워크스페이스는 이 이름을 쓸 수 없다 */
 export const COORDINATOR_NAME = '조율';
 
+const MAX_NAME = 40;
+const MAX_SUMMARY = 80;
+/** 에이전트가 이름을 다시 바꿀 수 있을 때까지의 간격 */
+const RENAME_GAP_MS = 5 * 60_000;
+
 export class WorkspaceService extends EventEmitter {
   /** 에이전트 터미널 id → 워크스페이스 id */
   private readonly agentTerminals = new Map<string, string>();
@@ -85,6 +90,8 @@ export class WorkspaceService extends EventEmitter {
   private delivery?: DeliveryService;
   /** 지우는 중인 워크스페이스. 이때는 에이전트를 띄우거나 깨우지 않는다 */
   private readonly removing = new Set<string>();
+  /** 에이전트가 이름을 마지막으로 바꾼 때 */
+  private readonly renamedAt = new Map<string, number>();
   /** 두레가 방금 프롬프트를 넣은 워크스페이스. 다음 UserPromptSubmit 은 사용자 입력이 아니다 */
   private readonly synthetic = new Set<string>();
   /** 마지막으로 hook 을 받은 시각 */
@@ -210,6 +217,74 @@ export class WorkspaceService extends EventEmitter {
     if (this.isAgentRunning(id)) throw new Error('에이전트를 끈 뒤에 바꿀 수 있습니다.');
     this.d.workspaces.update(id, { engine });
     this.emit('changed', id);
+  }
+
+  /** 이름으로 쓸 수 있는 글로 다듬고 확인한다. */
+  private cleanName(ws: Workspace, raw: unknown): string {
+    // eslint-disable-next-line no-control-regex
+    const name = String(raw ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, MAX_NAME);
+    if (!name) throw new Error('이름이 비어 있습니다.');
+    if (name === COORDINATOR_NAME) throw new Error(`"${COORDINATOR_NAME}" 은 조율 에이전트의 이름이라 쓸 수 없습니다.`);
+    // 이름은 에이전트끼리 서로를 가리키는 데 쓴다: 바꾼 이름이 다른 워크스페이스와 같으면 메시지를 보낼 수 없게 된다.
+    if (this.d.workspaces.list(ws.projectId).some((w) => w.id !== ws.id && w.name === name)) throw new Error(`이미 있는 워크스페이스 이름입니다: ${name}`);
+    return name;
+  }
+
+  /**
+   * 사용자가 워크스페이스의 표시 이름을 바꾼다. 직접 지은 이름은 고정된다 (에이전트가 바꾸지 못한다).
+   * 바뀌는 것은 표시 이름뿐이다. 브랜치와 작업 폴더는 그대로다.
+   */
+  rename(id: string, raw: string): Workspace {
+    const ws = this.mustGet(id);
+    this.mustBeWorker(ws, '이름을 바꿀');
+    if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
+    const name = this.cleanName(ws, raw);
+    this.d.workspaces.update(id, { name, nameLocked: true });
+    this.emit('changed', id);
+    return this.mustGet(id);
+  }
+
+  /** 에이전트가 이름을 바꿔도 되는지를 사용자가 정한다. */
+  setAutoName(id: string, on: boolean): Workspace {
+    const ws = this.mustGet(id);
+    this.mustBeWorker(ws, '이름을 바꿀');
+    this.d.workspaces.update(id, { nameLocked: !on });
+    this.emit('changed', id);
+    return this.mustGet(id);
+  }
+
+  /**
+   * 에이전트가 자기 워크스페이스의 한 줄 요약과 표시 이름을 갱신한다.
+   * 이름은 사용자가 직접 짓지 않은 것만 바꿀 수 있고, 너무 자주 바꾸지 못한다 (화면의 이름이 계속 바뀌면 사용자가 찾지 못한다).
+   * 돌려주는 값: 실제로 반영된 것과, 반영하지 않은 이유.
+   */
+  describeByAgent(id: string, patch: { summary?: unknown; name?: unknown }): { summary?: string; name?: string; note?: string } {
+    const ws = this.mustGet(id);
+    this.mustBeWorker(ws, '요약과 이름을 바꿀');
+    if (this.isProjectClosed(ws.projectId)) throw new Error('완료된 프로젝트다.');
+    const out: { summary?: string; name?: string; note?: string } = {};
+    if (patch.summary !== undefined) {
+      // eslint-disable-next-line no-control-regex
+      const summary = String(patch.summary ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, MAX_SUMMARY);
+      this.d.workspaces.update(id, { summary });
+      out.summary = summary;
+    }
+    if (patch.name !== undefined) {
+      const last = this.renamedAt.get(id) ?? 0;
+      if (ws.nameLocked) out.note = '이름은 바꾸지 않았다: 사용자가 직접 지은 이름이다.';
+      else if (Date.now() - last < RENAME_GAP_MS) out.note = '이름은 바꾸지 않았다: 방금 바꿨다. 이름은 작업의 큰 방향이 바뀔 때만 바꿔라.';
+      else {
+        try {
+          const name = this.cleanName(ws, patch.name);
+          if (name !== ws.name) { this.d.workspaces.update(id, { name }); this.renamedAt.set(id, Date.now()); }
+          out.name = name;
+        } catch (e) {
+          out.note = `이름은 바꾸지 않았다: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
+    }
+    if (out.summary !== undefined || out.name !== undefined) this.emit('changed', id);
+    return out;
   }
 
   /** 대화 서비스를 이어 준다: 승인 창 상태를 묻고, 중단·종료·삭제를 알린다. */

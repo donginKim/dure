@@ -150,7 +150,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
             <div className="row clickable" key={w.id} onClick={() => onSelect({ type: 'workspace', id: w.id, projectId: project.id })}>
               <span className={`dot ${w.status}`} />
               <div className="grow">
-                <div>{w.name}</div>
+                <div>{w.name}{w.summary && <span className="row-summary"> — {w.summary}</span>}</div>
                 <div className="path">{repoName(w.repoId)} · {w.branch}</div>
               </div>
               <span className="tag">{AGENT_LABEL[w.agentKind]}</span>

@@ -580,6 +580,17 @@ input[type='text']:focus, select:focus { border-color: var(--accent); }
 .plan-count { margin-right: auto; color: var(--muted); font-size: 12.5px; }
 .plan-reason { flex: 1; min-width: 240px; }
 
+/* 이름과 요약 */
+.name-btn { background: none; border: 0; padding: 0 2px; color: inherit; font: inherit; font-weight: 600; cursor: text; border-radius: 4px; }
+.name-btn:hover:not(:disabled) { background: var(--bg); }
+.name-edit { display: inline-flex; align-items: center; gap: 8px; }
+.name-edit input { font-weight: 600; width: 220px; padding: 3px 7px; }
+.name-error { color: var(--danger); font-size: 12px; }
+.name-mode { background: none; cursor: pointer; }
+.name-mode.auto { color: var(--accent); border-color: #6b5a2a; }
+.row-summary { color: var(--muted); font-size: 12.5px; }
+.ws-summary { color: var(--muted); font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* DB 조회 */
 input[type='password'] { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; outline: none; color: inherit; font: inherit; }
 input[type='password']:focus { border-color: var(--accent); }

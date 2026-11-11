@@ -24,6 +24,44 @@ export function describeError(message: string): string {
   return message;
 }
 
+/**
+ * 워크스페이스의 표시 이름. 누르면 고친다. 바뀌는 것은 표시 이름뿐이고 브랜치와 작업 폴더는 그대로다.
+ * 직접 지은 이름은 고정되고, "자동 이름" 이면 에이전트가 작업에 맞게 바꿀 수 있다.
+ */
+function NameEditor({ workspace, readOnly }: { workspace: Workspace; readOnly: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState('');
+  const save = (): void => {
+    const name = draft.trim();
+    if (!name || name === workspace.name) { setEditing(false); setError(''); return; }
+    window.dure.workspaces.rename(workspace.id, name).then(() => { setEditing(false); setError(''); }).catch((e: Error) => setError(e.message.replace(/^Error invoking remote method '[^']+': Error: /, '')));
+  };
+  if (editing) {
+    return (
+      <span className="name-edit">
+        <input
+          type="text" autoFocus value={draft} maxLength={40} onChange={(e) => setDraft(e.target.value)} onBlur={save}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) save(); if (e.key === 'Escape') { setEditing(false); setError(''); } }}
+        />
+        {error && <span className="name-error">{error}</span>}
+      </span>
+    );
+  }
+  return (
+    <>
+      <button className="title name-btn" disabled={readOnly} title="눌러서 표시 이름을 바꿉니다. 브랜치와 작업 폴더는 바뀌지 않습니다" onClick={() => { setDraft(workspace.name); setEditing(true); }}>{workspace.name}</button>
+      {!readOnly && (
+        <button
+          className={`tag name-mode${workspace.nameLocked ? '' : ' auto'}`}
+          title={workspace.nameLocked ? '이름이 고정돼 있습니다. 누르면 에이전트가 작업에 맞게 이름을 바꿀 수 있게 합니다' : '에이전트가 작업에 맞게 이름을 바꿀 수 있습니다. 누르거나 직접 이름을 지으면 고정됩니다'}
+          onClick={() => { window.dure.workspaces.setAutoName(workspace.id, workspace.nameLocked).catch(() => undefined); }}
+        >{workspace.nameLocked ? '이름 고정' : '자동 이름'}</button>
+      )}
+    </>
+  );
+}
+
 export function WorkspaceView({ workspace, workspaces, project, repo, todos, pending, conversation, readOnly = false, onSelect }: {
   workspace: Workspace; workspaces: Workspace[]; project?: Project; repo?: Repo; todos: Todo[]; pending?: PendingInfo;
   conversation: ConversationData;
@@ -124,11 +162,12 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
       </div>
       <div className="ws-head">
         <span className={`dot ${workspace.status}`} />
-        <span className="title">{workspace.name}</span>
+        <NameEditor workspace={workspace} readOnly={project?.status === 'done'} />
         <span className="branch">{workspace.branch}</span>
         <span className="tag">{AGENT_LABEL[workspace.agentKind]}</span>
         {workspace.permissionMode === 'bypass' && <span className="tag warn">승인 생략</span>}
         <span className="tag">{STATUS_LABEL[workspace.status]}</span>
+        {workspace.summary && <span className="ws-summary" title={`에이전트가 적은 요약: ${workspace.summary}`}>{workspace.summary}</span>}
         <span className="spacer" />
         <div className="view-switch" role="tablist" aria-label="보기">
           <button

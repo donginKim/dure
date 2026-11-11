@@ -104,6 +104,8 @@ export function registerIpc(core: Core): () => void {
     'workspaces.interrupt': (id: string) => core.service.interrupt(id),
     'workspaces.stopAgent': (id: string) => core.service.stopAgent(id),
     'workspaces.setEngine': (id: string, engine: 'chat' | 'terminal') => core.service.setEngine(id, engine),
+    'workspaces.rename': (id: string, name: string) => core.service.rename(id, name),
+    'workspaces.setAutoName': (id: string, on: boolean) => core.service.setAutoName(id, on === true),
     'terminals.list': (workspaceId: string) => core.pty.listWithExited(workspaceId),
     'terminals.startAgent': (workspaceId: string, size: TerminalSize) => core.service.startAgent(workspaceId, size),
     'terminals.openShell': (workspaceId: string, size: TerminalSize) => core.service.openShell(workspaceId, size),

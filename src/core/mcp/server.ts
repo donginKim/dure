@@ -31,6 +31,8 @@ export interface McpDeps {
   coordinator: CoordinatorService;
   dbs: DbService;
   git: Git;
+  /** 에이전트가 자기 워크스페이스의 요약과 표시 이름을 갱신한다. 반영된 것과 반영하지 않은 이유를 돌려준다 */
+  describe(workspaceId: string, patch: { summary?: unknown; name?: unknown }): { summary?: string; name?: string; note?: string };
   /** 에이전트의 hook 호출. hook 이 표준 출력으로 내보낼 글을 돌려준다. */
   onHook(workspace: Workspace, event: string, payload: unknown): string;
 }

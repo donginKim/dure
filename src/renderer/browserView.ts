@@ -31,7 +31,7 @@ export type DiffLineKind = 'add' | 'del' | 'hunk' | 'meta' | 'ctx';
 export function diffLineKind(line: string): DiffLineKind {
   if (line.startsWith('@@')) return 'hunk';
   if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('new file') || line.startsWith('deleted file')
-    || line.startsWith('rename ') || line.startsWith('similarity ') || line.startsWith('Binary files') || line.startsWith('\\ ')) return 'meta';
+    || line.startsWith('새 파일: ') || line.startsWith('새 심볼릭 링크') || line.startsWith('rename ') || line.startsWith('similarity ') || line.startsWith('Binary files') || line.startsWith('\\ ')) return 'meta';
   if (line.startsWith('+')) return 'add';
   if (line.startsWith('-')) return 'del';
   return 'ctx';

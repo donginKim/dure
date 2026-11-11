@@ -55,7 +55,7 @@ export function DiffPane({ workspace }: { workspace: Workspace }) {
         {diff && !diff.binary && diff.text === '' && <div className="chat-empty">보여 줄 변경이 없습니다 (권한만 바뀌었거나 빈 파일입니다).</div>}
         {diff && !diff.binary && diff.text !== '' && (
           <pre className="diff-text">
-            {diff.text.split('\n').map((line, i) => <div key={i} className={`dl ${diffLineKind(line)}`}>{line || ' '}</div>)}
+            {diff.text.replace(/\n$/, '').split('\n').map((line, i) => <div key={i} className={`dl ${diffLineKind(line)}`}>{line || ' '}</div>)}
             {diff.truncated && <div className="dl meta">… 길어서 뒤를 잘랐습니다. 전체는 셸에서 git diff 로 보세요.</div>}
           </pre>
         )}

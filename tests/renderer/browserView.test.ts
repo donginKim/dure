@@ -29,6 +29,6 @@ test('주소를 워크스페이스마다 기억한다. 이상한 값이 저장�
 });
 
 test('diffLineKind', () => {
-  expect(['diff --git a/x b/x', 'index 1..2 100644', '--- a/x', '+++ b/x', '@@ -1,2 +1,3 @@', ' same', '+added', '-removed', '\\ No newline at end of file', 'Binary files a/x and b/x differ'].map(diffLineKind))
-    .toEqual(['meta', 'meta', 'meta', 'meta', 'hunk', 'ctx', 'add', 'del', 'meta', 'meta']);
+  expect(['diff --git a/x b/x', 'index 1..2 100644', '--- a/x', '+++ b/x', '@@ -1,2 +1,3 @@', ' same', '+added', '-removed', '\\ No newline at end of file', 'Binary files a/x and b/x differ', '새 파일: a b.md'].map(diffLineKind))
+    .toEqual(['meta', 'meta', 'meta', 'meta', 'hunk', 'ctx', 'add', 'del', 'meta', 'meta', 'meta']);
 });

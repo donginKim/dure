@@ -98,6 +98,9 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
           );
         })}
       </div>
+      <button className={`side-settings${selection?.type === 'settings' ? ' selected' : ''}`} onClick={() => onSelect({ type: 'settings' })}>
+        <span className="gear" aria-hidden>⚙</span>설정
+      </button>
     </aside>
   );
 }

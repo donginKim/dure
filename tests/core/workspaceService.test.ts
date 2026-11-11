@@ -813,6 +813,16 @@ describe('폴더 신뢰 창에 대신 답하기', () => {
     expect(core.pty.buffer(t.id)).not.toContain('KEY1');
   });
 
+  test('설정에서 끄면 하지 않는다', async () => {
+    trustAgent();
+    core.settings.update({ autoTrust: false });
+    const ws = await create({ name: 'trust-off' });
+    const t = (await core.service.startAgent(ws.id, SIZE))!;
+    await until(() => core.pty.buffer(t.id).includes('Enter to confirm'));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(core.pty.buffer(t.id)).not.toContain('KEY1');
+  });
+
   test('Codex 에는 하지 않는다', async () => {
     trustAgent();
     writeFileSync(join(fakeBin, 'codex'), readFileSync(join(fakeBin, 'claude')));

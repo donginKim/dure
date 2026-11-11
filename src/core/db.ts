@@ -107,6 +107,12 @@ const MIGRATIONS: string[] = [
   ALTER TABLE workspaces ADD COLUMN engine TEXT NOT NULL DEFAULT 'terminal';
   ALTER TABLE workspaces ADD COLUMN session_id TEXT;
   UPDATE workspaces SET engine = 'chat' WHERE agent_kind = 'claude';
+  `,  // 두레의 설정. 기본값과 다른 것만 담는다. 값은 JSON 이다.
+  `
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
   `,
 ];
 

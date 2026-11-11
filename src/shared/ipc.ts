@@ -1,9 +1,9 @@
 import type {
-  AgentEngine, Artifact, ChatView, CommitResult, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CommitResult, ModelChoice, Settings, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -95,12 +95,25 @@ export interface DureApi {
     step(workspaceId: string, stepId: string): Promise<{ input: string; output: string | null } | null>;
     send(workspaceId: string, text: string): Promise<void>;
     /** always: 허용하고 앞으로 같은 것은 묻지 않는다 (채팅 방식) */
-    answerPermission(workspaceId: string, answer: 'allow' | 'deny' | 'always'): Promise<void>;
+    /** requestId: 화면에 보인 요청의 id (채팅 방식). 그 요청에만 답이 간다 */
+    answerPermission(workspaceId: string, answer: 'allow' | 'deny' | 'always', requestId?: string): Promise<void>;
     /** 여러 선택지 질문에 답한다. answers: 질문 글 → 답 */
-    answerQuestion(workspaceId: string, answers: Record<string, string>): Promise<void>;
-    dismissQuestion(workspaceId: string): Promise<void>;
+    answerQuestion(workspaceId: string, requestId: string, answers: Record<string, string>): Promise<void>;
+    dismissQuestion(workspaceId: string, requestId: string): Promise<void>;
     /** 입력창에서 쓸 수 있는 슬래시 명령 (채팅 방식의 에이전트가 떠 있을 때) */
     commands(workspaceId: string): Promise<SlashCommand[]>;
+  };
+  /** 두레의 설정 (앱 전체에 하나) */
+  settings: {
+    get(): Promise<Settings>;
+    /** 준 것만 바꾼다. 규칙에 맞지 않으면 이유를 던지고 아무것도 바꾸지 않는다 */
+    update(patch: Partial<Settings>): Promise<Settings>;
+    /** 기본값 */
+    defaults(): Promise<Settings>;
+    /** 고를 수 있는 모델. 채팅 방식의 에이전트가 한 번이라도 떠야 채워진다 */
+    models(): Promise<ModelChoice[]>;
+    /** 폴더를 고르는 창을 띄운다 */
+    pickFolder(): Promise<string | null>;
   };
   artifacts: {
     list(projectId: string): Promise<Artifact[]>;
@@ -122,6 +135,7 @@ export const IPC_CHANNELS = [
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
   'commit.state', 'commit.run', 'commit.push',
+  'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;
 export type IpcChannel = (typeof IPC_CHANNELS)[number];

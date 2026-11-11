@@ -18,6 +18,8 @@ export class CommitService extends EventEmitter {
     git: Git;
     drafts: CommitDraftStore;
     messages: MessageService;
+    /** 커밋·push 뒤에 에이전트에게 알리는가 (설정). 없으면 알린다 */
+    notifyAgent?: () => boolean;
   }) {
     super();
     d.drafts.on('changed', (workspaceId: string) => this.emit('changed', workspaceId));
@@ -67,6 +69,7 @@ export class CommitService extends EventEmitter {
 
   /** 에이전트에게 두레의 알림으로 전한다. 꺼진 에이전트에게는 보내지 않는다: 알림 때문에 에이전트가 떠오르면 안 된다. */
   private notify(ws: Workspace, text: string): void {
+    if (this.d.notifyAgent?.() === false) return;
     if (this.d.workspaces.get(ws.id)?.status === 'stopped') return;
     const thread = this.d.messages.threads(ws.projectId)
       .find((t) => {

@@ -31,6 +31,17 @@ export function NewWorkspaceDialog({ projectId, repos, initialRepoId, onClose, o
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // 처음 골라져 있는 값은 설정에서 온다.
+  useEffect(() => {
+    let alive = true;
+    window.dure.settings.get().then((s) => {
+      if (!alive) return;
+      setAgentKind(s.defaultAgent);
+      setPermissionMode(s.defaultPermissionMode);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
   useEffect(() => {
     if (!repoId) return;
     let alive = true;

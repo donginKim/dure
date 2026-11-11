@@ -1,4 +1,4 @@
-import { deliveryLabel, senderName, threadNotice, threadsFor } from '../../src/renderer/conversationView';
+import { deliveryLabel, deliveryNote, senderName, threadNotice, threadsFor } from '../../src/renderer/conversationView';
 import type { Message, ProjectFlow, Thread, Workspace } from '@shared/types';
 
 const ws = (id: string, name: string): Workspace => ({
@@ -62,4 +62,8 @@ test('deliveryNote: 오류가 있으면 오류를, 없으면 상태 문구를 �
   expect(deliveryNote({ state: 'next-hook', waiting: 1, held: 0 })).toEqual({ text: '다음 단계에 전달', attention: false });
   expect(deliveryNote({ state: 'waiting-unknown', waiting: 1, held: 0 })).toEqual({ text: '터미널 확인 필요: 에이전트가 무언가를 묻고 있을 수 있습니다', attention: true });
   expect(deliveryNote({ state: 'none', waiting: 0, held: 0 })).toEqual({ text: '', attention: false });
+});
+
+test('메시지로 띄우지 않게 설정된 꺼진 에이전트: 시작하면 전달된다고 알리고 눈에 띄게 한다', () => {
+  expect(deliveryNote({ state: 'waiting-start', waiting: 1, held: 0 })).toEqual({ text: '에이전트를 시작하면 전달됩니다 (메시지로 스스로 띄우지 않게 설정됨)', attention: true });
 });

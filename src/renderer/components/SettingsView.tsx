@@ -1,0 +1,214 @@
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import type { ModelChoice, Settings } from '@shared/types';
+import { BYPASS_WARNING } from './dialogs';
+
+type Key = keyof Settings;
+
+/** 설정 한 줄: 이름, 설명, 값, 그리고 기본값과 다를 때의 "기본값으로". */
+function Row({ label, help, changed, error, onReset, children }: {
+  label: string; help?: ReactNode; changed: boolean; error?: string; onReset: () => void; children: ReactNode;
+}) {
+  return (
+    <div className="set-row">
+      <div className="set-text">
+        <div className="set-label">{label}{changed && <span className="set-changed" title="기본값과 다릅니다">바꿈</span>}</div>
+        {help && <div className="set-help">{help}</div>}
+        {error && <div className="set-error">{error}</div>}
+      </div>
+      <div className="set-control">
+        {children}
+        {changed && <button className="btn ghost set-reset" onClick={onReset}>기본값으로</button>}
+      </div>
+    </div>
+  );
+}
+
+/** 글자·숫자 입력: 치는 동안은 저장하지 않고, 칸을 벗어나거나 Enter 를 누르면 저장한다. */
+function TextInput({ value, placeholder, wide, numeric, onCommit }: {
+  value: string; placeholder?: string; wide?: boolean; numeric?: boolean; onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  const commit = (): void => { if (draft !== value) onCommit(draft); };
+  return (
+    <input
+      type="text" className={`set-input${wide ? ' wide' : ''}${numeric ? ' num' : ''}`} value={draft} placeholder={placeholder} inputMode={numeric ? 'decimal' : undefined}
+      onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setDraft(value); }}
+    />
+  );
+}
+
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button className={`set-toggle${on ? ' on' : ''}`} role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)}>
+      <span className="knob" />
+      <span className="set-toggle-text">{on ? '켬' : '끔'}</span>
+    </button>
+  );
+}
+
+function Choice<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  return (
+    <div className="view-switch" role="radiogroup">
+      {options.map((o) => <button key={o.value} role="radio" aria-checked={value === o.value} className={value === o.value ? 'on' : ''} onClick={() => onChange(o.value)}>{o.label}</button>)}
+    </div>
+  );
+}
+
+/** 두레의 설정 화면. 바꾸면 바로 저장된다. */
+export function SettingsView() {
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [defaults, setDefaults] = useState<Settings | null>(null);
+  const [models, setModels] = useState<ModelChoice[]>([]);
+  const [errors, setErrors] = useState<Partial<Record<Key, string>>>({});
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([window.dure.settings.get(), window.dure.settings.defaults(), window.dure.settings.models()]).then(([s, d, m]) => {
+      if (!alive) return;
+      setSettings(s); setDefaults(d); setModels(m);
+    });
+    const off = window.dure.onChanged((topic) => {
+      if (topic === 'settings') void window.dure.settings.get().then((s) => { if (alive) setSettings(s); });
+      // 채팅 방식의 에이전트가 뜨면 모델 목록이 채워진다.
+      if (topic === 'chat') void window.dure.settings.models().then((m) => { if (alive && m.length) setModels(m); });
+    });
+    return () => { alive = false; off(); };
+  }, []);
+
+  const save = useCallback(<K extends Key>(key: K, value: Settings[K]) => {
+    window.dure.settings.update({ [key]: value } as Partial<Settings>).then((s) => {
+      setSettings(s);
+      setErrors((e) => ({ ...e, [key]: undefined }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    }).catch((e: Error) => setErrors((prev) => ({ ...prev, [key]: e.message })));
+  }, []);
+
+  if (!settings || !defaults) return <div className="page"><h1>설정</h1></div>;
+  const s = settings;
+  const row = (key: Key): { changed: boolean; error?: string; onReset: () => void } => ({
+    changed: s[key] !== defaults[key], error: errors[key], onReset: () => save(key, defaults[key]),
+  });
+  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize') => (v: string): void => {
+    const n = Number(v.trim());
+    if (!v.trim() || Number.isNaN(n)) { setErrors((e) => ({ ...e, [key]: '숫자를 쓰세요.' })); return; }
+    save(key, n);
+  };
+  const pick = (key: 'worktreeRoot') => (): void => { void window.dure.settings.pickFolder().then((p) => { if (p) save(key, p); }); };
+  const modelKnown = !s.claudeModel || models.some((m) => m.value === s.claudeModel);
+
+  return (
+    <div className="page settings">
+      <h1>설정</h1>
+      <div className="sub">두레 전체에 적용됩니다. 바꾸면 바로 저장됩니다.{saved && <span className="set-saved">저장됨</span>}</div>
+
+      <div className="section">
+        <div className="section-head"><h2>새 워크스페이스</h2></div>
+        <div className="set-box">
+          <Row label="기본 에이전트" help="워크스페이스를 만들 때 처음 골라져 있는 에이전트입니다." {...row('defaultAgent')}>
+            <Choice value={s.defaultAgent} onChange={(v) => save('defaultAgent', v)} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} />
+          </Row>
+          <Row
+            label="기본 방식" {...row('defaultEngine')}
+            help="채팅: 에이전트가 터미널 화면 없이 돌고, 글이 실시간으로 흐르고, 승인과 질문이 버튼으로 옵니다. 터미널: Claude Code 를 터미널에서 그대로 띄웁니다. Codex 는 터미널만 됩니다. 이미 만든 워크스페이스는 에이전트를 끈 뒤 워크스페이스 머리에서 바꿀 수 있습니다."
+          >
+            <Choice value={s.defaultEngine} onChange={(v) => save('defaultEngine', v)} options={[{ value: 'chat', label: '채팅' }, { value: 'terminal', label: '터미널' }]} />
+          </Row>
+          <Row
+            label="기본 권한 모드" {...row('defaultPermissionMode')}
+            help={s.defaultPermissionMode === 'bypass' ? <span className="set-warn">{BYPASS_WARNING}</span> : '승인 필요: 파일 수정은 자동 승인, 명령 실행은 승인을 거칩니다.'}
+          >
+            <Choice value={s.defaultPermissionMode} onChange={(v) => save('defaultPermissionMode', v)} options={[{ value: 'ask', label: '승인 필요' }, { value: 'bypass', label: '승인 생략' }]} />
+          </Row>
+          <Row label="작업 폴더를 만드는 위치" help="워크스페이스의 작업 폴더(worktree)가 이 아래에 프로젝트 이름으로 만들어집니다. 비워 두면 기본 위치(~/dure/worktrees)입니다. 이미 만든 워크스페이스는 옮기지 않습니다." {...row('worktreeRoot')}>
+            <TextInput wide value={s.worktreeRoot} placeholder="~/dure/worktrees" onCommit={(v) => save('worktreeRoot', v)} />
+            <button className="btn" onClick={pick('worktreeRoot')}>고르기</button>
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>Claude Code</h2></div>
+        <div className="set-box">
+          <Row
+            label="모델" {...row('claudeModel')}
+            help={models.length ? '다음에 시작하는 에이전트부터 적용됩니다. "Claude Code 의 기본" 은 Claude Code 에 정해 둔 모델을 그대로 씁니다.' : '채팅 방식의 에이전트를 한 번 시작하면 고를 수 있는 모델 목록이 여기에 뜹니다. 그 전에는 이름을 직접 쓸 수 있습니다.'}
+          >
+            {models.length > 0 && (
+              <select className="set-select" value={modelKnown ? s.claudeModel : '__other'} onChange={(e) => { if (e.target.value !== '__other') save('claudeModel', e.target.value); }}>
+                <option value="">Claude Code 의 기본</option>
+                {models.filter((m) => m.value !== 'default').map((m) => <option key={m.value} value={m.value}>{m.name}{m.description ? ` — ${m.description}` : ''}</option>)}
+                {!modelKnown && <option value="__other">{s.claudeModel} (직접 쓴 이름)</option>}
+              </select>
+            )}
+            <TextInput value={s.claudeModel} placeholder={models.length ? '이름 직접 쓰기' : '예: opus'} onCommit={(v) => save('claudeModel', v)} />
+          </Row>
+          <Row label="추가 인자" help="에이전트를 띄울 때 더 줄 인자입니다. 예: --effort high. 두레가 직접 정하는 것(권한 모드, 연결 설정, 입출력 방식, 모델)은 넣을 수 없습니다." {...row('claudeArgs')}>
+            <TextInput wide value={s.claudeArgs} placeholder="--effort high" onCommit={(v) => save('claudeArgs', v)} />
+          </Row>
+          <Row label="실행 파일" help="비워 두면 PATH 에서 claude 를 찾습니다." {...row('claudePath')}>
+            <TextInput wide value={s.claudePath} placeholder="/전체/경로/claude" onCommit={(v) => save('claudePath', v)} />
+          </Row>
+          <Row label="폴더 신뢰 창에 대신 답하기" help='터미널 방식에서, 처음 보는 작업 폴더에서 Claude Code 가 묻는 "이 폴더를 신뢰하는가" 에 두레가 "신뢰함" 으로 답합니다. 채팅 방식에는 이 창이 없습니다.' {...row('autoTrust')}>
+            <Toggle on={s.autoTrust} onChange={(v) => save('autoTrust', v)} label="폴더 신뢰 창에 대신 답하기" />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>Codex</h2></div>
+        <div className="set-box">
+          <Row label="추가 인자" help="두레가 직접 정하는 것(샌드박스, 승인 방식, 설정 덮어쓰기)은 넣을 수 없습니다." {...row('codexArgs')}>
+            <TextInput wide value={s.codexArgs} onCommit={(v) => save('codexArgs', v)} />
+          </Row>
+          <Row label="실행 파일" help="비워 두면 PATH 에서 codex 를 찾습니다." {...row('codexPath')}>
+            <TextInput wide value={s.codexPath} placeholder="/전체/경로/codex" onCommit={(v) => save('codexPath', v)} />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>에이전트끼리의 대화</h2></div>
+        <div className="set-box">
+          <Row label="대화 하나의 상한" help="사람이 끼어들지 않고 에이전트끼리 한 대화에서 이만큼 주고받으면 전달을 멈추고 사용자에게 묻습니다. 다음 메시지부터 적용됩니다." {...row('threadCap')}>
+            <TextInput numeric value={String(s.threadCap)} onCommit={number('threadCap')} /><span className="set-unit">번</span>
+          </Row>
+          <Row label="프로젝트 전체의 상한" help="프로젝트 안의 모든 대화를 합친 횟수입니다." {...row('projectCap')}>
+            <TextInput numeric value={String(s.projectCap)} onCommit={number('projectCap')} /><span className="set-unit">번</span>
+          </Row>
+          <Row label="메시지가 오면 꺼진 에이전트를 띄우기" help="끄면, 꺼져 있는 워크스페이스에 온 메시지는 그 에이전트를 직접 시작할 때까지 기다립니다." {...row('autoStartOnMessage')}>
+            <Toggle on={s.autoStartOnMessage} onChange={(v) => save('autoStartOnMessage', v)} label="메시지가 오면 꺼진 에이전트를 띄우기" />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>커밋</h2></div>
+        <div className="set-box">
+          <Row label="커밋·push 뒤 에이전트에게 알리기" help="커밋 창에서 커밋하거나 push 하면 켜져 있는 에이전트에게 알려, 관련 할 일을 정리하게 합니다." {...row('notifyAgentOnCommit')}>
+            <Toggle on={s.notifyAgentOnCommit} onChange={(v) => save('notifyAgentOnCommit', v)} label="커밋·push 뒤 에이전트에게 알리기" />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>화면</h2></div>
+        <div className="set-box">
+          <Row label="채팅 글자 크기" {...row('chatFontSize')}>
+            <TextInput numeric value={String(s.chatFontSize)} onCommit={number('chatFontSize')} /><span className="set-unit">px</span>
+          </Row>
+          <Row label="터미널 글자 크기" help="다음에 여는 터미널부터 적용됩니다." {...row('terminalFontSize')}>
+            <TextInput numeric value={String(s.terminalFontSize)} onCommit={number('terminalFontSize')} /><span className="set-unit">px</span>
+          </Row>
+        </div>
+      </div>
+
+      <div className="set-foot">
+        에이전트의 커밋·push 를 막는 것은 설정으로 풀 수 없습니다(커밋과 push 는 사용자가 합니다). DB 연결은 프로젝트마다 따로 정합니다.
+      </div>
+    </div>
+  );
+}

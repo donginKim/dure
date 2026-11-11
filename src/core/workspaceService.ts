@@ -2,12 +2,13 @@ import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace } from '@shared/types';
+import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace, Settings } from '@shared/types';
 import { baseInstructions } from './agents/instructions';
 import { buildAgentLaunch } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
 import type { ChatEngine } from './chat/engine';
+import { DEFAULT_SETTINGS, expandHome, parseArgs, reservedArg } from './settings';
 import type { DeliveryService } from './delivery';
 import type { Git } from './git';
 import type { MessageService } from './messages';
@@ -47,6 +48,8 @@ export interface WorkspaceServiceDeps {
   dataDir: string;
   worktreeRoot: string;
   baseEnv: Record<string, string>;
+  /** 두레의 설정. 없으면 기본값으로 동작한다 */
+  settings?: () => Settings;
 }
 
 function findExecutable(command: string, pathVar: string | undefined): string | undefined {
@@ -86,12 +89,36 @@ export class WorkspaceService extends EventEmitter {
   private readonly trustWatchers = new Map<string, () => void>();
 
   private engine?: ChatEngine;
+  /** 두레가 직접 끄는 중인 채팅 방식 에이전트. 끝난 뒤에 저절로 다시 띄우지 않는다 */
+  private readonly stopping = new Set<string>();
+  /** 코어를 닫았다. 이후에는 에이전트를 띄우지 않는다 */
+  private detached = false;
   /** 채팅 방식으로 띄운 에이전트: 언제 띄웠고 지난 대화를 이어 띄웠는가 (이어가기에 실패하면 새 대화로 다시 띄운다) */
   private readonly chatStarts = new Map<string, { at: number; resumed: boolean; size: { cols: number; rows: number } }>();
 
   /** 채팅 방식의 에이전트를 돌리는 엔진을 이어 준다. */
   attachEngine(engine: ChatEngine): void {
     this.engine = engine;
+  }
+
+  private settings(): Settings {
+    return this.d.settings?.() ?? DEFAULT_SETTINGS;
+  }
+
+  /** 에이전트 실행 파일. 설정에 경로가 있으면 그것(실행할 수 있어야 한다), 없으면 PATH 에서 찾는다. */
+  private agentExecutable(kind: AgentKind, settings: Settings): string {
+    const custom = kind === 'claude' ? settings.claudePath : settings.codexPath;
+    if (custom) {
+      const full = expandHome(custom);
+      try {
+        accessSync(full, constants.X_OK);
+        if (statSync(full).isFile()) return full;
+      } catch { /* 아래에서 알린다 */ }
+      throw new Error(`설정에 적힌 실행 파일을 쓸 수 없습니다: ${custom}`);
+    }
+    const found = findExecutable(kind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
+    if (!found) throw new AgentNotInstalledError(kind);
+    return found;
   }
 
   /** 에이전트가 살아 있는가 (터미널 방식이든 채팅 방식이든). */
@@ -116,8 +143,11 @@ export class WorkspaceService extends EventEmitter {
     const start = this.chatStarts.get(id);
     this.chatStarts.delete(id);
     this.agentEnded(id);
+    const stoppedByUs = this.stopping.delete(id);
     // 이어갈 대화가 사라졌으면(기록 파일이 지워짐 등) 곧바로 끝난다. 새 대화로 한 번 다시 띄운다.
-    if (start?.resumed && code !== 0 && Date.now() - start.at < 10_000 && this.d.workspaces.get(id) && !this.removing.has(id)) {
+    // 두레가 직접 끈 것(끄기, 지우기, 앱 닫기)이나 다른 오류(로그인 만료 등)로 끝난 것은 여기에 들지 않는다.
+    const lostConversation = typeof code === 'number' && code !== 0 && /no conversation found/i.test(stderr);
+    if (start?.resumed && lostConversation && !stoppedByUs && !this.detached && Date.now() - start.at < 10_000 && this.d.workspaces.get(id) && !this.removing.has(id)) {
       this.d.workspaces.setSessionId(id, null);
       this.startAgent(id, start.size).catch(() => undefined);
       return;
@@ -134,6 +164,7 @@ export class WorkspaceService extends EventEmitter {
 
   /** 에이전트를 끈다 (터미널 방식이든 채팅 방식이든). */
   stopAgent(id: string): void {
+    if (this.engine?.has(id)) this.stopping.add(id);
     this.engine?.stop(id);
     for (const t of this.d.pty.list(id)) if (t.kind === 'agent') this.d.pty.kill(t.id);
   }
@@ -159,6 +190,8 @@ export class WorkspaceService extends EventEmitter {
   }
 
   isConfirmedIdle(id: string): boolean {
+    // 채팅 방식은 글을 메시지로 보내므로 선택 창에 들어갈 걱정이 없다. 살아 있고, 쉬는 중이고, 묻는 것이 없으면 된다.
+    if (this.engine?.has(id)) return this.d.workspaces.get(id)?.status === 'idle' && !this.engine.hasPending(id);
     return this.confirmedIdle.has(id);
   }
 
@@ -219,23 +252,51 @@ export class WorkspaceService extends EventEmitter {
 
   /** 코어를 닫을 때 부른다. 이후의 터미널 종료는 상태 저장소를 건드리지 않는다. */
   detach(): void {
+    this.detached = true;
     for (const stop of [...this.trustWatchers.values()]) stop();
     this.d.pty.off('exit', this.onTerminalExit);
   }
 
   /** 워크스페이스의 터미널을 모두 끄고 실제로 끝날 때까지 (최대 3초) 기다린다. */
   /** 여러 선택지 질문에 답한다 (채팅 방식). */
-  answerQuestion(id: string, answers: Record<string, string>): void {
+  answerQuestion(id: string, requestId: string, answers: Record<string, string>): void {
     if (!this.engine?.has(id)) throw new Error('질문을 기다리는 중이 아닙니다.');
-    this.engine.answerQuestion(id, answers);
+    this.engine.answerQuestion(id, String(requestId ?? ''), answers);
   }
 
-  dismissQuestion(id: string): void {
+  dismissQuestion(id: string, requestId: string): void {
     if (!this.engine?.has(id)) throw new Error('질문을 기다리는 중이 아닙니다.');
-    this.engine.dismissQuestion(id);
+    this.engine.dismissQuestion(id, String(requestId ?? ''));
+  }
+
+  /**
+   * 채팅 방식에서 승인·질문 대기는 엔진이 안다. hook 이 상태를 바꾼 뒤에 엔진의 대기에 맞춘다:
+   * 대기 중에 다른 호출의 hook 이 와서 '작업 중' 이 되면 승인 카드가 사라지고, 에이전트는 계속 기다리게 된다.
+   */
+  reconcileWaiting(id: string): void {
+    if (!this.engine?.has(id)) return;
+    const ws = this.d.workspaces.get(id);
+    if (!ws || ws.status === 'stopped') return;
+    const waiting = this.engine.hasPending(id);
+    if (waiting && ws.status !== 'waiting_user') this.noteWaiting(id, true);
+    else if (!waiting && ws.status === 'waiting_user') this.noteWaiting(id, false);
+  }
+
+  /**
+   * 채팅 방식의 에이전트가 한 차례를 끝냈다. 아직 '작업 중' 이면 Stop hook 이 오지 않은 것이다(멈춤, 오류): 쉬는 중으로 되돌린다.
+   */
+  noteTurnEnd(id: string): void {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || ws.status === 'stopped') return;
+    this.lastActivity.set(id, Date.now());
+    if (ws.status === 'working' || ws.status === 'waiting_user') {
+      this.d.workspaces.update(id, { status: 'idle' });
+      this.emit('changed', id);
+    }
   }
 
   private async killTerminals(workspaceId: string): Promise<void> {
+    if (this.engine?.has(workspaceId)) this.stopping.add(workspaceId);
     this.engine?.stop(workspaceId);
     for (let i = 0; i < 100 && this.engine?.has(workspaceId); i++) await new Promise((r) => setTimeout(r, 30));
     for (const t of this.d.pty.list(workspaceId)) this.d.pty.kill(t.id);
@@ -263,7 +324,9 @@ export class WorkspaceService extends EventEmitter {
 
     const typed = i.name?.trim();
     const name = typed || `${repo.name}-${this.d.workspaces.list(project.id).length + 1}`;
-    const projectDir = join(this.d.worktreeRoot, slugify(project.name));
+    const settings = this.settings();
+    // 작업 폴더 위치: 설정에 있으면 그곳, 없으면 기본 위치. 이미 만든 워크스페이스는 옮기지 않는다.
+    const projectDir = join(settings.worktreeRoot ? expandHome(settings.worktreeRoot) : this.d.worktreeRoot, slugify(project.name));
     const branches = new Set(await this.d.git.listBranches(repo.path));
     const slug = uniqueSlug(slugify(name), (c) => branches.has(`dure/${c}`) || existsSync(join(projectDir, c)));
     const branch = `dure/${slug}`;
@@ -286,7 +349,7 @@ export class WorkspaceService extends EventEmitter {
       const ws = this.d.workspaces.insert({
         id: crypto.randomUUID(), projectId: project.id, repoId: repo.id, name, nameLocked: Boolean(typed),
         branch, baseBranch: i.baseBranch, worktreePath, agentKind: i.agentKind,
-        permissionMode: i.permissionMode ?? 'ask', engine: i.engine, token: randomBytes(32).toString('hex'),
+        permissionMode: i.permissionMode ?? settings.defaultPermissionMode, engine: i.engine ?? settings.defaultEngine, token: randomBytes(32).toString('hex'),
       });
       this.emit('changed', ws.id);
       return ws;
@@ -331,7 +394,10 @@ export class WorkspaceService extends EventEmitter {
     const ws = this.mustGet(id);
     const running = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (running) return running;
+    // 방금 끈 에이전트가 아직 끝나는 중이면 끝날 때까지 기다린다 (살아 있다고 보고 돌아가면 곧 꺼진다).
+    for (let i = 0; i < 100 && this.stopping.has(id) && this.engine?.has(id); i++) await new Promise((r) => setTimeout(r, 30));
     if (this.engine?.has(id)) return null;
+    if (this.detached) throw new Error('두레를 닫는 중입니다.');
     const headless = ws.engine === 'chat' && ws.agentKind === 'claude' && this.engine !== undefined;
     const resumeSessionId = headless ? this.d.workspaces.getSessionId(id) : undefined;
     if (this.removing.has(id)) throw new Error('지우는 중인 워크스페이스입니다.');
@@ -339,12 +405,19 @@ export class WorkspaceService extends EventEmitter {
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
-    const executableCheck = findExecutable(ws.agentKind === 'claude' ? 'claude' : 'codex', this.d.baseEnv.PATH);
-    if (!executableCheck) throw new AgentNotInstalledError(ws.agentKind);
+    const settings = this.settings();
+    const executable = this.agentExecutable(ws.agentKind, settings);
+    // 저장된 뒤에 규칙이 바뀌었을 수도 있으니 쓰기 직전에 한 번 더 거른다.
+    const extraArgs = parseArgs(ws.agentKind === 'claude' ? settings.claudeArgs : settings.codexArgs);
+    const reserved = reservedArg(ws.agentKind, extraArgs);
+    if (reserved) throw new Error(`설정의 추가 인자에 쓸 수 없는 것이 있습니다: ${reserved}`);
     // 받은 메시지가 기다리고 있으면 그것을 첫 프롬프트로 준다. 실행 파일을 확인한 뒤에 가져가야 실패 시 사라지지 않는다.
     // 이 저장소에 대한 커밋·push 만 막기 위해 저장소의 공용 .git 폴더를 알아 둔다. 못 알아내면 막는 장치 없이 띄운다.
     const realGit = findExecutable('git', this.d.baseEnv.PATH);
     const gitCommonDir = realGit ? await this.d.git.commonDir(ws.worktreePath).catch(() => undefined) : undefined;
+    // 기다리는 사이에 지워지거나 닫혔으면 띄우지 않는다.
+    if (this.removing.has(id) || this.detached || !this.d.workspaces.get(id)) throw new Error('지우는 중인 워크스페이스입니다.');
+    if (this.engine?.has(id)) return null;
     const firstPrompt = initialPrompt ?? this.delivery?.takeForStart(id);
     const launch = buildAgentLaunch({
       kind: ws.agentKind,
@@ -360,9 +433,9 @@ export class WorkspaceService extends EventEmitter {
       initialPrompt: firstPrompt,
       headless,
       resumeSessionId,
+      model: settings.claudeModel || undefined,
+      extraArgs,
     });
-    const executable = findExecutable(launch.command, this.d.baseEnv.PATH);
-    if (!executable) throw new AgentNotInstalledError(ws.agentKind);
 
     let terminal: TerminalInfo | null = null;
     try {
@@ -393,7 +466,7 @@ export class WorkspaceService extends EventEmitter {
     if (terminal) this.agentTerminals.set(terminal.id, id);
     // 새 대화는 이전 목록을 본 적이 없다. 꺼져 있던 동안의 변경 기록은 버리고, 목록은 에이전트가 todo_list 로 읽는다.
     this.d.todos.takePending(id);
-    if (ws.agentKind === 'claude' && terminal) this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
+    if (ws.agentKind === 'claude' && terminal && settings.autoTrust) this.answerTrustPrompt(id, terminal.id, ws.worktreePath);
     // Claude Code 는 첫 hook 이 올 때까지 '시작 중' 이다: 폴더 신뢰 창이 떠 있을 수 있다 (실험 12: 그동안은 hook 이 오지 않는다).
     // Codex 는 hook 이 없어 알 길이 없으므로 예전처럼 쉬는 중으로 둔다.
     this.d.workspaces.update(id, { status: ws.agentKind === 'claude' ? 'starting' : 'idle' });
@@ -478,8 +551,8 @@ export class WorkspaceService extends EventEmitter {
   async wake(id: string, text: string): Promise<void> {
     const ws = this.d.workspaces.get(id);
     if (ws && this.engine?.has(id)) {
-      // 채팅 방식: 터미널에 써 넣지 않고 메시지로 보낸다. 쉬는 중임이 확인됐을 때만 한다 (같은 것을 두 번 보내지 않게).
-      if (ws.status !== 'idle' || !this.confirmedIdle.has(id) || this.removing.has(id)) throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
+      // 채팅 방식: 터미널에 써 넣지 않고 메시지로 보낸다. 쉬는 중일 때만 한다 (작업 중에는 hook 응답에 실린다).
+      if (!this.isConfirmedIdle(id) || this.removing.has(id)) throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
       this.confirmedIdle.delete(id);
       this.synthetic.add(id); // 이 프롬프트는 두레가 넣는 것이다
       this.lastActivity.set(id, Date.now());
@@ -623,8 +696,8 @@ export class WorkspaceService extends EventEmitter {
    * 채팅의 승인 카드에서 고른 답을 승인 창에 써 넣는다.
    * hook 으로 승인 창임이 확인됐고, 사용자가 터미널에서 그 창을 건드리지 않았을 때만 한다 (실험 15e: 커서는 "1. Yes" 에 있다).
    */
-  answerPermission(id: string, answer: 'allow' | 'deny' | 'always'): void {
-    if (this.engine?.has(id)) { this.engine.answerPermission(id, answer); return; }
+  answerPermission(id: string, answer: 'allow' | 'deny' | 'always', requestId = ''): void {
+    if (this.engine?.has(id)) { this.engine.answerPermission(id, String(requestId ?? ''), answer); return; }
     if (answer === 'always') throw new Error('터미널 방식에서는 "앞으로 묻지 않기" 를 터미널에서 고르세요.');
     const ws = this.d.workspaces.get(id);
     const terminal = this.d.pty.list(id).find((t) => t.kind === 'agent');

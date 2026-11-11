@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
+import { SettingsService } from './settings';
 import { ChatEngine } from './chat/engine';
-import type { ChatView, SlashCommand } from '@shared/types';
+import type { ChatView, ModelChoice, SlashCommand } from '@shared/types';
 import { CommitDraftStore } from './commitDrafts';
 import { CommitService } from './commitService';
 import { openDatabase } from './db';
@@ -34,6 +35,9 @@ export interface Core {
   delivery: DeliveryService;
   chat: ChatService;
   engine: ChatEngine;
+  settings: SettingsService;
+  /** 설정 화면이 고르게 보여줄 모델 목록 (채팅 방식의 에이전트가 한 번이라도 떠야 채워진다) */
+  models(): ModelChoice[];
   /** 채팅 화면이 받는 것: 대화, 쓰는 중인 글, 승인·질문 대기 */
   chatView(workspaceId: string): ChatView;
   slashCommands(workspaceId: string): SlashCommand[];
@@ -74,7 +78,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   }
 
   const todos = new TodoService(db);
+  const settings = new SettingsService(db);
   const messages = new MessageService(db);
+  messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
   const pty = new PtyManager();
   const git = createGit(o.baseEnv);
@@ -109,11 +115,15 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event !== 'Notification' || isPermissionPrompt(payload)) noteHook(workspace.id, event, out !== '');
       // 채팅 보기는 터미널 보기 위에 얹힌 화면이다. 여기서 문제가 나도 hook 응답은 나가야 한다.
       try { chat.noteHook(workspace.id, event, payload, event === 'Stop' && out !== ''); } catch { /* 채팅 보기만 영향받는다 */ }
+      // 채팅 방식: 승인·질문 대기는 엔진이 안다. hook 이 바꾼 상태를 그에 맞춘다.
+      service.reconcileWaiting(workspace.id);
+      // 막 띄운 채팅 방식 에이전트가 쉬는 중이 됐다. 그동안 기다리던 메시지를 전달한다.
+      if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools]);
   const service = new WorkspaceService({
-    projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
+    projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
 
   const delivery: DeliveryService = new DeliveryService({
@@ -125,6 +135,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       wake: (id, text) => service.wake(id, text),
       // 기다리던 메시지는 startAgent 가 takeForStart 로 가져가 첫 프롬프트로 준다.
       start: async (id) => { await service.startAgent(id, { cols: 120, rows: 40 }); },
+      autoStart: () => settings.get().autoStartOnMessage,
     },
   });
   service.attachDelivery(delivery);
@@ -135,7 +146,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     onWaiting: (id, waiting) => service.noteWaiting(id, waiting),
     // 차례가 끝났는데도 '작업 중' 이면 Stop hook 이 오지 않은 것이다 (사용자가 멈춤, 로그인 만료 같은 오류). 쉬는 중으로 되돌린다.
     // 보통은 Stop hook 이 먼저 와서 이미 쉬는 중이고, 그때는 아무것도 바뀌지 않는다.
-    onTurnEnd: (id) => { chat.interrupted(id); service.noteInterrupted(id); },
+    onTurnEnd: (id) => {
+      chat.interrupted(id);
+      service.noteTurnEnd(id);
+      // 쉬게 됐으니 기다리던 메시지가 있으면 지금 전달한다 (채팅 방식은 쉬는 중이면 바로 받을 수 있다).
+      kick(id);
+    },
     onActivity: (id) => chat.refreshSoon(id, [0, 300, 1200]),
     onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
   });
@@ -150,11 +166,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   onStatus = (id) => service.emit('changed', id);
   noteHook = (id, event, blocked) => service.noteHook(id, event, blocked);
 
-  const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages });
+  const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, commitDrafts, commit,
+    models: () => engine.models(),
     chatView(workspaceId) {
       const snap = chat.snapshot(workspaceId);
       const ws = workspaces.get(workspaceId);

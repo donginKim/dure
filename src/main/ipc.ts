@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { isTerminalReply } from '@core/agents/trustPrompt';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
@@ -71,7 +72,8 @@ export function registerIpc(core: Core): () => void {
     'terminals.openShell': (workspaceId: string, size: TerminalSize) => core.service.openShell(workspaceId, size),
     'terminals.write': (id: string, data: string) => {
       // 사용자가 에이전트 터미널에 입력하고 있다: 두레가 그 터미널에 글을 써 넣으면 안 된다.
-      core.service.noteTerminalInput(id);
+      // 화면이 스스로 돌려보내는 응답(터미널 버전, 커서 위치 등)은 사용자가 누른 키가 아니다.
+      if (!isTerminalReply(data)) core.service.noteTerminalInput(id);
       core.pty.write(id, data);
     },
     'terminals.resize': (id: string, cols: number, rows: number) => core.pty.resize(id, cols, rows),

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { stripAnsi, trustPrompt } from '@core/agents/trustPrompt';
+import { isTerminalReply, stripAnsi, trustPrompt } from '@core/agents/trustPrompt';
 
 const FOLDER = '/private/var/folders/xx/T/my-repo';
 const dialog = (cursor: 'no' | 'yes' | 'none' | 'both', folder = FOLDER): string => [
@@ -60,4 +60,17 @@ test('실제 Claude Code 가 낸 화면(제어 문자 포함)을 알아본다', 
   const raw = JSON.parse(readFileSync(join(__dirname, '../fixtures/trust-dialog.json'), 'utf8')) as { raw: string; folder: string };
   expect(trustPrompt(raw.raw, [raw.folder])).toBe('on-no');
   expect(stripAnsi(raw.raw)).not.toMatch(/\x1b\[/);
+});
+
+test('isTerminalReply: 화면이 스스로 보내는 응답은 참', () => {
+  for (const reply of ['\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b[12;40R', '\x1b[0n', '\x1b[?2026;2$y', '\x1b[I', '\x1b[O',
+    '\x1bP>|xterm.js(5.5.0)\x1b\\', '\x1b]11;rgb:0f0f/1111/1515\x1b\\', '\x1b]10;rgb:e6e6/e8e8/eeee\x07', '\x1b[?1;2c\x1b[>0;276;0c']) {
+    expect(isTerminalReply(reply)).toBe(true);
+  }
+});
+
+test('isTerminalReply: 사람이 누른 키와 붙여 넣은 글은 거짓', () => {
+  for (const key of ['', 'a', '\r', '\x1b', '\x1b[A', '\x1b[B', '\x1b[200~안녕\x1b[201~', '한글', '\x03', '\x1b[?1;2ca', 'x\x1b[I', '\x1b[1;5C', '\x1bOP']) {
+    expect(isTerminalReply(key)).toBe(false);
+  }
 });

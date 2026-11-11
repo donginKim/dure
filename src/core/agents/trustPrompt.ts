@@ -50,3 +50,14 @@ export function trustPrompt(screen: string, folders: string[]): TrustPrompt {
   if (/^\s*No, exit/.test(after)) return 'on-no';
   return 'none';
 }
+
+/**
+ * 터미널 화면이 프로그램의 물음에 스스로 돌려보내는 응답인가 (사람이 누른 키가 아니다).
+ * 터미널 종류·버전 응답, 커서 위치 응답, 모드 응답, 색 응답, 창 초점 알림이 여기에 든다.
+ * 이것을 사용자 입력으로 치면, 화면이 붙기만 해도 "사용자가 터미널을 쓰는 중" 으로 잘못 본다.
+ */
+export function isTerminalReply(data: string): boolean {
+  if (!data) return false;
+  // eslint-disable-next-line no-control-regex
+  return /^(?:\x1b\[[?>=]?[\d;]*[cRn]|\x1b\[\?[\d;]*\$y|\x1b\[[IO]|\x1bP[^\x1b]*\x1b\\|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\))+$/.test(data);
+}

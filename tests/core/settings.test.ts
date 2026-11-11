@@ -46,10 +46,12 @@ test.each([
   [{ worktreeRoot: 'relative/path' }, '전체 경로'],
   [{ claudePath: 'claude' }, '전체 경로'],
   [{ claudeModel: 'opus; rm -rf /' }, '쓸 수 없는 글자'],
-  [{ claudeArgs: '--effort "high' }, '따옴표가 닫히지 않았습니다'],
+  [{ claudeArgs: '--add-dir "/a' }, '따옴표가 닫히지 않았습니다'],
+  [{ claudeArgs: '--effort high' }, '--effort'],
+  [{ claudeEffort: 'ultra' }, 'effort'],
   [{ claudeArgs: '--dangerously-skip-permissions' }, '두레가 직접 정하는 인자'],
   [{ claudeArgs: '--permission-mode=bypassPermissions' }, '두레가 직접 정하는 인자'],
-  [{ claudeArgs: '--effort high --mcp-config /tmp/x.json' }, '--mcp-config'],
+  [{ claudeArgs: '--add-dir /x --mcp-config /tmp/x.json' }, '--mcp-config'],
   [{ claudeArgs: '--model opus' }, '--model'],
   [{ codexArgs: '--dangerously-bypass-approvals-and-sandbox' }, '두레가 직접 정하는 인자'],
   [{ codexArgs: '-c sandbox_mode="danger-full-access"' }, '-c'],
@@ -59,8 +61,8 @@ test.each([
 
 test('받는 값: 경로, 인자, 글자 크기', () => {
   const s = fresh();
-  expect(s.update({ worktreeRoot: ' ~/work/dure ', claudePath: '/opt/bin/claude', claudeArgs: ' --effort high  --add-dir "/a b" ', chatFontSize: 14.26, autoTrust: false }))
-    .toMatchObject({ worktreeRoot: '~/work/dure', claudePath: '/opt/bin/claude', claudeArgs: '--effort high  --add-dir "/a b"', chatFontSize: 14.5, autoTrust: false });
+  expect(s.update({ worktreeRoot: ' ~/work/dure ', claudePath: '/opt/bin/claude', claudeArgs: ' --verbose-thing  --add-dir "/a b" ', claudeEffort: 'xhigh', chatFontSize: 14.26, autoTrust: false }))
+    .toMatchObject({ worktreeRoot: '~/work/dure', claudePath: '/opt/bin/claude', claudeArgs: '--verbose-thing  --add-dir "/a b"', claudeEffort: 'xhigh', chatFontSize: 14.5, autoTrust: false });
   expect(s.update({ worktreeRoot: '', claudeArgs: '' })).toMatchObject({ worktreeRoot: '', claudeArgs: '' });
 });
 
@@ -87,8 +89,9 @@ test('parseArgs: 공백으로 나누고 따옴표로 묶는다', () => {
 });
 
 test('reservedArg: 두레가 정하는 인자를 찾아낸다', () => {
-  expect(reservedArg('claude', ['--effort', 'high'])).toBeUndefined();
-  expect(reservedArg('claude', ['--effort', 'high', '--settings=/x'])).toBe('--settings=/x');
+  expect(reservedArg('claude', ['--add-dir', '/x'])).toBeUndefined();
+  expect(reservedArg('claude', ['--add-dir', '/x', '--settings=/x'])).toBe('--settings=/x');
+  expect(reservedArg('claude', ['--effort=max'])).toBe('--effort=max');
   expect(reservedArg('codex', ['--search'])).toBeUndefined();
   expect(reservedArg('codex', ['--full-auto'])).toBe('--full-auto');
 });

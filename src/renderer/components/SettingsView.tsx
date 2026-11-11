@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import type { ModelChoice, Settings } from '@shared/types';
+import type { ClaudeEffort, ModelChoice, Settings } from '@shared/types';
 import { BYPASS_WARNING } from './dialogs';
 
 type Key = keyof Settings;
+
+import { isClaudeModel } from '../settingsView';
+
+const ALL_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const EFFORT_LABEL: Record<string, string> = { low: '낮음 (low)', medium: '보통 (medium)', high: '높음 (high)', xhigh: '매우 높음 (xhigh)', max: '최대 (max)' };
 
 /** 설정 한 줄: 이름, 설명, 값, 그리고 기본값과 다를 때의 "기본값으로". */
 function Row({ label, help, changed, error, onReset, children }: {
@@ -110,6 +115,14 @@ export function SettingsView() {
   };
   const pick = (key: 'worktreeRoot') => (): void => { void window.dure.settings.pickFolder().then((p) => { if (p) save(key, p); }); };
   const modelKnown = !s.claudeModel || models.some((m) => m.value === s.claudeModel);
+  const listed = models.filter((m) => m.value !== 'default');
+  const claudeModels = listed.filter(isClaudeModel);
+  const otherModels = listed.filter((m) => !isClaudeModel(m));
+  const modelOption = (m: ModelChoice): ReactNode => <option key={m.value} value={m.value}>{m.name}{m.description ? ` — ${m.description}` : ''}</option>;
+  // 고른 모델이 받는 단계만 보인다. 모델을 고르지 않았거나 목록이 없으면 전부 보인다.
+  const chosen = models.find((m) => m.value === (s.claudeModel || 'default'));
+  const efforts = chosen ? ALL_EFFORTS.filter((e) => chosen.efforts.includes(e)) : ALL_EFFORTS;
+  const effortUnsupported = s.claudeEffort !== '' && !efforts.includes(s.claudeEffort);
 
   return (
     <div className="page settings">
@@ -151,14 +164,28 @@ export function SettingsView() {
           >
             <select className="set-select" value={s.claudeModel} disabled={modelsLoading && models.length === 0} onChange={(e) => save('claudeModel', e.target.value)}>
               <option value="">{modelsLoading && models.length === 0 ? '목록을 받아오는 중…' : 'Claude Code 의 기본'}</option>
-              {models.filter((m) => m.value !== 'default').map((m) => <option key={m.value} value={m.value}>{m.name}{m.description ? ` — ${m.description}` : ''}</option>)}
+              {/* Claude Code 가 알려 준 목록에는 연결된 다른 회사의 모델도 들어 있을 수 있다. 헷갈리지 않게 묶어 보인다 */}
+              {claudeModels.length > 0 && <optgroup label="Claude">{claudeModels.map(modelOption)}</optgroup>}
+              {otherModels.length > 0 && <optgroup label="그 밖의 모델 (이 PC 의 Claude Code 에 연결된 것)">{otherModels.map(modelOption)}</optgroup>}
               {/* 저장된 모델이 목록에 없으면(목록이 바뀜) 그대로 보여 준다 */}
               {!modelKnown && <option value={s.claudeModel}>{s.claudeModel}</option>}
             </select>
             <button className="btn ghost" disabled={modelsLoading} onClick={() => loadModels(true)} title="Claude Code 에게 목록을 다시 묻습니다">{modelsLoading ? '받는 중…' : '새로 고침'}</button>
           </Row>
-          <Row label="추가 인자" help="에이전트를 띄울 때 더 줄 인자입니다. 예: --effort high. 두레가 직접 정하는 것(권한 모드, 연결 설정, 입출력 방식, 모델)은 넣을 수 없습니다." {...row('claudeArgs')}>
-            <TextInput wide value={s.claudeArgs} placeholder="--effort high" onCommit={(v) => save('claudeArgs', v)} />
+          <Row
+            label="effort (생각하는 정도)" {...row('claudeEffort')}
+            help={effortUnsupported
+              ? <span className="set-warn">고른 모델은 이 단계를 받지 않습니다. 다른 단계를 고르세요.</span>
+              : '높을수록 더 깊이 생각하고 더 오래 걸립니다. 다음에 시작하는 에이전트부터 적용됩니다.'}
+          >
+            <select className="set-select" value={s.claudeEffort} onChange={(e) => save('claudeEffort', e.target.value as ClaudeEffort)}>
+              <option value="">Claude Code 의 기본</option>
+              {efforts.map((e) => <option key={e} value={e}>{EFFORT_LABEL[e] ?? e}</option>)}
+              {effortUnsupported && <option value={s.claudeEffort}>{EFFORT_LABEL[s.claudeEffort] ?? s.claudeEffort} (이 모델은 받지 않음)</option>}
+            </select>
+          </Row>
+          <Row label="추가 인자" help="에이전트를 띄울 때 더 줄 인자입니다. 예: --add-dir /다른/폴더. 두레가 직접 정하는 것(권한 모드, 연결 설정, 입출력 방식, 모델, effort)은 넣을 수 없습니다." {...row('claudeArgs')}>
+            <TextInput wide value={s.claudeArgs} placeholder="--add-dir /다른/폴더" onCommit={(v) => save('claudeArgs', v)} />
           </Row>
           <Row label="실행 파일" help="비워 두면 PATH 에서 claude 를 찾습니다." {...row('claudePath')}>
             <TextInput wide value={s.claudePath} placeholder="/전체/경로/claude" onCommit={(v) => save('claudePath', v)} />

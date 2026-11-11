@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: Settings = {
   worktreeRoot: '',
   claudePath: '',
   claudeModel: '',
+  claudeEffort: '',
   claudeArgs: '',
   codexPath: '',
   codexArgs: '',
@@ -52,7 +53,7 @@ const RESERVED: Record<'claude' | 'codex', { flags: string[]; prefixes?: string[
   claude: { flags: [
     '--mcp-config', '--strict-mcp-config', '--settings', '--setting-sources', '--append-system-prompt', '--system-prompt', '--allowedTools', '--allowed-tools',
     '--permission-mode', '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--permission-prompt-tool',
-    '--output-format', '--input-format', '--include-partial-messages', '--verbose', '--print', '-p', '--resume', '-r', '--continue', '-c', '--session-id', '--model',
+    '--output-format', '--input-format', '--include-partial-messages', '--verbose', '--print', '-p', '--resume', '-r', '--continue', '-c', '--session-id', '--model', '--effort',
   ] },
   codex: { flags: [
     '--dangerously-bypass-approvals-and-sandbox', '--sandbox', '-s', '--ask-for-approval', '-a', '--full-auto', '--yolo', '-c', '--config', '--profile', '-p',
@@ -115,6 +116,7 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   worktreeRoot: path('작업 폴더 위치'),
   claudePath: path('Claude Code 실행 파일'),
   claudeModel: model,
+  claudeEffort: oneOf('effort', '', 'low', 'medium', 'high', 'xhigh', 'max'),
   claudeArgs: args('Claude Code 추가 인자', 'claude'),
   codexPath: path('Codex 실행 파일'),
   codexArgs: args('Codex 추가 인자', 'codex'),
@@ -191,7 +193,7 @@ export class SettingsService extends EventEmitter {
     try {
       const list = JSON.parse(r.value) as unknown;
       return Array.isArray(list) ? list.filter((m): m is ModelChoice => typeof m === 'object' && m !== null && typeof (m as ModelChoice).value === 'string' && typeof (m as ModelChoice).name === 'string')
-        .map((m) => ({ value: m.value, name: m.name, description: typeof m.description === 'string' ? m.description : '' })) : [];
+        .map((m) => ({ value: m.value, name: m.name, description: typeof m.description === 'string' ? m.description : '', efforts: Array.isArray(m.efforts) ? m.efforts.filter((e) => typeof e === 'string') : [] })) : [];
     } catch { return []; }
   }
 

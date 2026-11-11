@@ -443,6 +443,7 @@ export class WorkspaceService extends EventEmitter {
       headless,
       resumeSessionId,
       model: settings.claudeModel || undefined,
+      effort: settings.claudeEffort || undefined,
       extraArgs,
     });
 

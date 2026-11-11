@@ -273,6 +273,9 @@ export type ChatView = ChatSnapshot & {
   lastError: string | null;
 };
 
+/** Claude Code 의 effort 단계. 빈 값은 "Claude Code 의 기본" */
+export type ClaudeEffort = '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 /** 두레의 설정. 앱 전체에 하나다. */
 export interface Settings {
   /** 새 워크스페이스의 기본 에이전트 */
@@ -287,6 +290,8 @@ export interface Settings {
   claudePath: string;
   /** Claude Code 의 모델. 빈 값이면 Claude Code 의 기본 */
   claudeModel: string;
+  /** Claude Code 의 생각하는 정도(effort). 빈 값이면 Claude Code 의 기본 */
+  claudeEffort: ClaudeEffort;
   /** Claude Code 에 더 줄 인자 (한 줄, 셸처럼 따옴표로 묶을 수 있다) */
   claudeArgs: string;
   codexPath: string;
@@ -312,4 +317,6 @@ export interface ModelChoice {
   value: string;
   name: string;
   description: string;
+  /** 이 모델이 받는 effort 단계. 비어 있으면 effort 를 고를 수 없는 모델이다 */
+  efforts: string[];
 }

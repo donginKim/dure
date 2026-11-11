@@ -66,7 +66,10 @@ const DENIED = '사용자가 거부했습니다.';
 
 function toModels(raw: unknown): ModelChoice[] {
   return (Array.isArray(raw) ? raw : []).flatMap((m): ModelChoice[] => (isObj(m) && str(m.value)
-    ? [{ value: str(m.value), name: str(m.displayName) || str(m.value), description: str(m.description).slice(0, 200) }] : []));
+    ? [{
+      value: str(m.value), name: str(m.displayName) || str(m.value), description: str(m.description).slice(0, 200),
+      efforts: m.supportsEffort === false ? [] : (Array.isArray(m.supportedEffortLevels) ? m.supportedEffortLevels.map(str).filter(Boolean) : []),
+    }] : []));
 }
 
 function questionsOf(input: unknown): ChatQuestion['questions'] {

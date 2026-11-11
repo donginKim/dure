@@ -39,14 +39,26 @@ export const todoTools: ToolBundle = (server, ctx, deps) => {
 
   server.registerTool(
     'todo_list',
-    { description: '이 워크스페이스의 TODO 와 프로젝트 범위 TODO 를 읽는다. userChanges 는 사용자가 두레 화면에서 바꾼 내용 중 아직 전달되지 않은 것이다.' },
-    async () => ok({
-      items: [
-        ...todos.listWorkspace(ctx.workspace.id),
-        ...todos.listProject(ctx.project.id).filter((t) => t.workspaceId === null),
-      ].map(view),
-      userChanges: todos.takePending(ctx.workspace.id),
-    }),
+    { description: coordinator
+      ? '프로젝트 범위 TODO 를 읽는다 (items: 네가 고칠 수 있다). workspaces 에는 워크스페이스마다의 TODO 가 있다: 진행을 보는 용도이고 고칠 수 없다 (더하려면 todo_assign). userChanges 는 사용자가 두레 화면에서 프로젝트 TODO 를 바꾼 내용 중 아직 전달되지 않은 것이다.'
+      : '이 워크스페이스의 TODO 와 프로젝트 범위 TODO 를 읽는다. userChanges 는 사용자가 두레 화면에서 바꾼 내용 중 아직 전달되지 않은 것이다.' },
+    async () => {
+      const all = todos.listProject(ctx.project.id);
+      return ok({
+        items: [
+          ...todos.listWorkspace(ctx.workspace.id),
+          ...all.filter((t) => t.workspaceId === null),
+        ].map(view),
+        // 조율 에이전트는 일을 나눠 맡긴 워크스페이스들의 진행을 본다.
+        ...(coordinator ? {
+          workspaces: deps.workspaces.list(ctx.project.id).map((w) => ({
+            name: w.name, status: w.status, ...(w.summary ? { summary: w.summary } : {}),
+            todos: all.filter((t) => t.workspaceId === w.id).map((t) => ({ title: t.title, status: t.status, assignee: t.assignee })),
+          })),
+        } : {}),
+        userChanges: todos.takePending(ctx.workspace.id),
+      });
+    },
   );
 
   server.registerTool(

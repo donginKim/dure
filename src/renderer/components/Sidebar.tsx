@@ -5,7 +5,9 @@ import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject }: {
+export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting }: {
+  /** DB 조회 승인을 기다리는 워크스페이스 */
+  dbWaiting?: Set<string>;
   tree: TreeNode[]; repos: Repo[]; todos: Todo[]; talk: Record<string, ConversationData>; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState('');
@@ -67,6 +69,7 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
                   <div style={{ minWidth: 0 }}>
                     <div className="ws-name">{w.name}{progressOf(w.id) && <span className="ws-progress" title="TODO 진행도">{progressOf(w.id)}</span>}</div>
                     <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
+                    {dbWaiting?.has(w.id) && <div className="ws-wait" title="에이전트가 DB 조회 승인을 기다립니다. 워크스페이스를 열어 허용하거나 거부하세요">DB 조회 승인 대기</div>}
                     {(() => {
                       const info = talk[project.id]?.delivery[w.id];
                       if (!info || (info.waiting === 0 && info.held === 0)) return null;

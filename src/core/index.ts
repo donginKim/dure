@@ -168,7 +168,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       isProjectClosed: (projectId) => service.isProjectClosed(projectId),
     },
   });
-  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos') });
+  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos'), settings: () => settings.get() });
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
@@ -305,7 +305,10 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     async addRepo(projectId, path) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);
-      return repos.add(projectId, path);
+      const added = repos.add(projectId, path);
+      // 조율 에이전트가 새로 등록한 저장소를 읽을 수 있게 한다 (쉬는 중일 때만 다시 띄운다).
+      void coordinator.reload(projectId).catch(() => undefined);
+      return added;
     },
     async repoStatus(repoId) {
       const repo = repos.get(repoId);

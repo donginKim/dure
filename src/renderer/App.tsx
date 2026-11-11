@@ -21,6 +21,8 @@ export function App() {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [pending, setPending] = useState<Record<string, PendingInfo>>({});
+  // DB 조회 승인을 기다리는 워크스페이스. 에이전트는 '작업 중' 으로 보이지만 실제로는 사용자를 기다린다.
+  const [dbWaiting, setDbWaiting] = useState<Set<string>>(new Set());
   // 프로젝트 id → 그 프로젝트의 대화
   const [talk, setTalk] = useState<Record<string, ConversationData>>({});
   const [selection, setSelection] = useState<Selection>(null);
@@ -40,6 +42,8 @@ export function App() {
       setRepos(rs.flat());
       setTodos(ts.flat());
       setPending(Object.assign({}, ...pe));
+      const reqs = await Promise.all(ps.map((p) => window.dure.db.requests(p.id).catch(() => [])));
+      setDbWaiting(new Set(reqs.flat().map((r) => r.workspaceId)));
       const talks = await Promise.all(ps.map(async (p): Promise<[string, ConversationData]> => {
         const [threads, artifacts, flow, delivery] = await Promise.all([
           window.dure.messages.threads(p.id), window.dure.artifacts.list(p.id), window.dure.messages.flow(p.id), window.dure.messages.delivery(p.id),
@@ -90,7 +94,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} selection={current} onSelect={setSelection} onCreateProject={createProject} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
         {node && (

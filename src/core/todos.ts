@@ -104,11 +104,13 @@ export class TodoService extends EventEmitter {
     return t;
   }
 
-  // 사용자가 워크스페이스 범위 항목을 바꿨을 때만 쌓는다.
-  private notePending(todo: Pick<Todo, 'workspaceId'>, actor: Actor, lines: string[]): void {
-    if (actor !== 'user' || todo.workspaceId === null) return;
+  // 사용자가 바꿨을 때만 쌓는다. 워크스페이스 범위 항목은 그 워크스페이스에, 프로젝트 범위 항목은 조율 에이전트에게 (있을 때).
+  private notePending(todo: Pick<Todo, 'workspaceId' | 'projectId'>, actor: Actor, lines: string[]): void {
+    if (actor !== 'user') return;
+    const to = todo.workspaceId ?? (this.db.prepare("SELECT id FROM workspaces WHERE project_id = ? AND role = 'coordinator'").get(todo.projectId) as { id: string } | undefined)?.id;
+    if (!to) return;
     const insert = this.db.prepare('INSERT INTO todo_pending (workspace_id, line) VALUES (?, ?)');
-    for (const line of lines) insert.run(todo.workspaceId, line);
+    for (const line of lines) insert.run(to, todo.workspaceId === null ? `(프로젝트 TODO) ${line}` : line);
   }
 
   private checkRev(current: Todo, by: By): void {
@@ -132,7 +134,7 @@ export class TodoService extends EventEmitter {
         `INSERT INTO todos (id, project_id, workspace_id, title, detail, status, assignee, position, rev, updated_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       ).run(id, i.projectId, workspaceId, title, clean(i.detail ?? ''), i.status ?? 'todo', assignee, position, actor, now, now);
-      this.notePending({ workspaceId }, actor, [`추가됨: "${title}"${assignee === 'user' ? ' (사용자 몫)' : ''}`]);
+      this.notePending({ workspaceId, projectId: i.projectId }, actor, [`추가됨: "${title}"${assignee === 'user' ? ' (사용자 몫)' : ''}`]);
     })();
     this.emit('changed', i.projectId);
     return this.mustGet(id);

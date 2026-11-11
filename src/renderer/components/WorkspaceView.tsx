@@ -252,7 +252,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
       </div>
       </div>
       )}
-      <SidePanel workspace={workspace} workspaces={workspaces} todos={todos} pending={pending} conversation={conversation} />
+      <SidePanel workspace={workspace} workspaces={workspaces} todos={todos} pending={pending} conversation={conversation} readOnly={project?.status === 'done'} />
       </div>
       {committing && <CommitDialog workspace={workspace} onClose={() => setCommitting(false)} />}
       {removing && (

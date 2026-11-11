@@ -483,6 +483,78 @@ describe('조율 에이전트의 도구', () => {
   });
 });
 
+describe('미뤄 둔 것 정리', () => {
+  test('조율 에이전트의 todo_list 에 워크스페이스마다의 TODO 와 상태가 보인다. 보통 워크스페이스에는 보이지 않는다', async () => {
+    const c = core.coordinator.ensure(projectId);
+    const ws = await core.service.create({ projectId, repoId: front.id, name: '프론트', baseBranch: 'main', agentKind: 'claude' });
+    core.todos.add({ projectId, workspaceId: ws.id, title: '폼 만들기' }, 'agent');
+    core.todos.add({ projectId, workspaceId: null, title: '세션 방식 정하기', assignee: 'user' }, 'agent');
+    core.service.describeByAgent(ws.id, { summary: '폼 만드는 중' });
+    const text = (await call(c.id, 'todo_list')).text;
+    expect(text).toContain('\\"workspaces\\":[{\\"name\\":\\"프론트\\"');
+    expect(text).toContain('폼 만들기');
+    expect(text).toContain('폼 만드는 중');
+    expect(text).toContain('세션 방식 정하기');
+    expect((await call(ws.id, 'todo_list')).text).not.toContain('workspaces');
+  });
+
+  test('사용자가 프로젝트 TODO 를 바꾸면 조율 에이전트에게 전달된다. 조율 에이전트가 없으면 쌓지 않는다', async () => {
+    const t = core.todos.add({ projectId, workspaceId: null, title: '포트 정하기', assignee: 'user' }, 'user');
+    const c = core.coordinator.ensure(projectId);
+    expect(core.todos.pendingCount(c.id)).toBe(0);
+    core.todos.update(t.id, { title: '포트는 3000' }, { actor: 'user' });
+    core.todos.add({ projectId, workspaceId: null, title: '배포는 안 한다' }, 'user');
+    expect(core.todos.pendingCount(c.id)).toBe(2);
+    const text = (await call(c.id, 'todo_list')).text;
+    expect(text).toContain('(프로젝트 TODO)');
+    expect(text).toContain('포트는 3000');
+    expect(text).toContain('배포는 안 한다');
+    expect(core.todos.pendingCount(c.id)).toBe(0);
+    // 에이전트가 바꾼 것은 쌓지 않는다
+    core.todos.add({ projectId, workspaceId: null, title: '조율이 적음' }, 'agent');
+    expect(core.todos.pendingCount(c.id)).toBe(0);
+  });
+
+  test('새 저장소의 위치는 설정을 따른다', async () => {
+    const custom = join(tempDir(), 'my repos');
+    core.settings.update({ repoRoot: custom });
+    expect(core.coordinator.newRepoDir(projectId).startsWith(custom)).toBe(true);
+    const p = await core.coordinator.propose(projectId, { summary: '', new_repos: [{ name: 'web' }] });
+    const res = await core.coordinator.approve(p.id, { newRepos: p.newRepos, items: [], projectTodos: [] });
+    expect(res.repos[0]!.path.startsWith(custom)).toBe(true);
+    expect(existsSync(join(res.repos[0]!.path, 'README.md'))).toBe(true);
+    core.settings.update({ repoRoot: '' });
+    expect(core.coordinator.newRepoDir(projectId).startsWith(repoRoot)).toBe(true);
+  });
+
+  test('저장소가 늘면 쉬는 중인 조율 에이전트를 다시 띄워 새 저장소를 읽게 한다. 대화는 이어진다', async () => {
+    const c = core.coordinator.ensure(projectId);
+    expect(await core.coordinator.reload(projectId)).toBe('off');
+    await core.service.startAgent(c.id, SIZE);
+    await until(() => core.workspaces.get(c.id)?.status === 'idle');
+    const lines = (): { argv: string[] }[] => readFileSync(cfg(c.id, 'argv.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    expect(lines().length).toBe(1);
+    const extra = makeRepo('shop-extra');
+    await core.addRepo(projectId, extra);
+    await until(() => lines().length === 2 && core.workspaces.get(c.id)?.status === 'idle', 8000);
+    const argv = lines()[1]!.argv;
+    expect(argv.flatMap((a, i) => (a === '--add-dir' ? [argv[i + 1]] : []))).toContain(extra);
+    expect(argv).toContain('--resume');
+  });
+
+  test('계획안 승인으로 생긴 새 저장소도 조율 에이전트가 읽게 된다', async () => {
+    const c = core.coordinator.ensure(projectId);
+    await core.service.startAgent(c.id, SIZE);
+    await until(() => core.workspaces.get(c.id)?.status === 'idle');
+    const p = await core.coordinator.propose(projectId, { summary: '', new_repos: [{ name: 'web' }] });
+    const res = await core.coordinator.approve(p.id, { newRepos: p.newRepos, items: [], projectTodos: [] });
+    await until(() => said(c.id).some((t) => t.includes('승인했다')), 8000);
+    const last = readFileSync(cfg(c.id, 'argv.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[] }).at(-1)!.argv;
+    expect(last.flatMap((a, i) => (a === '--add-dir' ? [last[i + 1]] : []))).toContain(res.repos[0]!.path);
+    expect(said(c.id).find((t) => t.includes('승인했다'))).not.toContain('껐다 켜');
+  });
+});
+
 describe('프로젝트를 닫을 때', () => {
   test('완료 처리하면 조율 에이전트도 꺼지고, 완료된 프로젝트에서는 시작할 수 없다', async () => {
     const c = core.coordinator.ensure(projectId);

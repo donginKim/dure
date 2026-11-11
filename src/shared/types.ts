@@ -299,6 +299,8 @@ export interface Settings {
   defaultPermissionMode: PermissionMode;
   /** 작업 폴더(worktree)를 만드는 상위 폴더. 빈 값이면 기본 위치 */
   worktreeRoot: string;
+  /** 계획안의 새 저장소를 만드는 상위 폴더. 빈 값이면 기본 위치 */
+  repoRoot: string;
   /** Claude Code 실행 파일의 절대 경로. 빈 값이면 PATH 에서 찾는다 */
   claudePath: string;
   /** Claude Code 의 모델. 빈 값이면 Claude Code 의 기본 */

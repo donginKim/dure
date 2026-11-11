@@ -1,5 +1,5 @@
 import { checkReadOnly } from '@core/dbquery/guard';
-import { listColumns, listTables, runReadOnly, type DbTarget } from '@core/dbquery/drivers';
+import { listColumns, listTables, riskyPrivileges, runReadOnly, type DbTarget } from '@core/dbquery/drivers';
 
 /**
  * 진짜 DB 로 조회 전용 강제를 확인한다. 시험용 DB 가 떠 있을 때만 돈다:
@@ -74,6 +74,35 @@ for (const [name, t] of cases) {
       // MySQL 의 sleep 은 시간 제한에 걸리면 오류 대신 1 을 돌려준다. 어느 쪽이든 20초를 다 기다리지 않아야 한다.
       await r.catch((e: Error) => expect(e.message).toMatch(/timeout|끝나지 않아|interrupted|exceeded/i));
       expect(Date.now() - started).toBeLessThan(8000);
+    });
+
+    test('큰 칸은 다 받지 않고 바이트 상한에서 끊는다', async () => {
+      const big = db.kind === 'postgres' ? "select repeat('x', 30000000) from generate_series(1, 3)" : "select repeat('x', 30000000) union all select repeat('y', 30000000)";
+      const before = process.memoryUsage().rss;
+      await expect(runReadOnly(db, big, [], { maxRows: 10, timeoutMs: 8000, maxBytes: 2 * 1024 * 1024 })).rejects.toThrow('결과가 너무 큽니다');
+      expect(process.memoryUsage().rss - before).toBeLessThan(150 * 1024 * 1024);
+    });
+
+    test('슈퍼유저·관리자 계정이면 경고를 돌려준다', async () => {
+      const w = await riskyPrivileges(db);
+      expect(w.join(' ')).toMatch(/슈퍼유저|관리자 권한/);
+      expect(await riskyPrivileges({ ...db, password: 'wrong' })).toEqual(['계정의 권한을 확인하지 못했습니다']);
+    });
+
+    test('서버 모드를 고정한다: 역슬래시는 벗어남 글자다', async () => {
+      if (db.kind !== 'mysql') return;
+      const r = await runReadOnly(db, "select @@sql_mode like '%NO_BACKSLASH_ESCAPES%' or @@sql_mode like '%ANSI_QUOTES%' as bad, 'a\\'b' as s", [], LIM);
+      expect(r.rows[0]!.map(String)).toEqual(['0', "a'b"]);
+    });
+
+    test('시간 제한에 걸린 조회는 서버에서도 멈춘다', async () => {
+      if (db.kind !== 'mysql') return;
+      const started = Date.now();
+      await runReadOnly(db, 'select sum(a.price * b.price * c.price) from items a, items b, items c', [], { maxRows: 10, timeoutMs: 1500 }).catch(() => undefined);
+      expect(Date.now() - started).toBeLessThan(6000);
+      await new Promise((r) => setTimeout(r, 1500));
+      const left = await runReadOnly(db, "select count(*) from information_schema.processlist where info like 'select sum(a.price%' and command = 'Query'", [], LIM);
+      expect(Number(left.rows[0]![0])).toBe(0);
     });
 
     test('비밀번호가 틀리면 접속하지 못하고, 오류 글에 비밀번호가 없다', async () => {

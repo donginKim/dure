@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DbAccess, DbColumn, DbConnection, DbKind, DbResult, DbTable, Workspace } from '@shared/types';
 import { ACCESS_HELP, ACCESS_LABEL, cellText, DEFAULT_PORT, emptyForm, formOf, formProblem, KIND_LABEL, previewSql, toInput, type DbForm } from '../dbView';
 import { DbRequests } from './DbRequests';
@@ -24,7 +24,7 @@ function ConnectionDialog({ projectId, editing, onClose }: { projectId: string; 
         <div className="db-note">두레는 이 연결로 <b>조회만</b> 합니다. 쓰기와 스키마 변경은 실행되지 않습니다. 그래도 읽기 전용 계정을 쓰는 것이 안전합니다.</div>
         {error && <div className="error">{error}</div>}
         <div className="db-grid">
-          <div className="field"><label>연결 이름</label><input type="text" autoFocus value={f.name} placeholder="예: 로컬 개발 DB" onChange={(e) => set({ name: e.target.value })} /><div className="hint">에이전트에게는 이 이름만 보입니다</div></div>
+          <div className="field"><label>연결 이름</label><input type="text" autoFocus value={f.name} placeholder="예: 로컬 개발 DB" onChange={(e) => set({ name: e.target.value })} /><div className="hint">에이전트는 이 이름으로 연결을 가리킵니다</div></div>
           <div className="field"><label>종류</label>
             <select value={f.kind} onChange={(e) => { const kind = e.target.value as DbKind; set({ kind, port: f.port === String(DEFAULT_PORT[f.kind]) ? String(DEFAULT_PORT[kind]) : f.port }); }}>
               <option value="postgres">{KIND_LABEL.postgres}</option><option value="mysql">{KIND_LABEL.mysql}</option>
@@ -36,7 +36,7 @@ function ConnectionDialog({ projectId, editing, onClose }: { projectId: string; 
           <div className="field"><label>사용자</label><input type="text" value={f.user} onChange={(e) => set({ user: e.target.value })} /></div>
           <div className="field db-wide"><label>비밀번호</label>
             <input type="password" value={f.password} disabled={clearPassword} placeholder={editing?.hasPassword ? '저장된 비밀번호를 그대로 씁니다. 바꾸려면 새로 적으세요' : ''} onChange={(e) => set({ password: e.target.value })} />
-            <div className="hint">{canStore ? 'macOS 키체인의 열쇠로 암호화해 저장합니다. 화면에도 에이전트에게도 다시 보이지 않습니다.' : '이 환경에서는 비밀번호를 안전하게 저장할 수 없습니다. 비밀번호 없는 연결만 등록할 수 있습니다.'}</div>
+            <div className="hint">{canStore ? 'macOS 키체인의 열쇠로 암호화해 저장합니다. 화면에도 에이전트에게도 다시 보이지 않습니다. (에이전트가 조회로 알아낼 수 있는 것, 예를 들어 접속한 사용자 이름은 막지 못합니다.)' : '이 환경에서는 비밀번호를 안전하게 저장할 수 없습니다. 비밀번호 없는 연결만 등록할 수 있습니다.'}</div>
             {editing?.hasPassword && <label className="check"><input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} /> 저장된 비밀번호 지우기</label>}
           </div>
           <label className="check db-wide"><input type="checkbox" checked={f.ssl} onChange={(e) => set({ ssl: e.target.checked })} /> SSL 로 접속 <span className="muted">(서버 인증서는 확인하지 않습니다)</span></label>
@@ -75,10 +75,14 @@ function Browser({ conn }: { conn: DbConnection }) {
   }, [conn.id]);
   useEffect(() => { loadTables(); }, [loadTables]);
 
+  const [columnsError, setColumnsError] = useState('');
+  const pickSeq = useRef(0);
   const pick = (t: DbTable): void => {
-    setPicked(t); setColumns(null);
+    setPicked(t); setColumns(null); setColumnsError('');
+    // 표를 빠르게 바꿔 누르면 늦게 온 앞 표의 칸이 덮지 않게 한다.
+    const seq = ++pickSeq.current;
     if (!sql.trim() || /^SELECT \* FROM .* LIMIT 100$/.test(sql.trim())) setSql(previewSql(conn.kind, t));
-    window.dure.db.columns(conn.id, t.schema, t.name).then(setColumns).catch((e: Error) => setError(e.message));
+    window.dure.db.columns(conn.id, t.schema, t.name).then((c) => { if (seq === pickSeq.current) setColumns(c); }).catch((e: Error) => { if (seq === pickSeq.current) setColumnsError(e.message); });
   };
   const run = (): void => {
     if (!sql.trim() || running) return;
@@ -110,7 +114,7 @@ function Browser({ conn }: { conn: DbConnection }) {
         {picked && (
           <div className="db-columns">
             <div className="db-sub">{picked.name} 의 칸 {columns && <span className="count">{columns.length}</span>}</div>
-            {!columns ? <div className="muted">읽는 중…</div> : (
+            {columnsError ? <div className="error">{columnsError}</div> : !columns ? <div className="muted">읽는 중…</div> : (
               <div className="db-scroll">
                 <table className="db-grid-table">
                   <thead><tr><th>이름</th><th>형식</th><th>NULL</th><th>기본값</th><th>키</th></tr></thead>
@@ -165,12 +169,12 @@ export function DbPanel({ projectId, workspaces, readOnly }: { projectId: string
   const active = conns?.find((c) => c.id === activeId) ?? conns?.[0] ?? null;
   const test = (c: DbConnection): void => {
     setTested((t) => ({ ...t, [c.id]: '확인하는 중…' }));
-    window.dure.db.test(c.id).then((ms) => setTested((t) => ({ ...t, [c.id]: `접속됨 (${ms}ms)` }))).catch((e: Error) => setTested((t) => ({ ...t, [c.id]: `접속 실패: ${e.message}` })));
+    window.dure.db.test(c.id).then((r) => setTested((t) => ({ ...t, [c.id]: `접속됨 (${r.ms}ms)` }))).catch((e: Error) => setTested((t) => ({ ...t, [c.id]: `접속 실패: ${e.message}` })));
   };
 
   return (
     <div className="page db-page">
-      <DbRequests projectId={projectId} workspaces={workspaces} />
+      {!readOnly && <DbRequests projectId={projectId} workspaces={workspaces} />}
       {error && <div className="error">{error}</div>}
       <div className="section">
         <div className="section-head">
@@ -185,6 +189,10 @@ export function DbPanel({ projectId, workspaces, readOnly }: { projectId: string
                 <div>{c.name} <span className="tag">{KIND_LABEL[c.kind]}</span> <span className={`tag${c.agentAccess === 'auto' ? ' warn' : ''}`} title={ACCESS_HELP[c.agentAccess]}>에이전트: {ACCESS_LABEL[c.agentAccess]}</span></div>
                 <div className="path">{c.user}@{c.host}:{c.port}{c.database && `/${c.database}`}{c.ssl && ' · SSL'}{!c.hasPassword && ' · 비밀번호 없음'}</div>
                 {tested[c.id] && <div className={`db-tested${tested[c.id]!.startsWith('접속 실패') ? ' bad' : ''}`}>{tested[c.id]}</div>}
+                {c.warnings && c.warnings.length > 0 && (
+                  <div className="db-warn">읽기 전용 계정이 아닙니다: {c.warnings.join(' · ')}. 두레는 조회만 실행하지만, 이런 계정은 조회 문장으로도 할 수 있는 일이 있습니다. 에이전트의 조회는 "바로 조회" 로 두어도 매번 승인을 받습니다. 읽기 전용 계정으로 바꾸는 것을 권합니다.</div>
+                )}
+                {c.warnings && c.warnings.length === 0 && <div className="db-tested">계정 권한 확인됨: 조회 말고 눈에 띄는 권한이 없습니다</div>}
               </div>
               <button className="btn ghost" onClick={(e) => { e.stopPropagation(); test(c); }}>접속 확인</button>
               {!readOnly && <button className="btn ghost" onClick={(e) => { e.stopPropagation(); setDialog({ editing: c }); }}>고치기</button>}
@@ -194,7 +202,7 @@ export function DbPanel({ projectId, workspaces, readOnly }: { projectId: string
         </div>
       </div>
       {active && <Browser key={active.id} conn={active} />}
-      {dialog && <ConnectionDialog projectId={projectId} editing={dialog.editing} onClose={(saved) => { setDialog(null); if (saved) { setActiveId(saved.id); load(); } }} />}
+      {dialog && <ConnectionDialog projectId={projectId} editing={dialog.editing} onClose={(saved) => { setDialog(null); if (saved) { setActiveId(saved.id); load(); test(saved); } }} />}
       {removing && (
         <div className="backdrop">
           <div className="dialog">

@@ -475,6 +475,11 @@ export interface DbConnection {
   id: string; projectId: string; name: string; kind: DbKind;
   host: string; port: number; database: string; user: string; ssl: boolean;
   agentAccess: DbAccess; hasPassword: boolean; createdAt: number;
+  /**
+   * 이 계정이 조회 말고 할 수 있는 것 (접속해 확인한 뒤에만 있다). 비어 있지 않으면 읽기 전용 계정이 아니다:
+   * "바로 조회" 로 두어도 에이전트의 조회마다 승인을 받는다.
+   */
+  warnings?: string[];
 }
 export interface DbConnectionInput {
   /** 있으면 그 연결을 고친다 */
@@ -492,4 +497,6 @@ export interface DbResult { columns: string[]; rows: DbCell[][]; /** 상한에 �
 export interface DbRequest {
   id: string; projectId: string; workspaceId: string; connectionId: string; connectionName: string;
   sql: string; status: 'pending' | 'approved' | 'denied' | 'failed'; error?: string; createdAt: number;
+  /** 이 연결의 계정이 조회 말고 할 수 있는 것. 승인 카드에 보인다 */
+  warnings: string[];
 }

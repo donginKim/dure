@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
 import type { DbAccess, DbColumn, DbConnection, DbConnectionInput, DbKind, DbRequest, DbResult, DbTable } from '@shared/types';
 import { checkReadOnly } from './dbquery/guard';
-import { listColumns, listTables, runReadOnly, type DbLimits, type DbTarget } from './dbquery/drivers';
+import { listColumns, listTables, riskyPrivileges, runReadOnly, type DbLimits, type DbTarget } from './dbquery/drivers';
 import type { MessageService } from './messages';
 import type { ProjectStore, WorkspaceStore } from './stores';
 
@@ -23,9 +23,14 @@ interface Row {
 }
 
 /** 사용자가 패널에서 볼 때의 상한 */
-export const USER_LIMITS: DbLimits = { maxRows: 1000, timeoutMs: 30_000 };
+export const USER_LIMITS: DbLimits = { maxRows: 1000, timeoutMs: 30_000, maxBytes: 64 * 1024 * 1024 };
 /** 에이전트가 받을 때의 상한 [사용자 결정: 100행, 10초] */
-export const AGENT_LIMITS: DbLimits = { maxRows: 100, timeoutMs: 10_000 };
+export const AGENT_LIMITS: DbLimits = { maxRows: 100, timeoutMs: 10_000, maxBytes: 8 * 1024 * 1024 };
+/** 에이전트가 보낼 수 있는 문장의 길이. 승인 카드에서 사용자가 끝까지 읽을 수 있어야 한다 */
+const AGENT_MAX_SQL = 4000;
+/** 한 연결에서 에이전트의 조회가 동시에 도는 수 */
+const MAX_RUNNING = 3;
+const RISK_TTL_MS = 10 * 60_000;
 /** 에이전트에게 돌려주는 결과 글의 상한. 넘으면 뒤의 행을 뺀다 */
 const AGENT_MAX_CHARS = 60_000;
 /** 승인을 기다리며 도구 호출을 붙잡아 두는 시간. 넘으면 "기다리는 중" 으로 돌려주고, 결정되면 메시지로 알린다 */
@@ -42,8 +47,21 @@ const toConnection = (r: Row): DbConnection => ({
   hasPassword: r.secret !== '', createdAt: r.created_at,
 });
 
-type Runner = { run: typeof runReadOnly; tables: typeof listTables; columns: typeof listColumns };
-interface Held extends DbRequest { result?: DbResult; waiter?: (r: Held) => void; announced: boolean; taken: boolean }
+type Runner = { run: typeof runReadOnly; tables: typeof listTables; columns: typeof listColumns; risks: typeof riskyPrivileges };
+/** 어디에 누구로 접속하는지. 승인을 기다리는 사이에 연결이 바뀌었는지 볼 때 쓴다 */
+const fingerprint = (r: Row): string => [r.kind, r.host, r.port, r.database, r.user, r.ssl].join('\n');
+/**
+ * 에이전트에게 돌려줄 오류. 접속 단계의 오류에는 호스트, 포트, 사용자 이름이 들어 있다: 그대로 넘기지 않는다.
+ * 문장의 오류(없는 표, 문법)는 에이전트가 고칠 수 있게 그대로 준다.
+ */
+function agentError(e: unknown): Error {
+  const m = e instanceof Error ? e.message : String(e);
+  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ECONNRESET|EAI_AGAIN|getaddrinfo|authentication failed|Access denied for user|no pg_hba|password|SSL|certificate|응답하지 않습니다|Connection terminated|timeout expired/i.test(m)) {
+    return new Error('DB 에 접속하지 못했다. 접속 정보는 사용자가 관리한다: 사용자에게 두레의 DB 탭에서 "접속 확인" 을 해 달라고 하라.');
+  }
+  return new Error(m);
+}
+interface Held extends DbRequest { result?: DbResult; waiter?: (r: Held) => void; announced: boolean; taken: boolean; target: string; running: boolean }
 export type AgentAnswer = { kind: 'result'; result: DbResult; note: string } | { kind: 'pending'; requestId: string };
 
 /**
@@ -53,6 +71,8 @@ export type AgentAnswer = { kind: 'result'; result: DbResult; note: string } | {
  */
 export class DbService extends EventEmitter {
   private readonly requests = new Map<string, Held>();
+  private readonly risks = new Map<string, { key: string; at: number; list: string[] }>();
+  private readonly running = new Map<string, number>();
 
   constructor(private readonly d: {
     db: Database.Database; projects: ProjectStore; workspaces: WorkspaceStore; messages: MessageService; secrets: SecretBox;
@@ -64,15 +84,30 @@ export class DbService extends EventEmitter {
     super();
   }
 
-  private get runner(): Runner { return this.d.runner ?? { run: runReadOnly, tables: listTables, columns: listColumns }; }
+  private get runner(): Runner { return this.d.runner ?? { run: runReadOnly, tables: listTables, columns: listColumns, risks: riskyPrivileges }; }
+
+  private withWarnings(c: DbConnection, r: Row): DbConnection {
+    const known = this.risks.get(r.id);
+    return known && known.key === fingerprint(r) ? { ...c, warnings: known.list } : c;
+  }
+
+  /** 이 연결의 계정이 조회 말고 할 수 있는 것. 접속해서 알아내고 잠시 기억한다. */
+  private async risk(r: Row, fresh = false): Promise<string[]> {
+    const key = fingerprint(r);
+    const known = this.risks.get(r.id);
+    if (!fresh && known && known.key === key && Date.now() - known.at < RISK_TTL_MS) return known.list;
+    const list = await this.runner.risks(this.target(r));
+    this.risks.set(r.id, { key, at: Date.now(), list });
+    return list;
+  }
 
   list(projectId: string): DbConnection[] {
-    return (this.d.db.prepare('SELECT * FROM db_connections WHERE project_id = ? ORDER BY created_at, name').all(projectId) as Row[]).map(toConnection);
+    return (this.d.db.prepare('SELECT * FROM db_connections WHERE project_id = ? ORDER BY created_at, name').all(projectId) as Row[]).map((r) => this.withWarnings(toConnection(r), r));
   }
 
   get(id: string): DbConnection | undefined {
     const r = this.d.db.prepare('SELECT * FROM db_connections WHERE id = ?').get(id) as Row | undefined;
-    return r ? toConnection(r) : undefined;
+    return r ? this.withWarnings(toConnection(r), r) : undefined;
   }
 
   private row(id: string): Row {
@@ -133,10 +168,13 @@ export class DbService extends EventEmitter {
     this.emit('changed', r.project_id);
   }
 
-  /** 접속되는지 본다. 걸린 시간(ms)을 돌려준다. */
-  async test(id: string): Promise<number> {
-    const r = await this.runner.run(this.target(this.row(id)), 'SELECT 1', [], { maxRows: 1, timeoutMs: 8000 });
-    return r.ms;
+  /** 접속되는지 보고, 이 계정이 조회 말고 할 수 있는 것을 확인한다. 걸린 시간(ms)과 경고를 돌려준다. */
+  async test(id: string): Promise<{ ms: number; warnings: string[] }> {
+    const row = this.row(id);
+    const r = await this.runner.run(this.target(row), 'SELECT 1', [], { maxRows: 1, timeoutMs: 8000 });
+    const warnings = await this.risk(row, true);
+    this.emit('changed', row.project_id);
+    return { ms: r.ms, warnings };
   }
 
   tables(id: string): Promise<DbTable[]> { return this.runner.tables(this.target(this.row(id))); }
@@ -165,10 +203,14 @@ export class DbService extends EventEmitter {
     return r;
   }
 
-  agentTables(projectId: string, name: string): Promise<DbTable[]> { return this.runner.tables(this.target(this.forAgent(projectId, name))); }
+  async agentTables(projectId: string, name: string): Promise<DbTable[]> {
+    const r = this.forAgent(projectId, name);
+    try { return await this.runner.tables(this.target(r)); } catch (e) { throw agentError(e); }
+  }
 
-  agentColumns(projectId: string, name: string, schema: string, table: string): Promise<DbColumn[]> {
-    return this.runner.columns(this.target(this.forAgent(projectId, name)), oneLine(schema, 200), oneLine(table, 200));
+  async agentColumns(projectId: string, name: string, schema: string, table: string): Promise<DbColumn[]> {
+    const r = this.forAgent(projectId, name);
+    try { return await this.runner.columns(this.target(r), oneLine(schema, 200), oneLine(table, 200)); } catch (e) { throw agentError(e); }
   }
 
   /** 에이전트에게 돌려줄 크기로 줄인다. */
@@ -176,14 +218,24 @@ export class DbService extends EventEmitter {
     let rows = result.rows;
     let cut = result.truncated;
     while (rows.length > 1 && JSON.stringify(rows).length > AGENT_MAX_CHARS) { rows = rows.slice(0, Math.ceil(rows.length / 2)); cut = true; }
+    // 한 행이 상한을 넘으면 칸을 줄인다.
+    if (rows.length === 1 && JSON.stringify(rows).length > AGENT_MAX_CHARS) {
+      const per = Math.max(20, Math.floor(AGENT_MAX_CHARS / Math.max(1, rows[0]!.length)) - 20);
+      rows = [rows[0]!.map((v) => (typeof v === 'string' && v.length > per ? `${v.slice(0, per)}… (${v.length}자)` : v))];
+      cut = true;
+    }
     return {
       result: { ...result, rows, truncated: cut },
       note: cut ? `결과가 잘렸다 (${rows.length}행만 돌려준다. 한 번에 ${AGENT_LIMITS.maxRows}행까지). 필요한 칸만 고르고 WHERE, LIMIT 로 좁혀라.` : `${rows.length}행`,
     };
   }
 
-  private async runForAgent(r: Row, sql: string): Promise<{ result: DbResult; note: string }> {
-    return this.trim(await this.runner.run(this.target(r), sql, [], AGENT_LIMITS));
+  /** 에이전트의 조회를 실행한다. 한 연결에서 동시에 도는 수를 제한한다 (실행마다 새 접속을 여므로 DB 의 접속 수를 채울 수 있다). */
+  private async runAgent(r: Row, sql: string): Promise<DbResult> {
+    const n = this.running.get(r.id) ?? 0;
+    if (n >= MAX_RUNNING) throw new Error(`이 연결에서 조회가 이미 ${MAX_RUNNING}개 돌고 있다. 끝난 뒤에 다시 조회하라.`);
+    this.running.set(r.id, n + 1);
+    try { return await this.runner.run(this.target(r), sql, [], AGENT_LIMITS); } catch (e) { throw agentError(e); } finally { this.running.set(r.id, (this.running.get(r.id) ?? 1) - 1); }
   }
 
   /**
@@ -195,13 +247,16 @@ export class DbService extends EventEmitter {
     if (!ws) throw new Error('워크스페이스가 없다.');
     const r = this.forAgent(ws.projectId, name);
     const kind: DbKind = r.kind === 'mysql' ? 'mysql' : 'postgres';
+    if (typeof sql === 'string' && sql.length > AGENT_MAX_SQL) throw new Error(`문장이 너무 길다 (${AGENT_MAX_SQL}자까지). 나눠서 조회하라.`);
     const checked = checkReadOnly(sql, kind);
-    if (r.agent_access === 'auto') return { kind: 'result', ...(await this.runForAgent(r, checked)) };
+    // 읽기 전용 계정이 아니면 "바로 조회" 여도 승인을 받는다: 읽기 전용 트랜잭션으로 막히지 않는 길이 있다.
+    const warnings = await this.risk(r).catch(() => ['계정의 권한을 확인하지 못했습니다']);
+    if (r.agent_access === 'auto' && warnings.length === 0) return { kind: 'result', ...this.trim(await this.runAgent(r, checked)) };
     const mine = [...this.requests.values()].filter((q) => q.workspaceId === workspaceId && q.status === 'pending');
     if (mine.length >= 3) throw new Error('승인을 기다리는 조회가 이미 3개다. 사용자의 결정을 기다려라.');
     const held: Held = {
       id: crypto.randomUUID(), projectId: ws.projectId, workspaceId, connectionId: r.id, connectionName: r.name,
-      sql: checked, status: 'pending', createdAt: Date.now(), announced: false, taken: false,
+      sql: checked, status: 'pending', createdAt: Date.now(), announced: false, taken: false, warnings, target: fingerprint(r), running: false,
     };
     this.requests.set(held.id, held);
     for (const old of [...this.requests.values()].filter((q) => q.status !== 'pending').slice(0, Math.max(0, this.requests.size - KEEP_REQUESTS))) this.requests.delete(old.id);
@@ -215,7 +270,8 @@ export class DbService extends EventEmitter {
   }
 
   private take(q: Held): AgentAnswer {
-    if (q.status === 'pending') return { kind: 'pending', requestId: q.id };
+    // 승인됐지만 아직 실행 중이면 기다리는 중이다.
+    if (q.status === 'pending' || q.running) return { kind: 'pending', requestId: q.id };
     q.taken = true;
     if (q.status === 'denied') throw new Error(`사용자가 이 조회를 거절했다${q.error ? ` (${q.error})` : ''}. 같은 조회를 다시 요청하지 말고, 필요하면 사용자에게 이유를 물어라.`);
     if (q.status === 'failed' || !q.result) throw new Error(`조회가 실패했다: ${q.error ?? '알 수 없는 오류'}`);
@@ -229,14 +285,18 @@ export class DbService extends EventEmitter {
     return this.take(q);
   }
 
-  /** 결정을 기다리는 조회 요청. */
+  /** 결정을 기다리는 조회 요청. 완료된 프로젝트의 요청은 거절로 끝낸다. */
   pending(projectId: string): DbRequest[] {
+    if (this.d.isProjectClosed(projectId)) {
+      for (const q of this.requests.values()) if (q.projectId === projectId && q.status === 'pending') this.settle(q, 'denied', '프로젝트가 완료됐다');
+      return [];
+    }
     return [...this.requests.values()].filter((q) => q.projectId === projectId && q.status === 'pending')
-      .map(({ id, projectId: p, workspaceId, connectionId, connectionName, sql, status, createdAt }) => ({ id, projectId: p, workspaceId, connectionId, connectionName, sql, status, createdAt }));
+      .map(({ id, projectId: p, workspaceId, connectionId, connectionName, sql, status, createdAt, warnings }) => ({ id, projectId: p, workspaceId, connectionId, connectionName, sql, status, createdAt, warnings }));
   }
 
   private settle(q: Held, status: Held['status'], error?: string, result?: DbResult): void {
-    q.status = status; q.error = error; q.result = result;
+    q.status = status; q.error = error; q.result = result; q.running = false;
     const waiter = q.waiter;
     q.waiter = undefined;
     if (waiter) { waiter(q); return; }
@@ -256,13 +316,20 @@ export class DbService extends EventEmitter {
     const q = this.requests.get(requestId);
     if (!q || q.status !== 'pending') throw new Error('결정을 기다리는 조회 요청이 아닙니다.');
     if (!allow) { this.settle(q, 'denied'); this.emit('changed', q.projectId); return; }
+    // 요청한 뒤에 사정이 바뀌었으면 실행하지 않는다: 사용자는 요청 때의 연결을 보고 승인한 것이다.
+    const now = this.d.db.prepare('SELECT * FROM db_connections WHERE id = ?').get(q.connectionId) as Row | undefined;
+    const stale = this.d.isProjectClosed(q.projectId) ? '프로젝트가 완료됐다'
+      : !now ? '연결이 지워졌다'
+        : now.agent_access === 'off' ? '사용자가 이 연결을 에이전트가 쓰지 못하게 바꿨다'
+          : fingerprint(now) !== q.target ? '요청한 뒤에 연결의 접속 정보가 바뀌었다. 다시 조회하라' : null;
+    if (stale || !now) { this.settle(q, 'denied', stale ?? '연결이 지워졌다'); this.emit('changed', q.projectId); throw new Error(`실행하지 않았습니다: ${stale}.`); }
     // 두 번 눌러도 한 번만 실행한다.
-    q.status = 'approved';
+    q.status = 'approved'; q.running = true;
     this.emit('changed', q.projectId);
     try {
-      const r = this.row(q.connectionId);
-      if (o.always && r.agent_access === 'ask') this.d.db.prepare("UPDATE db_connections SET agent_access = 'auto' WHERE id = ?").run(r.id);
-      const result = await this.runner.run(this.target(r), q.sql, [], AGENT_LIMITS);
+      const result = await this.runAgent(now, checkReadOnly(q.sql, now.kind === 'mysql' ? 'mysql' : 'postgres'));
+      // "앞으로 묻지 않기" 는 실행이 된 뒤에만 반영한다.
+      if (o.always && now.agent_access === 'ask') this.d.db.prepare("UPDATE db_connections SET agent_access = 'auto' WHERE id = ? AND agent_access = 'ask'").run(now.id);
       this.settle(q, 'approved', undefined, result);
     } catch (e) {
       this.settle(q, 'failed', e instanceof Error ? e.message : String(e));

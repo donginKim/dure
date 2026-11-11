@@ -585,7 +585,8 @@ input[type='password'] { background: var(--bg); border: 1px solid var(--line); b
 input[type='password']:focus { border-color: var(--accent); }
 .db-requests { display: flex; flex-direction: column; gap: 8px; padding: 10px 16px 0; }
 .page .db-requests { padding: 0 0 16px; }
-.db-sql { margin: 0; white-space: pre-wrap; max-height: 180px; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.db-warn { color: var(--warn); font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.db-sql { margin: 0; white-space: pre-wrap; max-height: 320px; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
 .db-note { color: var(--muted); font-size: 12.5px; line-height: 1.55; margin-bottom: 12px; }
 .db-note b { color: var(--accent); font-weight: 600; }
 .db-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }

@@ -16,11 +16,11 @@ const answer = (a: AgentAnswer) => (a.kind === 'pending'
 export const dbTools: ToolBundle = (server, ctx, deps) => {
   server.registerTool(
     'db_list',
-    { description: '이 프로젝트에 사용자가 등록한 DB 연결의 목록을 돌려준다 (이름, 종류, 조회할 때 사용자의 승인이 필요한지). 접속 정보는 주지 않는다.', inputSchema: {} },
+    { description: '이 프로젝트에 사용자가 등록한 DB 연결의 목록을 돌려준다 (이름, 종류, 조회할 때 사용자의 승인이 필요한지). 비밀번호를 비롯한 접속 정보는 주지 않는다.', inputSchema: {} },
     async () => ok({
       connections: deps.dbs.list(ctx.project.id).filter((c) => c.agentAccess !== 'off').map((c) => ({
-        name: c.name, kind: c.kind, database: c.database,
-        query: c.agentAccess === 'auto' ? '바로 조회된다' : '조회마다 사용자의 승인을 받는다 (표 목록과 스키마는 바로 볼 수 있다)',
+        name: c.name, kind: c.kind,
+        query: c.agentAccess === 'auto' && !c.warnings?.length ? '바로 조회된다' : '조회마다 사용자의 승인을 받는다 (표 목록과 스키마는 바로 볼 수 있다)',
       })),
       note: '조회 전용이다. 쓰기, 스키마 변경은 할 수 없다. 접속 정보를 저장소나 환경에서 찾아 직접 접속하려 하지 마라.',
     }),

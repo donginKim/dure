@@ -42,8 +42,8 @@ export interface DureApi {
     canStoreSecrets(): Promise<boolean>;
     save(input: DbConnectionInput): Promise<DbConnection>;
     remove(id: string): Promise<void>;
-    /** 접속해 본다. 걸린 시간(ms) */
-    test(id: string): Promise<number>;
+    /** 접속해 보고, 계정이 조회 말고 할 수 있는 것을 확인한다 */
+    test(id: string): Promise<{ ms: number; warnings: string[] }>;
     tables(id: string): Promise<DbTable[]>;
     columns(id: string, schema: string, table: string): Promise<DbColumn[]>;
     /** 조회 전용. 1000행, 30초까지 */

@@ -9,6 +9,7 @@ let projectId: string;
 let ws: Workspace;
 let ran: { target: DbTarget; sql: string; maxRows: number }[];
 let answer: (sql: string) => DbResult;
+let risks: string[];
 
 const secrets = { encrypt: (s: string) => `enc(${Buffer.from(s).toString('base64')})`, decrypt: (s: string) => Buffer.from(s.slice(4, -1), 'base64').toString() };
 const input = (o: Partial<DbConnectionInput> = {}): DbConnectionInput => ({ projectId, name: '운영 DB', kind: 'postgres', host: 'db.internal', port: 5432, database: 'shop', user: 'reader', password: 'p@ss w0rd', ssl: false, agentAccess: 'ask', ...o });
@@ -28,12 +29,14 @@ async function call(workspaceId: string, name: string, args: unknown = {}): Prom
 
 async function boot(waitMs = 60): Promise<void> {
   ran = [];
+  risks = [];
   answer = () => ({ columns: ['id', 'name'], rows: [[1, 'a'], [2, 'b']], truncated: false, ms: 3 });
   core = await createCore({
     dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(),
     secrets, dbWaitMs: waitMs,
     dbRunner: {
       run: async (target, sql, _params, lim) => { ran.push({ target, sql, maxRows: lim.maxRows }); return answer(sql); },
+      risks: async () => risks,
       tables: async () => [{ schema: 'public', name: 'items', type: 'table' }],
       columns: async (_t, schema, table) => [{ name: `${schema}.${table}.id`, type: 'integer', nullable: false, default: null, key: 'PRIMARY KEY' }],
     },
@@ -58,7 +61,7 @@ describe('DB 연결', () => {
   test('고칠 때 비밀번호를 주지 않으면 그대로 두고, 빈 글이면 지운다', async () => {
     const c = core.dbs.save(input());
     core.dbs.save({ ...input({ host: 'new.internal' }), id: c.id, password: undefined });
-    await core.dbs.test(c.id);
+    expect((await core.dbs.test(c.id)).warnings).toEqual([]);
     expect(ran.at(-1)!.target).toMatchObject({ host: 'new.internal', password: 'p@ss w0rd' });
     expect(core.dbs.save({ ...input(), id: c.id, password: '' }).hasPassword).toBe(false);
     await core.dbs.test(c.id);
@@ -109,7 +112,7 @@ describe('에이전트의 DB 도구', () => {
     expect(text).toContain('운영 DB');
     expect(text).toContain('로컬');
     expect(text).not.toContain('비밀');
-    for (const leak of ['db.internal', 'localhost', 'secret.internal', 'reader', 'p@ss', '5432', 'enc(']) expect(text).not.toContain(leak);
+    for (const leak of ['db.internal', 'localhost', 'secret.internal', 'reader', 'p@ss', '5432', 'enc(', 'shop']) expect(text).not.toContain(leak);
   });
 
   test('바로 조회하는 연결: 검사를 거쳐 100행까지 바로 돌려준다', async () => {
@@ -211,5 +214,83 @@ describe('에이전트의 DB 도구', () => {
     await core.completeProject(projectId, { removeWorktrees: [], removeItems: [], seen: {} });
     expect(() => core.dbs.forAgent(projectId, '운영 DB')).toThrow('완료된 프로젝트');
     expect(() => core.dbs.save({ ...input(), id: c.id })).toThrow('완료된 프로젝트');
+  });
+
+  test('읽기 전용 계정이 아니면 "바로 조회" 여도 승인을 받고, 경고가 요청에 실린다', async () => {
+    risks = ['슈퍼유저입니다'];
+    const c = core.dbs.save(input({ name: '로컬', agentAccess: 'auto' }));
+    expect(await call(ws.id, 'db_query', { connection: '로컬', sql: 'select 1' })).toContain('승인을 기다리는 중');
+    expect(ran).toEqual([]);
+    expect(core.dbs.pending(projectId)[0]!.warnings).toEqual(['슈퍼유저입니다']);
+    expect(core.dbs.get(c.id)!.warnings).toEqual(['슈퍼유저입니다']);
+    expect(await call(ws.id, 'db_list')).toContain('승인을 받는다');
+    expect((await core.dbs.test(c.id)).warnings).toEqual(['슈퍼유저입니다']);
+  });
+
+  test('요청한 뒤에 연결이 바뀌거나 꺼지면 승인해도 실행되지 않는다', async () => {
+    const c = core.dbs.save(input());
+    await call(ws.id, 'db_query', { connection: '운영 DB', sql: 'select 1' });
+    core.dbs.save({ ...input({ host: 'other.internal' }), id: c.id, password: undefined });
+    await expect(core.dbs.decide(core.dbs.pending(projectId)[0]!.id, true)).rejects.toThrow('접속 정보가 바뀌었다');
+    await call(ws.id, 'db_query', { connection: '운영 DB', sql: 'select 2' });
+    const second = core.dbs.pending(projectId)[0]!.id;
+    core.dbs.save({ ...input({ host: 'other.internal', agentAccess: 'off' }), id: c.id, password: undefined });
+    await expect(core.dbs.decide(second, true)).rejects.toThrow('쓰지 못하게 바꿨다');
+    expect(ran).toEqual([]);
+    expect(await call(ws.id, 'db_result', { request_id: second })).toContain('거절했다');
+  });
+
+  test('완료된 프로젝트의 기다리던 요청은 사라지고 실행되지 않는다', async () => {
+    core.dbs.save(input());
+    await call(ws.id, 'db_query', { connection: '운영 DB', sql: 'select 1' });
+    const id = core.dbs.pending(projectId)[0]!.id;
+    await core.completeProject(projectId, { removeWorktrees: [], removeItems: [], seen: {} });
+    expect(core.dbs.pending(projectId)).toEqual([]);
+    await expect(core.dbs.decide(id, true)).rejects.toThrow('결정을 기다리는 조회 요청이 아닙니다');
+    expect(ran).toEqual([]);
+  });
+
+  test('접속 오류의 호스트·사용자는 에이전트에게 가지 않는다. 문장의 오류는 그대로 간다', async () => {
+    core.dbs.save(input({ name: '로컬', agentAccess: 'auto' }));
+    for (const m of ['connect ECONNREFUSED 10.1.2.3:5432', 'password authentication failed for user "reader"', "Access denied for user 'root'@'172.17.0.1'", 'getaddrinfo ENOTFOUND db.internal']) {
+      answer = () => { throw new Error(m); };
+      const text = await call(ws.id, 'db_query', { connection: '로컬', sql: 'select 1' });
+      expect(text).toContain('DB 에 접속하지 못했다');
+      for (const leak of ['10.1.2.3', 'reader', 'root', '172.17', 'db.internal']) expect(text).not.toContain(leak);
+    }
+    answer = () => { throw new Error('column "nope" does not exist'); };
+    expect(await call(ws.id, 'db_query', { connection: '로컬', sql: 'select nope from items' })).toContain('does not exist');
+  });
+
+  test('한 연결에서 동시에 도는 조회는 3개까지다. 너무 긴 문장은 받지 않는다', async () => {
+    core.dbs.save(input({ name: '로컬', agentAccess: 'auto' }));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    const real = core.dbs['d'].runner!.run;
+    core.dbs['d'].runner!.run = async (...a) => { await gate; return real(...a); };
+    const going = [1, 2, 3].map((i) => call(ws.id, 'db_query', { connection: '로컬', sql: `select ${i}` }));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await call(ws.id, 'db_query', { connection: '로컬', sql: 'select 4' })).toContain('이미 3개 돌고 있다');
+    release();
+    for (const g of going) expect(await g).toContain('rows');
+    expect(await call(ws.id, 'db_query', { connection: '로컬', sql: 'select 5' })).toContain('rows');
+    expect(await call(ws.id, 'db_query', { connection: '로컬', sql: `select '${'x'.repeat(4000)}'` })).toContain('문장이 너무 길다');
+  });
+
+  test('승인돼 실행 중일 때 db_result 는 실패가 아니라 기다리는 중이다. 실패한 승인은 "앞으로 묻지 않기" 를 반영하지 않는다', async () => {
+    const c = core.dbs.save(input());
+    await call(ws.id, 'db_query', { connection: '운영 DB', sql: 'select 1' });
+    const id = core.dbs.pending(projectId)[0]!.id;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => { release = r; });
+    answer = () => { throw new Error('syntax error'); };
+    const real = core.dbs['d'].runner!.run;
+    core.dbs['d'].runner!.run = async (...a) => { await gate; return real(...a); };
+    const deciding = core.dbs.decide(id, true, { always: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await call(ws.id, 'db_result', { request_id: id })).toContain('승인을 기다리는 중');
+    release(); await deciding;
+    expect(await call(ws.id, 'db_result', { request_id: id })).toContain('조회가 실패했다: syntax error');
+    expect(core.dbs.get(c.id)!.agentAccess).toBe('ask');
   });
 });

@@ -52,6 +52,12 @@
 | 16 | Claude Code 의 폴더 신뢰 창을 화면 글자로 알아보고 넘길 수 있는가 (2.1.322) | ✅ 화면: `Accessing workspace:` / 폴더 경로 / `Quick safety check: …` / `❯ No, exit` / `Yes, I trust this folder` / `Enter to confirm · Esc to cancel`. 선택지에 번호가 없고 기본 선택은 `No, exit`. 아래 화살표(`ESC [ B`) 한 번으로 커서가 Yes 로 가고 Enter 로 넘어간다. 커서를 옮기면 바뀐 줄만 다시 그려져 옛 `❯ No, exit` 가 출력 기록에 남는다: 가장 나중에 그려진 `❯` 를 봐야 한다 | `spikes/15-trust-dialog.mjs`, `tests/fixtures/trust-dialog.json` |
 | 16a | 터미널 화면(xterm.js)이 붙으면 무엇을 보내는가 | ✅ Claude Code 가 시작하며 터미널에 묻는 것(`ESC [ > 0 q` 등)에 화면이 스스로 응답을 써 보낸다. 이것을 사용자 입력으로 치면 "사용자가 터미널을 쓰는 중" 으로 잘못 본다(⚠️ 응답의 정확한 바이트는 기록하지 않았다. 응답을 사용자 입력에서 빼자 증상이 사라진 것으로 확인) | 검증용 인스턴스 손 확인 |
 | 17 | 슬래시 명령을 입력칸에 써 넣으면 어떤 신호와 기록이 오는가 | ✅ hook 이 하나도 오지 않는다(`/context`, `/model` 모두. `/compact`, `/clear` 는 뒤따르는 `SessionStart` 만 온다, 15f). 기록에는 `system`/`local_command` 줄 둘이 남는다: `<command-name>/context</command-name>…<command-args>…` 와 `<local-command-stdout>…</local-command-stdout>`(색 제어 문자 포함). `/model` 처럼 고르는 화면이 뜨는 명령은 그 화면을 닫은 뒤에야 줄이 남고, 고르는 동안에는 아무 흔적이 없다 | `spikes/16-slash-commands.mjs` |
+| 18 | Claude Code 를 터미널 화면 없이 구조화된 입출력으로 돌릴 수 있는가 (2.1.322) | ✅ Orca 의 채팅이 쓰는 방식이다(실행 중인 프로세스의 인자로 확인): `--output-format stream-json --input-format stream-json --verbose --include-partial-messages --permission-prompt-tool stdio`. 표준 입력에 `{"type":"user","message":{"role":"user","content":"…"}}` 줄을 쓰면 표준 출력에 JSON 줄이 온다: `system/init`(`session_id`, `slash_commands`, `mcp_servers`), `stream_event`(글 조각: `content_block_delta` 의 `text_delta`), `assistant`·`user`(대화 기록 파일과 같은 모양의 메시지), `result`. 폴더 신뢰 창이 없다. 두레의 `--mcp-config`, `--settings`(hook), `--allowedTools` 가 그대로 먹고 hook 도 같은 순서로 온다. 같은 프로세스에 이어서 보낼 수 있다 | `spikes/17-headless.mjs` |
+| 18a | 승인 요청은 어떻게 오고 어떻게 답하는가 | ✅ `{"type":"control_request","request_id":…,"request":{"subtype":"can_use_tool","tool_name":"Bash","input":{…},"permission_suggestions":[…]}}` 로 온다. `{"type":"control_response","response":{"subtype":"success","request_id":…,"response":{"behavior":"allow","updatedInput":{…}}}}` 로 허용, `{"behavior":"deny","message":"…"}` 로 거부(에이전트는 거부 사유를 도구 결과로 받는다). `permission_suggestions` 는 "앞으로 묻지 않기" 에 쓸 규칙이다(⚠️ `updatedPermissions` 로 돌려주는 것은 실제 에이전트로 확인하지 않았다) | `spikes/17-headless.mjs`, `spikes/18-headless-more.mjs` |
+| 18b | 여러 선택지 질문(`AskUserQuestion`) | ✅ 같은 `can_use_tool` 요청으로 오고 `input.questions[]`(`question`, `header`, `options[{label,description}]`, `multiSelect`)에 질문이 담긴다. `updatedInput` 에 `answers: {질문 글: 고른 label}` 을 더해 허용하면 에이전트가 "Your questions have been answered: …" 를 받는다. ⚠️ 여러 개 고르기의 답 형식은 확인하지 않았다 | `spikes/18-headless-more.mjs` |
+| 18c | 작업 중 입력, 멈춤, 이어가기, 슬래시 명령 | ✅ 작업 중에 `user` 줄을 보내면 같은 차례 안에 반영된다. `control_request` `interrupt` 는 0.2초 안에 답하고 `result`(`error_during_execution`)가 온다. 이때 `Stop` hook 은 오지 않는다. 멈춘 뒤에도 같은 프로세스에 이어 보낼 수 있다. 프로세스를 끝낸 뒤 `--resume <session_id>` 로 새로 띄우면 앞의 대화를 기억한다. `control_request` `initialize` 의 답에 명령 102개의 이름·설명·인자 안내와 모델 목록이 온다. `/context` 를 `user` 줄로 보내면 결과가 `assistant` 줄로 온다 | 같음 |
+| 18d | 오류로 끝난 차례 | ✅ 로그인이 만료된 상태에서는 `assistant` 줄("Failed to authenticate: OAuth session expired…")과 `result` 가 오고 `Stop` hook 은 오지 않는다. hook 만 보면 "작업 중" 에 머문다 | 검증용 인스턴스 손 확인 |
+| 18e | 대화 기록 폴더의 위치 | ✅ `CLAUDE_CONFIG_DIR` 가 있으면 hook 의 `transcript_path` 가 그 폴더 아래를 가리킨다. Orca 가 만든 프로필 폴더는 안의 `projects` 등이 `~/.claude` 로 이어진 링크라, 실제 파일은 `~/.claude` 아래에 있다 | 같음 |
 
 ## 설계를 바꾸는 발견
 
@@ -63,6 +69,7 @@
 
 - 승인 창을 Esc 로 거부하면 hook 이 오지 않아(15e), hook 만 보는 상태 표시는 "승인 대기" 에 머문다. 사용자가 터미널에서 직접 거부해도 같다. 대화 기록의 중단 줄을 읽어 상태를 되돌린다(3C).
 - 에이전트의 글은 덩어리가 끝난 뒤에야 기록된다(15a). 채팅 보기는 글이 한 글자씩 흐르는 화면이 될 수 없다. 흐르는 모습이 필요하면 터미널 보기를 쓴다.
+- 터미널 화면 위에 채팅을 얹는 방식의 한계가 드러났다(화면 글자 읽기, 키 입력 흉내, 승인 알림이 늦게 오는 틈, 슬래시 명령이 신호를 보내지 않음). Claude Code 는 화면 없이 구조화된 입출력으로 돌릴 수 있고(18~18c) Orca 의 채팅도 그렇게 한다. 채팅은 그 방식으로 옮기고 터미널 방식은 선택지로 남긴다.
 
 ## 확정된 실행 방식
 

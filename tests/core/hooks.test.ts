@@ -1,6 +1,8 @@
 import { openDatabase } from '@core/db';
 import { handleHook, type HookDeps } from '@core/hooks';
 import { ProjectStore, RepoStore, WorkspaceStore } from '@core/stores';
+import { DeliveryService } from '@core/delivery';
+import { MessageService } from '@core/messages';
 import { pendingMessage, TodoService } from '@core/todos';
 import type { WorkspaceStatus } from '@shared/types';
 
@@ -21,11 +23,23 @@ function setup(initial: WorkspaceStatus = 'idle') {
   });
   workspaces.update(ws.id, { status: initial });
   const statusCalls: string[] = [];
-  const deps: HookDeps = { workspaces, todos, onStatus: (id) => statusCalls.push(id) };
+  const messages = new MessageService(db);
+  const delivery = new DeliveryService({ workspaces, todos, messages, actions: { isConfirmedIdle: () => false, wake: async () => undefined, start: async () => undefined } });
+  const userPrompts: string[] = [];
+  const deps: HookDeps = {
+    workspaces, todos, onStatus: (id) => statusCalls.push(id),
+    collect: (id) => delivery.collect(id), collectMessages: (id) => delivery.collectMessages(id),
+    onUserPrompt: (w) => userPrompts.push(w.id),
+  };
+  const other = workspaces.insert({
+    id: crypto.randomUUID(), projectId: p.id, repoId: r.id, name: '백엔드', nameLocked: true, branch: 'b2', baseBranch: 'main',
+    worktreePath: '/tmp/w2', agentKind: 'claude', permissionMode: 'ask', token: 't2',
+  });
+  const receive = (body: string) => messages.send({ projectId: p.id, from: { kind: 'workspace', workspaceId: other.id }, toWorkspaceId: ws.id, body });
   const fire = (event: string, payload: unknown = {}) => handleHook(deps, workspaces.get(ws.id)!, event, payload);
   const status = () => workspaces.get(ws.id)!.status;
   const userAdds = (title: string) => todos.add({ projectId: p.id, workspaceId: ws.id, title }, 'user');
-  return { fire, status, userAdds, todos, ws, p, statusCalls };
+  return { fire, status, userAdds, todos, ws, p, statusCalls, receive, messages, userPrompts };
 }
 
 test('SessionStart: TODO 가 있으면 현재 목록을 additionalContext 로 다시 알려주고, 쌓인 변경 기록은 비운다', () => {
@@ -144,4 +158,44 @@ test('모르는 이벤트는 빈 글이고 아무것도 바꾸지 않는다', ()
   expect(c.fire('Whatever')).toBe('');
   expect(c.status()).toBe('working');
   expect(c.todos.pendingCount(c.ws.id)).toBe(1);
+});
+
+test('PostToolUse: 메시지도 additionalContext 에 실리고 전달됨으로 표시된다', () => {
+  const c = setup('working');
+  const m = c.receive('API 형식 정했다');
+  const out = JSON.parse(c.fire('PostToolUse'));
+  expect(out.hookSpecificOutput.additionalContext).toContain('워크스페이스 "백엔드" 이(가) 보낸 메시지다');
+  expect(out.hookSpecificOutput.additionalContext).toContain('> API 형식 정했다');
+  expect(c.messages.messages(m.threadId)[0].deliveredAt).not.toBeNull();
+  expect(c.fire('PostToolUse')).toBe('');
+});
+
+test('Stop: 메시지가 있으면 block, 없으면 idle', () => {
+  const c = setup('working');
+  c.receive('답장');
+  expect(JSON.parse(c.fire('Stop')).decision).toBe('block');
+  expect(c.status()).toBe('working');
+  expect(c.fire('Stop')).toBe('');
+  expect(c.status()).toBe('idle');
+});
+
+test('SessionStart: 미전달 메시지도 함께 넣어준다', () => {
+  const c = setup('working');
+  c.receive('꺼져 있는 동안 온 말');
+  const out = JSON.parse(c.fire('SessionStart', { source: 'resume' }));
+  expect(out.hookSpecificOutput.additionalContext).toContain('> 꺼져 있는 동안 온 말');
+});
+
+test('UserPromptSubmit: 프롬프트가 [두레] 로 시작하지 않으면 사용자 개입으로 친다', () => {
+  const c = setup('idle');
+  c.fire('UserPromptSubmit', { prompt: '로그인 화면 고쳐줘' });
+  expect(c.userPrompts).toEqual([c.ws.id]);
+});
+
+test('UserPromptSubmit: 프롬프트가 [두레] 로 시작하거나 본문이 없으면 사용자 개입이 아니다', () => {
+  const c = setup('idle');
+  c.fire('UserPromptSubmit', { prompt: '[두레] 워크스페이스 "백엔드" 이(가) 보낸 메시지다.' });
+  c.fire('UserPromptSubmit', {});
+  c.fire('UserPromptSubmit', 'not json');
+  expect(c.userPrompts).toEqual([]);
 });

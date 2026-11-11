@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { openDatabase } from './db';
+import { DeliveryService } from './delivery';
 import { handleHook } from './hooks';
 import { createGit, type Git } from './git';
+import { MessageService } from './messages';
 import { startMcpServer } from './mcp/server';
 import { todoTools } from './mcp/tools/todo';
 import { workspaceTools } from './mcp/tools/workspace';
@@ -19,6 +21,8 @@ export interface Core {
   workspaces: WorkspaceStore;
   service: WorkspaceService;
   todos: TodoService;
+  messages: MessageService;
+  delivery: DeliveryService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -52,6 +56,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   }
 
   const todos = new TodoService(db);
+  const messages = new MessageService(db);
   const pty = new PtyManager();
   const git = createGit(o.baseEnv);
   // hook 으로 상태가 바뀌면 서비스의 'changed' 로 내보낸다. 서비스는 MCP 주소가 정해진 뒤에 만들어지므로 나중에 잇는다.
@@ -60,21 +65,44 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const mcp = await startMcpServer({
     workspaces, projects, repos, todos,
     onHook: (workspace, event, payload) => {
-      const out = handleHook({ workspaces, todos, onStatus: (id) => onStatus(id) }, workspace, event, payload);
+      const out = handleHook({
+        workspaces, todos,
+        onStatus: (id) => onStatus(id),
+        collect: (id) => delivery.collect(id),
+        collectMessages: (id) => delivery.collectMessages(id),
+        // 사용자가 직접 입력했다: 에이전트끼리의 왕복 횟수를 다시 센다
+        onUserPrompt: (w) => messages.userIntervened(w.projectId),
+      }, workspace, event, payload);
       noteHook(workspace.id, event, out !== '');
       return out;
     },
   }, [workspaceTools, todoTools]);
   const service = new WorkspaceService({
-    projects, repos, workspaces, pty, todos, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
+    projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, baseEnv: o.baseEnv,
   });
+
+  const delivery: DeliveryService = new DeliveryService({
+    workspaces, todos, messages,
+    actions: {
+      isConfirmedIdle: (id) => service.isConfirmedIdle(id),
+      wake: (id, text) => service.wake(id, text),
+      start: async (id, prompt) => { await service.startAgent(id, { cols: 120, rows: 40 }, prompt); },
+    },
+  });
+  service.attachDelivery(delivery);
+  // 전달은 실패해도(에이전트 종료 등) 메시지가 미전달로 되돌아가므로 여기서는 오류를 삼킨다.
+  const kick = (workspaceId: string): void => { delivery.kick(workspaceId).catch(() => undefined); };
+  const onSent = (m: { toWorkspaceId: string }): void => kick(m.toWorkspaceId);
+  const onReleased = (projectId: string): void => { for (const w of workspaces.list(projectId)) kick(w.id); };
+  messages.on('sent', onSent);
+  messages.on('released', onReleased);
 
   onStatus = (id) => service.emit('changed', id);
   noteHook = (id, event, blocked) => service.noteHook(id, event, blocked);
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, pty, git, mcpUrl: mcp.url,
+    projects, repos, workspaces, service, todos, messages, delivery, pty, git, mcpUrl: mcp.url,
     async addRepo(projectId, path) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       if (!(await git.isGitRepo(path))) throw new Error(`git 저장소가 아닙니다: ${path}`);
@@ -90,6 +118,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     async dispose() {
       if (disposed) return;
       disposed = true;
+      messages.off('sent', onSent);
+      messages.off('released', onReleased);
       service.detach();
       await pty.killAll();
       await mcp.close();

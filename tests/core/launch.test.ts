@@ -130,3 +130,12 @@ test('지침에 두레 TODO 사용 문단이 있다', () => {
   expect(text).toContain('assignee 를 user 로 적어라');
   expect(text).toContain('사용자가 놓친 할 일이 보이면');
 });
+
+test('첫 프롬프트는 두 에이전트 모두 마지막 인자로 붙는다', () => {
+  for (const kind of ['claude', 'codex'] as const) {
+    const l = buildAgentLaunch({ ...common, kind, permissionMode: 'ask', initialPrompt: '[두레] 첫 지시\n둘째 줄' });
+    expect(l.args[l.args.length - 1]).toBe('[두레] 첫 지시\n둘째 줄');
+    const without = buildAgentLaunch({ ...common, kind, permissionMode: 'ask' });
+    expect(l.args.slice(0, -1)).toEqual(without.args);
+  }
+});

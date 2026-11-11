@@ -424,3 +424,37 @@ test('에이전트를 새로 시작하면 꺼져 있던 동안 쌓인 미전달 
   await core.service.startAgent(ws.id, SIZE);
   expect(core.todos.pendingCount(ws.id)).toBe(1);
 });
+
+test('startAgent 에 첫 프롬프트를 주면 에이전트의 마지막 인자로 전달된다', async () => {
+  const ws = await create({ name: 'boot-prompt' });
+  const t = await core.service.startAgent(ws.id, SIZE, '[두레] 첫 지시');
+  await until(() => core.pty.buffer(t.id).includes('ARGS:'));
+  // 인자에는 여러 줄짜리 실행 지침이 들어 있다. 첫 프롬프트는 그 뒤, 맨 끝에 온다.
+  await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
+  const out = core.pty.buffer(t.id);
+  const at = out.lastIndexOf('[두레] 첫 지시');
+  expect(at).toBeGreaterThan(out.indexOf('--permission-mode acceptEdits'));
+  // 가짜 에이전트는 인자를 다 찍은 뒤 TOKEN_ENV 줄을 찍는다: 그 바로 앞이 마지막 인자다
+  expect(out.slice(at, out.indexOf('TOKEN_ENV:')).trim()).toBe('[두레] 첫 지시');
+});
+
+test('interrupt 는 작업 중인 claude 터미널에 ESC 를 쓰고 상태를 idle 로 한다 (쉬는 중 확인은 아니다)', async () => {
+  const { ws, terminal } = await idleConfirmedAgent('interrupt-me');
+  await runHook(join(dataDir, 'workspaces', ws.id, 'hook.sh'), 'PreToolUse');
+  expect(core.workspaces.get(ws.id)?.status).toBe('working');
+  core.service.interrupt(ws.id);
+  await until(() => core.pty.buffer(terminal.id).includes('\x1b') || core.pty.buffer(terminal.id).includes('^['));
+  expect(core.workspaces.get(ws.id)?.status).toBe('idle');
+  core.todos.add({ projectId, workspaceId: ws.id, title: 'A' }, 'user');
+  expect(core.service.canNudge(ws.id)).toBe(false);
+});
+
+test('interrupt 는 쉬는 중이거나 꺼진 워크스페이스에는 아무것도 쓰지 않는다', async () => {
+  const { ws, terminal } = await idleConfirmedAgent('interrupt-idle');
+  const before = core.pty.buffer(terminal.id);
+  core.service.interrupt(ws.id);
+  await new Promise((r) => setTimeout(r, 200));
+  expect(core.pty.buffer(terminal.id)).toBe(before);
+  const off = await create({ name: 'interrupt-off' });
+  expect(() => core.service.interrupt(off.id)).not.toThrow();
+});

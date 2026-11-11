@@ -18,6 +18,8 @@ export interface AgentLaunchInput {
   token: string;
   configDir: string;
   instructions: string;
+  /** 띄우자마자 실행할 프롬프트. 폴더 신뢰 창이 있으면 그 뒤에 실행된다 (실험 12) */
+  initialPrompt?: string;
 }
 
 const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'Notification'] as const;
@@ -41,6 +43,13 @@ const toml = (s: string): string => JSON.stringify(s);
  * Codex 의 권한 인자는 아직 실측하지 못한 값이다.
  */
 export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
+  const launch = buildBase(i);
+  // 두 에이전트 모두 프롬프트는 마지막 위치 인자다.
+  if (i.initialPrompt) launch.args.push(i.initialPrompt);
+  return launch;
+}
+
+function buildBase(i: AgentLaunchInput): AgentLaunch {
   if (i.kind === 'claude') {
     const mcpConfig = join(i.configDir, 'mcp.json');
     const settings = join(i.configDir, 'settings.json');

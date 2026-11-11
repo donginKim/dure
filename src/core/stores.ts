@@ -7,14 +7,14 @@ interface RepoRow { id: string; project_id: string; name: string; path: string }
 interface WorkspaceRow {
   id: string; project_id: string; repo_id: string; name: string; name_locked: number; summary: string;
   branch: string; base_branch: string; worktree_path: string; agent_kind: string; permission_mode: string;
-  status: string; token: string; created_at: number; engine: string; session_id: string | null;
+  status: string; token: string; created_at: number; engine: string; session_id: string | null; role: string;
 }
 
 const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at, status: r.status === 'done' ? 'done' : 'active', completedAt: r.completed_at });
 const toRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, name: r.name, path: r.path });
 // 토큰은 일부러 옮기지 않는다. 화면으로 나가는 객체에 들어가면 안 된다.
 const toWorkspace = (r: WorkspaceRow): Workspace => ({
-  id: r.id, projectId: r.project_id, repoId: r.repo_id, name: r.name, nameLocked: r.name_locked === 1,
+  id: r.id, projectId: r.project_id, role: r.role === 'coordinator' ? 'coordinator' : 'worker', repoId: r.repo_id, name: r.name, nameLocked: r.name_locked === 1,
   summary: r.summary, branch: r.branch, baseBranch: r.base_branch, worktreePath: r.worktree_path,
   agentKind: r.agent_kind as Workspace['agentKind'], permissionMode: r.permission_mode as Workspace['permissionMode'],
   engine: r.engine as Workspace['engine'], status: r.status as Workspace['status'], createdAt: r.created_at,
@@ -64,8 +64,22 @@ export class RepoStore {
     return r;
   }
 
+  /** 사용자가 등록한 저장소. 두레가 안에서 쓰는 것(조율 에이전트의 폴더)은 빼고 준다. */
   list(projectId: string): Repo[] {
-    return (this.db.prepare('SELECT * FROM repos WHERE project_id = ? ORDER BY rowid').all(projectId) as RepoRow[]).map(toRepo);
+    return (this.db.prepare('SELECT * FROM repos WHERE project_id = ? AND internal = 0 ORDER BY rowid').all(projectId) as RepoRow[]).map(toRepo);
+  }
+
+  /** 두레가 안에서 쓰는 폴더를 저장소 자리에 적어 둔다 (조율 에이전트). 이미 있으면 그것을 돌려준다. */
+  addInternal(projectId: string, path: string): Repo {
+    const found = this.db.prepare('SELECT * FROM repos WHERE project_id = ? AND path = ?').get(projectId, path) as RepoRow | undefined;
+    if (found) return toRepo(found);
+    const r: Repo = { id: crypto.randomUUID(), projectId, name: basename(path), path };
+    this.db.prepare('INSERT INTO repos (id, project_id, name, path, internal) VALUES (?, ?, ?, ?, 1)').run(r.id, r.projectId, r.name, r.path);
+    return r;
+  }
+
+  isInternal(id: string): boolean {
+    return (this.db.prepare('SELECT internal FROM repos WHERE id = ?').get(id) as { internal: number } | undefined)?.internal === 1;
   }
 
   get(id: string): Repo | undefined {
@@ -78,7 +92,7 @@ export class RepoStore {
   }
 }
 
-export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine'> & { token: string; engine?: Workspace['engine'] };
+export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine' | 'role'> & { token: string; engine?: Workspace['engine']; role?: Workspace['role'] };
 
 const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine' } as const;
 export type WorkspacePatch = Partial<Pick<Workspace, keyof typeof PATCH_COLUMNS>>;
@@ -89,16 +103,28 @@ export class WorkspaceStore {
   insert(w: NewWorkspace): Workspace {
     this.db.prepare(
       `INSERT INTO workspaces (id, project_id, repo_id, name, name_locked, branch, base_branch, worktree_path,
-         agent_kind, permission_mode, token, created_at, engine)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         agent_kind, permission_mode, token, created_at, engine, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(w.id, w.projectId, w.repoId, w.name, w.nameLocked ? 1 : 0, w.branch, w.baseBranch, w.worktreePath,
       // 채팅 방식은 Claude Code 만 된다.
-      w.agentKind, w.permissionMode, w.token, Date.now(), w.agentKind === 'claude' ? (w.engine ?? 'chat') : 'terminal');
+      w.agentKind, w.permissionMode, w.token, Date.now(), w.agentKind === 'claude' ? (w.engine ?? 'chat') : 'terminal', w.role ?? 'worker');
     return this.get(w.id)!;
   }
 
+  /** 프로젝트의 보통 워크스페이스들. 조율 에이전트는 들어 있지 않다 (작업 폴더가 없고, 목록에 보이지 않는다). */
   list(projectId: string): Workspace[] {
+    return (this.db.prepare("SELECT * FROM workspaces WHERE project_id = ? AND role = 'worker' ORDER BY created_at, rowid").all(projectId) as WorkspaceRow[]).map(toWorkspace);
+  }
+
+  /** 조율 에이전트까지 모두. 이름을 찾거나, 프로젝트의 에이전트를 모두 끌 때 쓴다. */
+  listAll(projectId: string): Workspace[] {
     return (this.db.prepare('SELECT * FROM workspaces WHERE project_id = ? ORDER BY created_at, rowid').all(projectId) as WorkspaceRow[]).map(toWorkspace);
+  }
+
+  /** 프로젝트의 조율 에이전트. 아직 만들지 않았으면 undefined */
+  coordinator(projectId: string): Workspace | undefined {
+    const r = this.db.prepare("SELECT * FROM workspaces WHERE project_id = ? AND role = 'coordinator' ORDER BY created_at LIMIT 1").get(projectId) as WorkspaceRow | undefined;
+    return r && toWorkspace(r);
   }
 
   get(id: string): Workspace | undefined {

@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace, Settings, ModelChoice } from '@shared/types';
-import { baseInstructions } from './agents/instructions';
+import { baseInstructions, coordinatorInstructions } from './agents/instructions';
 import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
@@ -405,7 +405,7 @@ export class WorkspaceService extends EventEmitter {
     const id = ws.id;
     // 작업 폴더를 지우기 전에 그 안에서 도는 프로세스를 먼저 끝낸다.
     await this.killTerminals(id);
-    if (o.deleteWorktree) {
+    if (o.deleteWorktree && ws.role !== 'coordinator') {
       const repo = this.d.repos.get(ws.repoId);
       if (repo) await this.d.git.removeWorktree({ repoPath: repo.path, worktreePath: ws.worktreePath });
     }
@@ -431,6 +431,9 @@ export class WorkspaceService extends EventEmitter {
     const resumeSessionId = headless ? this.d.workspaces.getSessionId(id) : undefined;
     if (this.removing.has(id)) throw new Error('지우는 중인 워크스페이스입니다.');
     this.d.pty.forgetExited(id, 'agent'); // 지난 에이전트 탭 기록은 치운다
+    const coordinator = ws.role === 'coordinator';
+    // 조율 에이전트의 폴더는 두레가 관리한다. 없으면 만든다.
+    if (coordinator) mkdirSync(ws.worktreePath, { recursive: true });
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
 
     const project = this.d.projects.get(ws.projectId)!;
@@ -444,7 +447,8 @@ export class WorkspaceService extends EventEmitter {
     // 받은 메시지가 기다리고 있으면 그것을 첫 프롬프트로 준다. 실행 파일을 확인한 뒤에 가져가야 실패 시 사라지지 않는다.
     // 이 저장소에 대한 커밋·push 만 막기 위해 저장소의 공용 .git 폴더를 알아 둔다. 못 알아내면 막는 장치 없이 띄운다.
     const realGit = findExecutable('git', this.d.baseEnv.PATH);
-    const gitCommonDir = realGit ? await this.d.git.commonDir(ws.worktreePath).catch(() => undefined) : undefined;
+    // 조율 에이전트의 폴더는 저장소가 아니다: commit·push 를 막는 대리 파일을 걸 저장소가 없다.
+    const gitCommonDir = realGit && !coordinator ? await this.d.git.commonDir(ws.worktreePath).catch(() => undefined) : undefined;
     // 기다리는 사이에 지워지거나 닫혔으면 띄우지 않는다.
     if (this.removing.has(id) || this.detached || !this.d.workspaces.get(id)) throw new Error('지우는 중인 워크스페이스입니다.');
     if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
@@ -460,7 +464,10 @@ export class WorkspaceService extends EventEmitter {
       basePath: this.d.baseEnv.PATH ?? '',
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),
-      instructions: baseInstructions(ws, project),
+      instructions: coordinator ? coordinatorInstructions(project) : baseInstructions(ws, project),
+      // 조율 에이전트는 코드를 고치지 않는다: 파일을 고치는 도구를 빼고, 등록된 저장소는 읽을 수 있게 한다.
+      disallowedTools: coordinator ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : undefined,
+      addDirs: coordinator ? this.d.repos.list(ws.projectId).map((r) => r.path).filter((p) => existsSync(p)) : undefined,
       initialPrompt: firstPrompt,
       headless,
       resumeSessionId,

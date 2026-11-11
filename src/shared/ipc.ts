@@ -1,9 +1,9 @@
 import type {
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, ModelChoice, Settings, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, ProposalItem, Settings, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -24,6 +24,14 @@ export interface DureApi {
     remove(id: string): Promise<void>;
     /** 완료된 프로젝트를 다시 연다 */
     reopen(id: string): Promise<Project>;
+  };
+  /** 프로젝트 조율: 조율 에이전트와 그 워크스페이스 제안 */
+  coordinator: {
+    /** 프로젝트의 조율 에이전트(없으면 만든다)와 승인을 기다리는 제안 */
+    get(projectId: string): Promise<CoordinatorInfo>;
+    /** 제안을 승인한다. items 는 화면에서 고친 최종 목록. 만들어진 워크스페이스를 돌려준다 */
+    approve(proposalId: string, items: ProposalItem[]): Promise<Workspace[]>;
+    reject(proposalId: string, reason?: string): Promise<void>;
   };
   /** 정리 대기와 프로젝트 완료 처리 */
   cleanup: {
@@ -140,6 +148,7 @@ export interface DureApi {
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
+  'coordinator.get', 'coordinator.approve', 'coordinator.reject',
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',

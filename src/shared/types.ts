@@ -33,9 +33,16 @@ export interface Repo {
 /** 등록된 저장소가 지금도 쓸 수 있는 상태인지. 화면이 등록 결과를 보여주는 데 쓴다. */
 export type RepoStatus = { ok: true; branch: string } | { ok: false; reason: string };
 
+/**
+ * worker: 저장소 하나의 작업 폴더에서 일하는 보통의 워크스페이스.
+ * coordinator: 프로젝트의 조율 에이전트. 프로젝트마다 하나이고, 저장소가 아니라 두레가 관리하는 폴더에서 돈다. 코드를 고치지 않는다.
+ */
+export type WorkspaceRole = 'worker' | 'coordinator';
+
 export interface Workspace {
   id: string;
   projectId: string;
+  role: WorkspaceRole;
   repoId: string;
   name: string;
   nameLocked: boolean;
@@ -373,4 +380,33 @@ export interface CompletionChoice {
    * 목록을 본 뒤에 생긴 변경을 모르고 지우면 안 된다.
    */
   seen: Record<string, number | null>;
+}
+
+/** 조율 에이전트가 제안한 워크스페이스 하나 */
+export interface ProposalItem {
+  name: string;
+  /** 등록된 저장소의 id */
+  repoId: string;
+  baseBranch: string;
+  /** 이 워크스페이스가 맡을 일 (한두 줄) */
+  role: string;
+}
+
+/** 조율 에이전트의 워크스페이스 제안. 사용자가 고치고 승인해야 만들어진다. */
+export interface Proposal {
+  id: string;
+  projectId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  items: ProposalItem[];
+  /** 조율 에이전트가 덧붙인 설명 */
+  note: string;
+  createdAt: number;
+}
+
+/** 프로젝트 화면의 "조율" 탭이 받는 것 */
+export interface CoordinatorInfo {
+  /** 조율 에이전트의 워크스페이스 (채팅 화면이 이것으로 대화한다) */
+  workspace: Workspace;
+  /** 승인을 기다리는 제안. 없으면 null */
+  proposal: Proposal | null;
 }

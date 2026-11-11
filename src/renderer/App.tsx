@@ -99,6 +99,7 @@ export function App() {
             project={node.project}
             repos={repos.filter((r) => r.projectId === node.project.id)}
             workspaces={node.workspaces}
+            everyone={workspaces.filter((w) => w.projectId === node.project.id)}
             todos={todos.filter((t) => t.projectId === node.project.id)}
             conversation={talk[node.project.id] ?? EMPTY_TALK}
             onSelect={setSelection}

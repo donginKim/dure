@@ -4,7 +4,7 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, Settings, TodoAssignee, TodoPatch } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, ProposalItem, Settings, TodoAssignee, TodoPatch } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -43,6 +43,9 @@ export function registerIpc(core: Core): () => void {
       changed('projects');
     },
     'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
+    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId) }),
+    'coordinator.approve': (proposalId: string, items: ProposalItem[]) => core.coordinator.approve(proposalId, items),
+    'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
     'cleanup.list': (projectId: string) => core.cleanup.list(projectId),
     'cleanup.restore': (id: string) => core.cleanup.restore(id),
     'cleanup.export': async (id: string) => {
@@ -79,7 +82,7 @@ export function registerIpc(core: Core): () => void {
       }
       changed('repos');
     },
-    'workspaces.list': (projectId: string) => core.workspaces.list(projectId),
+    'workspaces.list': (projectId: string) => core.workspaces.listAll(projectId),
     'workspaces.create': (input: CreateWorkspaceInput) => core.service.create(input),
     'workspaces.remove': (id: string, options: { deleteWorktree: boolean }) => core.service.remove(id, options),
     'workspaces.uncommitted': (id: string) => core.service.uncommittedCount(id),
@@ -175,6 +178,7 @@ export function registerIpc(core: Core): () => void {
   const onWorkspaceChanged = (): void => { changed('workspaces'); changed('terminals'); changed('todos'); changed('messages'); changed('chat'); };
   const onChatChanged = (): void => changed('chat');
   const onCleanupChanged = (): void => changed('cleanup');
+  const onCoordinatorChanged = (): void => changed('coordinator');
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
   const onSettingsChanged = (): void => { changed('settings'); changed('messages'); };
   const onMessagesChanged = (): void => changed('messages');
@@ -189,6 +193,7 @@ export function registerIpc(core: Core): () => void {
   core.commit.on('changed', onCommitChanged);
   core.chat.on('changed', onChatChanged);
   core.cleanup.on('changed', onCleanupChanged);
+  core.coordinator.on('changed', onCoordinatorChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
 
@@ -202,6 +207,7 @@ export function registerIpc(core: Core): () => void {
     core.commit.off('changed', onCommitChanged);
     core.chat.off('changed', onChatChanged);
     core.cleanup.off('changed', onCleanupChanged);
+    core.coordinator.off('changed', onCoordinatorChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);
     for (const channel of IPC_CHANNELS) {

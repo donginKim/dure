@@ -3,15 +3,27 @@ import type { Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
 import { groupTodos } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
 import { CleanupList, CompleteDialog } from './CleanupPanel';
+import { CoordinatorPane } from './CoordinatorPane';
 import { ConversationList, type ConversationData } from './ConversationPanel';
 import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
 import { Ticks, TodoList } from './TodoPanel';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
-export function ProjectView({ project, repos, workspaces, todos, conversation, onSelect }: {
-  project: Project; repos: Repo[]; workspaces: Workspace[]; todos: Todo[]; conversation: ConversationData; onSelect: (s: Selection) => void;
+export function ProjectView({ project, repos, workspaces, everyone, todos, conversation, onSelect }: {
+  project: Project; repos: Repo[]; workspaces: Workspace[];
+  /** 조율 에이전트까지 든 목록 (대화에서 이름을 찾는 데 쓴다) */
+  everyone: Workspace[];
+  todos: Todo[]; conversation: ConversationData; onSelect: (s: Selection) => void;
 }) {
+  // 조율: 조율 에이전트와 대화. 현황: 저장소, 워크스페이스, TODO, 정리 대기. 고른 탭은 프로젝트마다 기억한다.
+  const tabKey = `dure.projectTab.${project.id}`;
+  const [tab, setTab] = useState<'coord' | 'status'>(() => {
+    try { const v = window.localStorage.getItem(tabKey); if (v === 'coord' || v === 'status') return v; } catch { /* 기억하지 못해도 된다 */ }
+    // 저장소가 없으면 조율 에이전트가 할 수 있는 일이 없다. 현황에서 저장소부터 등록한다.
+    return repos.length === 0 ? 'status' : 'coord';
+  });
+  const switchTab = (next: 'coord' | 'status'): void => { setTab(next); try { window.localStorage.setItem(tabKey, next); } catch { /* 위와 같다 */ } };
   const [statuses, setStatuses] = useState<Record<string, RepoStatus>>({});
   const [error, setError] = useState('');
   const [justAdded, setJustAdded] = useState<Repo | null>(null);
@@ -58,9 +70,20 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
   };
 
   return (
+    <div className="project-view">
+      <div className="project-head">
+        <div>
+          <h1>{project.name}{done && <span className="done-badge">완료</span>}</h1>
+          <div className="sub">프로젝트 · 저장소 {repos.length}개 · 워크스페이스 {workspaces.length}개</div>
+        </div>
+        <div className="view-switch" role="tablist" aria-label="프로젝트 화면">
+          <button role="tab" aria-selected={tab === 'coord'} className={tab === 'coord' ? 'on' : ''} onClick={() => switchTab('coord')} title="조율 에이전트와 대화합니다. 프로젝트 전체에 일을 시킵니다">조율</button>
+          <button role="tab" aria-selected={tab === 'status'} className={tab === 'status' ? 'on' : ''} onClick={() => switchTab('status')} title="저장소, 워크스페이스, TODO, 정리 대기">현황</button>
+        </div>
+      </div>
+      {tab === 'coord' && <CoordinatorPane project={project} repos={repos} everyone={everyone} conversation={conversation} readOnly={done} />}
+      {tab === 'status' && (
     <div className="page">
-      <h1>{project.name}{done && <span className="done-badge">완료</span>}</h1>
-      <div className="sub">프로젝트 · 저장소 {repos.length}개 · 워크스페이스 {workspaces.length}개</div>
       {done && (
         <div className="done-banner">
           <div>
@@ -157,7 +180,7 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
             projectId={project.id}
             threads={conversation.threads}
             data={conversation}
-            workspaces={workspaces}
+            workspaces={everyone}
             empty="아직 오간 대화가 없습니다. 에이전트가 다른 워크스페이스에 메시지를 보내면 여기에 모두 보입니다."
           />
         </div>
@@ -219,6 +242,8 @@ export function ProjectView({ project, repos, workspaces, todos, conversation, o
           onClose={() => setRemovingProject(false)}
           onConfirm={async () => { await window.dure.projects.remove(project.id); setRemovingProject(false); }}
         />
+      )}
+    </div>
       )}
     </div>
   );

@@ -2,7 +2,7 @@ import { groupTodos, progress, TODO_STATUS_LABEL } from '../../src/renderer/todo
 import type { Todo, Workspace } from '@shared/types';
 
 const ws = (id: string, createdAt: number): Workspace => ({
-  id, projectId: 'p', repoId: 'r', name: `ws-${id}`, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
+  id, projectId: 'p', role: 'worker', repoId: 'r', name: `ws-${id}`, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
   worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', status: 'stopped', createdAt,
 });
 const todo = (id: string, workspaceId: string | null, position: number, status: Todo['status'] = 'todo'): Todo => ({

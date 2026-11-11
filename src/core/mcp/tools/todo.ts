@@ -18,9 +18,12 @@ const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], is
 /** 에이전트가 두레의 TODO 를 읽고 쓰는 도구. 자기 워크스페이스의 항목만 고칠 수 있다. */
 export const todoTools: ToolBundle = (server, ctx, deps) => {
   const todos = deps.todos;
+  // 조율 에이전트는 프로젝트 전체를 맡는다: 그 TODO 는 프로젝트 범위 항목이다 (화면의 "프로젝트" 묶음에 보인다).
+  const coordinator = ctx.workspace.role === 'coordinator';
+  const scope = coordinator ? null : ctx.workspace.id;
   const mine = (id: string): Todo | undefined => {
     const t = todos.get(id);
-    return t && t.workspaceId === ctx.workspace.id ? t : undefined;
+    return t && t.projectId === ctx.project.id && t.workspaceId === scope ? t : undefined;
   };
   // 사용자가 먼저 바꾼 항목이면 덮어쓰지 않고 현재 값을 알려준다.
   const guarded = (run: () => unknown) => {
@@ -52,7 +55,7 @@ export const todoTools: ToolBundle = (server, ctx, deps) => {
       description: '이 워크스페이스의 TODO 에 항목을 더한다. 사용자가 해야 하는 일은 assignee 를 user 로 한다.',
       inputSchema: { title: z.string(), detail: z.string().optional(), assignee: ASSIGNEE.optional(), status: STATUS.optional() },
     },
-    async (a) => guarded(() => view(todos.add({ projectId: ctx.project.id, workspaceId: ctx.workspace.id, ...a }, 'agent'))),
+    async (a) => guarded(() => view(todos.add({ projectId: ctx.project.id, workspaceId: scope, ...a }, 'agent'))),
   );
 
   server.registerTool(
@@ -65,7 +68,7 @@ export const todoTools: ToolBundle = (server, ctx, deps) => {
       },
     },
     async ({ id, rev, ...patch }) => {
-      if (!mine(id)) return fail('이 워크스페이스의 항목만 고칠 수 있다.');
+      if (!mine(id)) return fail(coordinator ? '프로젝트 범위의 항목만 고칠 수 있다. 워크스페이스의 항목은 그 워크스페이스가 고친다.' : '이 워크스페이스의 항목만 고칠 수 있다.');
       return guarded(() => view(todos.update(id, patch, { actor: 'agent', rev })));
     },
   );

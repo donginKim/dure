@@ -38,6 +38,10 @@ export interface AgentLaunchInput {
   model?: string;
   /** 설정에서 고른 effort (Claude Code). 없으면 Claude Code 의 기본 */
   effort?: string;
+  /** 쓰지 못하게 할 도구 (Claude Code). 조율 에이전트는 파일을 고치는 도구를 쓰지 못한다 */
+  disallowedTools?: string[];
+  /** 작업 폴더 밖에서 읽을 수 있게 할 폴더 (Claude Code). 조율 에이전트가 등록된 저장소를 읽는다 */
+  addDirs?: string[];
   /** 설정에서 준 추가 인자. 두레가 정하는 인자와 겹치지 않는 것만 온다 (설정에서 걸러진다) */
   extraArgs?: string[];
 }
@@ -69,6 +73,8 @@ export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
   const launch = buildBase(i);
   if (i.kind === 'claude' && i.model) launch.args.push('--model', i.model);
   if (i.kind === 'claude' && i.effort) launch.args.push('--effort', i.effort);
+  if (i.kind === 'claude' && i.disallowedTools?.length) launch.args.push('--disallowedTools', i.disallowedTools.join(','));
+  if (i.kind === 'claude') for (const dir of i.addDirs ?? []) launch.args.push('--add-dir', dir);
   if (i.extraArgs?.length) launch.args.push(...i.extraArgs);
   if (i.headless) {
     if (i.kind !== 'claude') throw new Error('채팅 방식은 Claude Code 만 지원합니다.');

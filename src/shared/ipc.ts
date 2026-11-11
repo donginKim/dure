@@ -1,6 +1,12 @@
-import type { CreateWorkspaceInput, Project, Repo, RepoStatus, TerminalInfo, Todo, TodoAssignee, TodoPatch, Workspace } from './types';
+import type {
+  Artifact, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  TodoAssignee, TodoPatch, Workspace,
+} from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages';
+
+/** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
+export interface DeliveryInfo { state: DeliveryState; waiting: number; held: number }
 export interface TerminalSize { cols: number; rows: number }
 
 /** 화면(renderer)이 `window.dure` 로 쓰는 API. */
@@ -25,6 +31,8 @@ export interface DureApi {
     remove(id: string, options: { deleteWorktree: boolean }): Promise<void>;
     /** 작업 폴더에 커밋하지 않은 변경이 몇 건인지 */
     uncommitted(id: string): Promise<number>;
+    /** 작업 중인 에이전트를 멈춘다 (프로세스는 살려 둔다) */
+    interrupt(id: string): Promise<void>;
   };
   terminals: {
     list(workspaceId: string): Promise<TerminalInfo[]>;
@@ -49,6 +57,23 @@ export interface DureApi {
     pending(projectId: string): Promise<Record<string, { count: number; canNudge: boolean }>>;
     nudge(workspaceId: string): Promise<void>;
   };
+  /** 워크스페이스 사이의 대화. 화면에서 보낸 메시지는 사용자가 보낸 것으로 기록된다. */
+  messages: {
+    threads(projectId: string): Promise<Thread[]>;
+    list(threadId: string): Promise<Message[]>;
+    send(input: { projectId: string; toWorkspaceId: string; body: string; threadId?: string }): Promise<Message>;
+    pauseThread(threadId: string, paused: boolean): Promise<void>;
+    flow(projectId: string): Promise<ProjectFlow>;
+    /** 프로젝트 전체 멈춤. 멈출 때는 작업 중인 에이전트도 중단시킨다 */
+    pauseProject(projectId: string, paused: boolean): Promise<void>;
+    /** "계속": 왕복 횟수를 다시 세고 상한에 걸려 붙잡힌 것을 전달한다. 사용자가 일부러 멈춘 것은 그대로 둔다 */
+    resume(projectId: string): Promise<void>;
+    delivery(projectId: string): Promise<Record<string, DeliveryInfo>>;
+  };
+  artifacts: {
+    list(projectId: string): Promise<Artifact[]>;
+    get(id: string): Promise<Artifact | null>;
+  };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
 }
 
@@ -56,10 +81,13 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
-  'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted',
+  'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
   'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.pending', 'todos.nudge',
+  'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
+  'messages.resume', 'messages.delivery',
+  'artifacts.list', 'artifacts.get',
 ] as const;
 export type IpcChannel = (typeof IPC_CHANNELS)[number];
 

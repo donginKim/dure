@@ -85,7 +85,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
         <div className="rows">
           {share.members.map((m) => (
             <div key={m.peerId} className="row">
-              <span className={`dot ${m.online ? 'idle' : 'stopped'}`} title={m.online ? '같은 네트워크에서 보입니다' : '지금은 보이지 않습니다 (꺼져 있으면 메시지가 가지 않습니다)'} />
+              <span className={`dot ${m.online ? 'idle' : 'stopped'}`} title={m.online ? '켜져 있습니다 (방금 닿았습니다)' : '지금은 닿지 않습니다 (꺼져 있으면 메시지가 가지 않습니다)'} />
               <div className="grow">{m.name}{m.me && <span className="tag">나</span>}{m.owner && <span className="tag">연 사람</span>}</div>
               {share.mine && !m.me && !readOnly && <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.peers.removeMember(share.id, m.peerId))}>빼기</button>}
             </div>
@@ -102,7 +102,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
           <div className="people-manual">
             <select value={pick} onChange={(e) => setPick(e.target.value)}>
               <option value="">초대할 사람 고르기</option>
-              {invitable.map((p) => <option key={p.id} value={p.id}>{p.name}{p.online ? '' : ' (지금 안 보임)'}</option>)}
+              {invitable.map((p) => <option key={p.id} value={p.id}>{p.name}{p.online ? '' : ' (지금 안 닿음)'}</option>)}
             </select>
             <button className="btn" disabled={busy || !pick} onClick={() => run(window.dure.peers.invite(share.id, pick).then(() => setPick('')))}>초대</button>
             {invitable.length === 0 && <button className="btn ghost" onClick={onOpenPeople}>사람 찾아 연결하기</button>}

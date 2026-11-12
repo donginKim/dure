@@ -49,6 +49,9 @@ const MAX_PENDING_PER_HOST = 3;
 const UNREVEALED_TTL_MS = 30_000;
 const MAX_INVITES_PER_PEER = 5;
 const MAX_SEEN = 200;
+/** 이만큼 안에 주고받은 적이 있으면 켜져 있는 것으로 본다. 그 사이마다 한 번씩 안부를 묻는다 */
+const ONLINE_MS = 150_000;
+const HEARTBEAT_MS = 60_000;
 /** 공개하지 않은 워크스페이스가 사람에게 물을 때: 글의 길이와, 답 없이 쌓일 수 있는 질문의 수 */
 const MAX_ASK_BODY = 2000;
 const MAX_UNANSWERED = 3;
@@ -139,6 +142,9 @@ export class PeerService extends EventEmitter {
   private readonly rate = new Map<string, number[]>();
   private readonly keys = new Map<string, Buffer>();
   private readonly answering = new Set<string>();
+  /** 그 사람의 열쇠로 감싼 것을 마지막으로 주고받은 때. 자동 찾기(Bonjour)가 안 되는 네트워크에서도 켜져 있는지 알 수 있다 */
+  private readonly reached = new Map<string, number>();
+  private heartbeat: NodeJS.Timeout | undefined;
   private publishTimer: NodeJS.Timeout | undefined;
   private readonly handlers = new Map<string, (peer: { id: string; name: string }, payload: Record<string, unknown>, projectId: string) => unknown>();
 
@@ -202,7 +208,7 @@ export class PeerService extends EventEmitter {
     const want = s.peersEnabled ? s.peerPort : null;
     if (want === null) {
       if (this.port !== null) { this.d.discovery?.stop(); await this.d.transport.close().catch(() => undefined); }
-      this.port = null; this.error = undefined; this.seen.clear();
+      this.port = null; this.error = undefined; this.seen.clear(); this.reached.clear(); clearInterval(this.heartbeat);
       this.emit('changed');
       return;
     }
@@ -213,6 +219,10 @@ export class PeerService extends EventEmitter {
       this.error = undefined;
       this.d.discovery?.start({ id: me.id, name: this.myName(), port: this.port }, (p) => this.onSeen(p), (id) => { if (this.seen.delete(id)) this.emit('changed'); });
       this.publishSoon();
+      clearInterval(this.heartbeat);
+      this.heartbeat = setInterval(() => { void this.pingAll(); }, HEARTBEAT_MS);
+      this.heartbeat.unref?.();
+      void this.pingAll();
     } catch (e) {
       this.port = null;
       this.error = e instanceof Error ? e.message : String(e);
@@ -222,6 +232,7 @@ export class PeerService extends EventEmitter {
 
   async dispose(): Promise<void> {
     clearTimeout(this.publishTimer);
+    clearInterval(this.heartbeat);
     this.d.discovery?.stop();
     await this.d.transport.close().catch(() => undefined);
     this.port = null;
@@ -271,8 +282,32 @@ export class PeerService extends EventEmitter {
     return twin ? `${r.name}#${fingerprint(r.pub)}` : r.name;
   }
 
+  /** 지금 닿는 사람인가: 같은 네트워크에서 보이거나, 방금 그 사람의 열쇠로 감싼 것을 주고받았다. */
+  private isOnline(peerId: string): boolean {
+    return this.seen.has(peerId) || Date.now() - (this.reached.get(peerId) ?? 0) < ONLINE_MS;
+  }
+
+  private markReached(peerId: string, ok: boolean): void {
+    const before = this.isOnline(peerId);
+    if (ok) this.reached.set(peerId, Date.now()); else this.reached.delete(peerId);
+    if (before !== this.isOnline(peerId)) this.emit('changed');
+  }
+
+  /** 아는 사람들에게 안부를 묻는다 (켜져 있는지 표시하려고). 자동 찾기가 막힌 네트워크에서도 상태가 맞게 보인다. */
+  private async pingAll(): Promise<void> {
+    if (this.port === null) return;
+    const targets = new Map<string, { id: string; pub: string; address: string }>();
+    for (const r of this.d.db.prepare('SELECT * FROM peers WHERE direct = 1').all() as PeerRow[]) targets.set(r.id, r);
+    for (const m of this.d.db.prepare("SELECT share_id, peer_id FROM share_members WHERE state = 'member'").all() as { share_id: string; peer_id: string }[]) {
+      const t = this.memberTarget(m.share_id, m.peer_id);
+      if (t && !targets.has(t.id)) targets.set(t.id, t);
+    }
+    // sendTo 가 닿았는지 적는다. 실패는 여기서 삼킨다.
+    await Promise.all([...targets.values()].map((t) => this.sendTo(t, { type: 'ping' }).catch(() => undefined)));
+  }
+
   private toPeer(r: PeerRow): Peer {
-    return { id: r.id, name: this.label(r.id), fingerprint: fingerprint(r.pub), address: r.address, mode: r.mode === 'direct' ? 'direct' : 'review', direct: r.direct === 1, online: this.seen.has(r.id), createdAt: r.created_at };
+    return { id: r.id, name: this.label(r.id), fingerprint: fingerprint(r.pub), address: r.address, mode: r.mode === 'direct' ? 'direct' : 'review', direct: r.direct === 1, online: this.isOnline(r.id), createdAt: r.created_at };
   }
 
   peers(): Peer[] {
@@ -384,9 +419,11 @@ export class PeerService extends EventEmitter {
         continue;
       }
       if (address !== to.address) this.learnAddress(to.id, to.pub, address);
+      this.markReached(to.id, true);
       if (r.ok !== true) throw new Error(`상대가 받지 않았습니다: ${REMOTE_ERRORS[String(r.error)] ?? '까닭을 알 수 없다'}`);
       return r;
     }
+    this.markReached(to.id, false);
     if (refused) throw new Error(refused);
     throw new PeerOfflineError('그 사람의 두레에 닿지 않습니다 (꺼져 있거나 같은 네트워크가 아닙니다).');
   }
@@ -539,7 +576,7 @@ export class PeerService extends EventEmitter {
       id: s.id, name: s.name, projectId: s.project_id, ownerPeerId: s.owner_peer, mine,
       members: [
         { peerId: me.id, name: this.myName(), me: true, owner: mine, online: true },
-        ...this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), me: false, owner: id === s.owner_peer, online: this.seen.has(id) })),
+        ...this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), me: false, owner: id === s.owner_peer, online: this.isOnline(id) })),
       ],
       invited: mine
         ? (this.d.db.prepare("SELECT peer_id FROM share_members WHERE share_id = ? AND state = 'invited'").all(s.id) as { peer_id: string }[]).map((r) => ({ peerId: r.peer_id, name: this.label(r.peer_id) }))
@@ -675,7 +712,7 @@ export class PeerService extends EventEmitter {
   /** 함께하는 사람들 (나 빼고). */
   people(projectId: string): { peerId: string; name: string; online: boolean }[] {
     const s = this.shareOfProject(projectId);
-    return s ? this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), online: this.seen.has(id) })).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)) : [];
+    return s ? this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), online: this.isOnline(id) })).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)) : [];
   }
 
   /**
@@ -1058,6 +1095,8 @@ export class PeerService extends EventEmitter {
       return reply(peer && peer.direct === 1 && peer.pub === used ? { ok: true } : { ok: false, error: 'not_paired' });
     }
     if (!peer) return reply({ ok: false, error: 'not_paired' });
+    this.markReached(peer.id, true);
+    if (payload.type === 'ping') return reply({ ok: true });
     // 주소와 이름을 따라간다 (그 열쇠로 적어 둔 것만).
     const port = Number(payload.port);
     const address = `${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}`;

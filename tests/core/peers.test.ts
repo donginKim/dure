@@ -575,6 +575,27 @@ describe('믿지 않는 것', () => {
   });
 });
 
+describe('켜져 있는지 표시', () => {
+  test('자동 찾기가 안 되는 네트워크에서도, 주고받은 사람은 켜져 있다고 보인다. 닿지 않으면 꺼진 것으로 바뀐다', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2');
+    await on(a); await on(b);
+    await pair(a, b); await join2(a, b);
+    // 시험의 네트워크에는 자동 찾기가 없다
+    expect(a.core.peers.found()).toEqual([]);
+    expect(a.core.peers.peers()[0]!.online).toBe(true);
+    expect(b.core.peers.peers()[0]!.online).toBe(true);
+    expect(a.core.peers.share(a.projectId)!.members.find((m) => !m.me)!.online).toBe(true);
+    // 나 가 꺼졌다: 안부를 물어도 답이 없다
+    b.core.settings.update({ peersEnabled: false }); await b.core.peers.apply();
+    await a.core.peers['pingAll']();
+    expect(a.core.peers.peers()[0]!.online).toBe(false);
+    // 다시 켜지면 안부 한 번으로 돌아온다
+    await on(b);
+    await a.core.peers['pingAll']();
+    expect(a.core.peers.peers()[0]!.online).toBe(true);
+  });
+});
+
 describe('사람에게 묻기', () => {
   const idOf = (n: Node): string => n.core.peers.status().id;
 

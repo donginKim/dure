@@ -263,7 +263,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       void Promise.all([window.dure.peers.share(workspace.projectId), window.dure.peers.remote(workspace.projectId)]).then(([share, remote]) => {
         if (!alive) return;
         setMentionable([
-          ...(share?.members ?? []).filter((m) => !m.me).map((m) => ({ label: `@${m.name}`, hint: `${m.owner ? '프로젝트를 연 사람' : '함께하는 사람'}${m.online ? '' : ' · 지금 안 보임'} · 그 사람에게 직접 묻습니다` })),
+          ...(share?.members ?? []).filter((m) => !m.me).map((m) => ({ label: `@${m.name}`, hint: `${m.owner ? '프로젝트를 연 사람' : '함께하는 사람'}${m.online ? '' : ' · 지금 안 닿음'} · 그 사람에게 직접 묻습니다` })),
           ...remote.map((r) => ({ label: r.label, hint: `${r.peerName} 의 워크스페이스 · 그 에이전트에게 보냅니다` })),
         ]);
       }).catch(() => undefined);

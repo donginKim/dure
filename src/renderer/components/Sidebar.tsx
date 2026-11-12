@@ -6,7 +6,7 @@ import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting, peerWaiting, peopleAlert = 0 }: {
+export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting, peerWaiting, peopleAlert = 0, notesOpen = false, onToggleNotes }: {
   /** 다른 사람의 메시지가 넘겨주기를 기다리는 워크스페이스 */
   peerWaiting?: Set<string>;
   /** 받은 연결 요청과 초대의 수 */
@@ -16,6 +16,8 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   /** 브라우저 주소 허용을 기다리는 워크스페이스 */
   browserWaiting?: Set<string>;
   tree: TreeNode[]; repos: Repo[]; todos: Todo[]; talk: Record<string, ConversationData>; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
+  /** 메모장이 열려 있는가, 열고 닫기 */
+  notesOpen?: boolean; onToggleNotes?: () => void;
 }) {
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -125,6 +127,9 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
         )}
       </div>
       <UpdateNotice />
+      <button className={`side-settings side-notes${notesOpen ? ' selected' : ''}`} title="메모장을 열거나 닫습니다 (⌘⇧M). 프로젝트와 상관없이 어디서든 씁니다" onClick={onToggleNotes}>
+        <span className="gear" aria-hidden>✎</span>메모
+      </button>
       <button className={`side-settings side-people${selection?.type === 'people' ? ' selected' : ''}`} title="두레를 쓰는 다른 사람과 연결합니다" onClick={() => onSelect({ type: 'people' })}>
         <span className="gear" aria-hidden>◎</span>사람{peopleAlert > 0 && <span className="pip" title="확인할 요청이나 초대가 있습니다" />}
       </button>

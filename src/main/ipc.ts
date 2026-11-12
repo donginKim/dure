@@ -55,6 +55,11 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'notes.list': (query?: string) => core.notes.list(String(query ?? '')),
+    'notes.get': (id: string) => core.notes.get(String(id)) ?? null,
+    'notes.create': (input?: { title?: string; body?: string }) => core.notes.create(input ?? {}),
+    'notes.update': (id: string, patch: { title?: string; body?: string }) => core.notes.update(String(id), patch ?? {}),
+    'notes.remove': (id: string) => core.notes.remove(String(id)),
     'update.status': () => core.updates.status(),
     'update.check': () => core.updates.check(),
     'update.apply': () => {
@@ -253,6 +258,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onDbChanged = (): void => changed('db');
   const onSlackChanged = (): void => changed('slack');
   const onUpdateChanged = (): void => changed('update');
+  const onNotesChanged = (): void => changed('notes');
   const onBrowserChanged = (): void => changed('browser');
   const onPeersChanged = (): void => changed('peers');
   // 승인으로 새 저장소가 등록될 수 있다.
@@ -274,6 +280,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.dbs.on('changed', onDbChanged);
   core.slack.on('changed', onSlackChanged);
   core.updates.on('changed', onUpdateChanged);
+  core.notes.on('changed', onNotesChanged);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
   core.assignments.on('changed', onPeersChanged);
@@ -294,6 +301,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.dbs.off('changed', onDbChanged);
     core.slack.off('changed', onSlackChanged);
     core.updates.off('changed', onUpdateChanged);
+    core.notes.off('changed', onNotesChanged);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);
     core.assignments.off('changed', onPeersChanged);

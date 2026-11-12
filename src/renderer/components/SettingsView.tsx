@@ -239,6 +239,15 @@ export function SettingsView() {
         </div>
       </div>
 
+      <div className="section">
+        <div className="section-head"><h2>메모</h2></div>
+        <div className="set-box">
+          <Row label="에이전트가 메모 읽기" help="켜면 에이전트가 내 메모장에서 메모를 찾아 읽을 수 있습니다 (읽기만 하고 고치지 못합니다). 모든 프로젝트의 에이전트가 모든 메모를 읽을 수 있으니, 비밀번호 같은 것을 메모에 적어 두었다면 켜지 마세요." {...row('notesForAgents')}>
+            <Toggle on={s.notesForAgents} onChange={(v) => save('notesForAgents', v)} label="에이전트가 메모 읽기" />
+          </Row>
+        </div>
+      </div>
+
       <SlackSettings />
       <UpdateSettings />
 

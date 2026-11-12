@@ -9,6 +9,7 @@ import type { PendingInfo } from './components/TodoPanel';
 import { ProjectsHome } from './components/ProjectsHome';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
+import { NotesPanel } from './components/NotesPanel';
 import { Sidebar } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
 import { buildTree, reconcileSelection, type Selection } from './tree';
@@ -101,6 +102,16 @@ export function App() {
   const tree = useMemo(() => buildTree(projects, workspaces), [projects, workspaces]);
   const current = useMemo(() => reconcileSelection(selection, tree), [selection, tree]);
 
+  // 메모장: 어느 화면에서든 오른쪽에 열어 쓴다 (⌘⇧M).
+  const [notesOpen, setNotesOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && e.code === 'KeyM') { e.preventDefault(); setNotesOpen((v) => !v); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const createProject = async (name: string): Promise<void> => {
     const p = await window.dure.projects.create(name);
     await reload();
@@ -112,7 +123,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} />
       <BrowserHost workspaces={workspaces} loaded={loaded} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
@@ -146,6 +157,7 @@ export function App() {
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
       </main>
+      {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting, peerWaiting, peopleAlert = 0, notesOpen = false, onToggleNotes }: {
+export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting, peerWaiting, peopleAlert = 0, notesOpen = false, onToggleNotes, attention = 0 }: {
   /** 다른 사람의 메시지가 넘겨주기를 기다리는 워크스페이스 */
   peerWaiting?: Set<string>;
   /** 받은 연결 요청과 초대의 수 */
@@ -18,6 +18,8 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   tree: TreeNode[]; repos: Repo[]; todos: Todo[]; talk: Record<string, ConversationData>; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
   /** 메모장이 열려 있는가, 열고 닫기 */
   notesOpen?: boolean; onToggleNotes?: () => void;
+  /** 확인할 것의 수 */
+  attention?: number;
 }) {
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
@@ -101,6 +103,10 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
       <div className="sidebar-head">
         <button className="brand" title="프로젝트 전체 보기" onClick={() => onSelect(null)}>두레<small>dure</small></button>
       </div>
+      <button className={`side-attention${selection?.type === 'attention' ? ' selected' : ''}${attention > 0 ? ' has' : ''}`} title="에이전트나 다른 사람이 나를 기다리는 것을 한곳에서 봅니다" onClick={() => onSelect({ type: 'attention' })}>
+        <span>확인할 것</span>
+        <span className="count">{attention}</span>
+      </button>
       <div className="side-section">
         <button className={`side-title${selection === null ? ' selected' : ''}`} title="프로젝트 전체 보기" onClick={() => onSelect(null)}>
           진행 중 <span className="count">{active.length}</span>

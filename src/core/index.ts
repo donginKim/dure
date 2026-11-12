@@ -15,6 +15,7 @@ import { slackTools } from './mcp/tools/slack';
 import { SlackService } from './slackService';
 import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
+import { AttentionService } from './attention';
 import { noteTools } from './mcp/tools/notes';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
@@ -57,6 +58,7 @@ export interface Core {
   slack: SlackService;
   updates: UpdateService;
   notes: NoteStore;
+  attention: AttentionService;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;
@@ -263,11 +265,20 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   onStatus = (id) => service.emit('changed', id);
   noteHook = (id, event, blocked) => service.noteHook(id, event, blocked);
 
+  // 확인할 것: 흩어진 요청을 한 목록으로. 다른 서비스가 바뀔 때마다 다시 본다.
+  const attention = new AttentionService({
+    projects: () => projects.list(), isClosed: (id) => service.isProjectClosed(id), workspaces: (id) => workspaces.listAll(id),
+    plan: (id) => coordinator.pending(id), db: (id) => dbs.pending(id), slack: (id) => slack.pending(id), browser: (id) => browser.pending(id),
+    held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
+  });
+  for (const src of [service, coordinator, dbs, slack, browser, peers, assignments]) src.on('changed', () => attention.poke());
+  attention.poke();
+
   const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {
@@ -384,6 +395,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       messages.off('released', onReleased);
       service.detach();
       updates.dispose();
+      attention.dispose();
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();

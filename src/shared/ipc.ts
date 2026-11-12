@@ -1,4 +1,5 @@
 import type {
+  AttentionItem,
   Note, NoteSummary,
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
@@ -7,7 +8,7 @@ import type {
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -172,6 +173,12 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** 확인할 것: 에이전트나 다른 사람이 나를 기다리는 것 */
+  attention: {
+    list(): Promise<AttentionItem[]>;
+    /** 알림을 눌렀을 때: 그 항목으로 가라고 알린다 */
+    onOpen(cb: (item: AttentionItem) => void): () => void;
+  };
   /** 메모장: 프로젝트와 상관없이 하나 */
   notes: {
     /** 고친 순서대로. query 가 있으면 그 낱말이 든 것만 */
@@ -261,6 +268,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'attention.list',
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',
   'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide',
@@ -295,6 +303,8 @@ export const IPC_EVENTS = {
   changed: 'dure:changed',
   /** 에이전트가 그 워크스페이스의 브라우저 페이지를 열려 한다: 화면이 페이지를 만들고 등록한다 (workspaceId, url) */
   browserOpen: 'dure:browser-open',
+  /** 사용자가 알림을 눌렀다: 화면이 그 항목이 있는 곳을 연다 (AttentionItem) */
+  attentionOpen: 'dure:attention-open',
 } as const;
 
 export const ipcName = (channel: IpcChannel): string => `dure:${channel}`;

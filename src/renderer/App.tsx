@@ -9,6 +9,8 @@ import type { PendingInfo } from './components/TodoPanel';
 import { ProjectsHome } from './components/ProjectsHome';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
+import { AttentionView } from './components/AttentionView';
+import { attentionTarget } from './attentionView';
 import { NotesPanel } from './components/NotesPanel';
 import { Sidebar } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
@@ -102,6 +104,16 @@ export function App() {
   const tree = useMemo(() => buildTree(projects, workspaces), [projects, workspaces]);
   const current = useMemo(() => reconcileSelection(selection, tree), [selection, tree]);
 
+  // 확인할 것의 수 (사이드바에 보인다). 알림을 누르면 그 항목이 있는 화면을 연다.
+  const [attention, setAttention] = useState(0);
+  useEffect(() => {
+    const load = (): void => { window.dure.attention.list().then((l) => setAttention(l.length)).catch(() => undefined); };
+    load();
+    return window.dure.onChanged((topic) => { if (topic === 'attention') load(); });
+  }, []);
+  const coordinatorIds = useMemo(() => new Set(workspaces.filter((w) => w.role === 'coordinator').map((w) => w.id)), [workspaces]);
+  useEffect(() => window.dure.attention.onOpen((item) => setSelection(attentionTarget(item, coordinatorIds))), [coordinatorIds]);
+
   // 메모장: 어느 화면에서든 오른쪽에 열어 쓴다 (⌘⇧M).
   const [notesOpen, setNotesOpen] = useState(false);
   useEffect(() => {
@@ -123,7 +135,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} />
+      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} attention={attention} />
       <BrowserHost workspaces={workspaces} loaded={loaded} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
@@ -154,8 +166,9 @@ export function App() {
           />
         )}
         {current?.type === 'settings' && <SettingsView />}
+        {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
       </main>
       {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
     </div>

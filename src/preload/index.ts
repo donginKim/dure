@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_EVENTS, ipcName, type ChangeTopic, type DureApi, type IpcChannel } from '@shared/ipc';
+import type { AttentionItem } from '@shared/types';
 
 // Electron 이 오류 메시지 앞에 붙이는 문구를 떼어 코어의 메시지만 남긴다.
 async function call<T>(channel: IpcChannel, ...args: unknown[]): Promise<T> {
@@ -127,6 +128,10 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  attention: {
+    list: () => call('attention.list'),
+    onOpen: (cb) => subscribe<[AttentionItem]>(IPC_EVENTS.attentionOpen, cb),
+  },
   notes: {
     list: (query) => call('notes.list', query),
     get: (id) => call('notes.get', id),

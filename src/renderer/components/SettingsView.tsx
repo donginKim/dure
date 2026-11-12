@@ -240,6 +240,15 @@ export function SettingsView() {
       </div>
 
       <div className="section">
+        <div className="section-head"><h2>알림</h2></div>
+        <div className="set-box">
+          <Row label="macOS 알림" help='에이전트가 권한을 묻거나, 계획안이 승인을 기다리거나, 다른 사람이 메시지를 보냈을 때 macOS 알림으로 알려 줍니다. 두레를 보고 있을 때는 띄우지 않습니다. 꺼도 왼쪽 위의 "확인할 것" 과 Dock 아이콘의 숫자는 그대로 보입니다. 처음에는 macOS 가 알림을 허용할지 묻습니다.' {...row('notifications')}>
+            <Toggle on={s.notifications} onChange={(v) => save('notifications', v)} label="macOS 알림" />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
         <div className="section-head"><h2>메모</h2></div>
         <div className="set-box">
           <Row label="에이전트가 메모 읽기" help="켜면 에이전트가 내 메모장에서 메모를 찾아 읽을 수 있습니다 (읽기만 하고 고치지 못합니다). 모든 프로젝트의 에이전트가 모든 메모를 읽을 수 있으니, 비밀번호 같은 것을 메모에 적어 두었다면 켜지 마세요." {...row('notesForAgents')}>

@@ -173,6 +173,7 @@ const DURE_TOOLS: Record<string, string> = {
   commit_draft_save: '커밋 메시지 저장',
   cleanup_stash: '정리 대기로 옮김', cleanup_list: '정리 대기 확인',
   workspace_describe: '요약 갱신',
+  browser_open: '브라우저로 엶', browser_snapshot: '페이지 읽음', browser_click: '페이지에서 누름', browser_type: '페이지에 입력', browser_press: '키 누름', browser_screenshot: '화면 찍음', browser_console: '페이지 오류 확인',
   db_list: 'DB 연결 확인', db_tables: 'DB 표 목록 확인', db_columns: 'DB 스키마 확인', db_query: 'DB 조회', db_result: 'DB 조회 결과 받음',
   plan_propose: '계획안 올림', todo_assign: 'TODO 배정',
 };

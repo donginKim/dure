@@ -19,7 +19,7 @@ function tagged(e: unknown): Error {
 }
 
 /** 코어를 IPC 로 화면에 내보낸다. 돌려주는 함수는 등록을 해제한다. */
-export function registerIpc(core: Core): () => void {
+export function registerIpc(core: Core, browser: { register(workspaceId: string, webContentsId: number): void }): () => void {
   const changed = (topic: ChangeTopic): void => broadcast(IPC_EVENTS.changed, topic);
 
   // 완료된 프로젝트는 기록만 본다.
@@ -152,6 +152,12 @@ export function registerIpc(core: Core): () => void {
       held: core.messages.heldCount(w.id),
       error: core.delivery.error(w.id),
     }])),
+    'browser.register': (workspaceId: string, webContentsId: number) => {
+      if (!core.workspaces.get(String(workspaceId))) throw new Error('워크스페이스가 없습니다.');
+      browser.register(String(workspaceId), Number(webContentsId));
+    },
+    'browser.requests': (projectId: string) => core.browser.pending(projectId),
+    'browser.decide': (requestId: string, allow: boolean) => core.browser.decide(String(requestId), allow === true),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
@@ -202,6 +208,7 @@ export function registerIpc(core: Core): () => void {
   const onChatChanged = (): void => changed('chat');
   const onCleanupChanged = (): void => changed('cleanup');
   const onDbChanged = (): void => changed('db');
+  const onBrowserChanged = (): void => changed('browser');
   // 승인으로 새 저장소가 등록될 수 있다.
   const onCoordinatorChanged = (): void => { changed('coordinator'); changed('repos'); };
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
@@ -219,6 +226,7 @@ export function registerIpc(core: Core): () => void {
   core.chat.on('changed', onChatChanged);
   core.cleanup.on('changed', onCleanupChanged);
   core.dbs.on('changed', onDbChanged);
+  core.browser.on('changed', onBrowserChanged);
   core.coordinator.on('changed', onCoordinatorChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
@@ -234,6 +242,7 @@ export function registerIpc(core: Core): () => void {
     core.chat.off('changed', onChatChanged);
     core.cleanup.off('changed', onCleanupChanged);
     core.dbs.off('changed', onDbChanged);
+    core.browser.off('changed', onBrowserChanged);
     core.coordinator.off('changed', onCoordinatorChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);

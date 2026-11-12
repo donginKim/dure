@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BrowserHost } from './components/BrowserHost';
 import type { DeliveryInfo } from '@shared/ipc';
 import type { Artifact, Message, Project, ProjectFlow, Repo, Thread, Todo, Workspace } from '@shared/types';
 import type { ConversationData } from './components/ConversationPanel';
@@ -23,6 +24,8 @@ export function App() {
   const [pending, setPending] = useState<Record<string, PendingInfo>>({});
   // DB 조회 승인을 기다리는 워크스페이스. 에이전트는 '작업 중' 으로 보이지만 실제로는 사용자를 기다린다.
   const [dbWaiting, setDbWaiting] = useState<Set<string>>(new Set());
+  const [browserWaiting, setBrowserWaiting] = useState<Set<string>>(new Set());
+  const [loaded, setLoaded] = useState(false);
   // 프로젝트 id → 그 프로젝트의 대화
   const [talk, setTalk] = useState<Record<string, ConversationData>>({});
   const [selection, setSelection] = useState<Selection>(null);
@@ -39,11 +42,14 @@ export function App() {
       ]);
       setProjects(ps);
       setWorkspaces(ws.flat());
+      setLoaded(true);
       setRepos(rs.flat());
       setTodos(ts.flat());
       setPending(Object.assign({}, ...pe));
       const reqs = await Promise.all(ps.map((p) => window.dure.db.requests(p.id).catch(() => [])));
+      const opens = await Promise.all(ps.map((p) => window.dure.browser.requests(p.id).catch(() => [])));
       setDbWaiting(new Set(reqs.flat().map((r) => r.workspaceId)));
+      setBrowserWaiting(new Set(opens.flat().map((r) => r.workspaceId)));
       const talks = await Promise.all(ps.map(async (p): Promise<[string, ConversationData]> => {
         const [threads, artifacts, flow, delivery] = await Promise.all([
           window.dure.messages.threads(p.id), window.dure.artifacts.list(p.id), window.dure.messages.flow(p.id), window.dure.messages.delivery(p.id),
@@ -94,7 +100,8 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <BrowserHost workspaces={workspaces} loaded={loaded} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
         {node && (

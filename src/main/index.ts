@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { createBrowserHost } from './browserDriver';
 import { join } from 'node:path';
 import { app, BrowserWindow, dialog, safeStorage } from 'electron';
 import { createCore, type Core } from '@core/index';
@@ -24,6 +25,8 @@ function createWindow(): void {
       nodeIntegration: false,
       // 워크스페이스의 "브라우저" 보기 (개발 서버를 앱 안에서 본다)
       webviewTag: true,
+      // 창이 가려져 있어도 화면을 늦추지 않는다: 사용자가 다른 앱을 쓰는 동안에도 에이전트가 브라우저 페이지를 쓰고 화면을 찍는다.
+      backgroundThrottling: false,
     },
   });
   // 내장 브라우저는 두레의 권한을 갖지 않는 보통의 웹 페이지다: preload 와 node 를 붙이지 않고, http·https 만 연다.
@@ -32,6 +35,10 @@ function createWindow(): void {
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    // 두레 자신의 저장소(세션)를 쓰지 못하게 한다: 브라우저용 저장소가 아니면 붙이지 않는다.
+    if (!String(params.partition ?? '').startsWith('persist:dure-browser')) event.preventDefault();
+    delete (params as Record<string, unknown>).allowpopups;
     if (!/^https?:\/\//i.test(params.src ?? '')) event.preventDefault();
   });
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -39,7 +46,22 @@ function createWindow(): void {
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
   }
+  // 검증용: 창을 최소화한 채로 띄운다 (가려진 창에서의 동작을 확인할 때).
+  if (process.env.DURE_START_MINIMIZED) win.once('ready-to-show', () => win.minimize());
 }
+
+// 두레 창이 다른 창에 가려지거나 최소화돼도 Chromium 이 화면 그리기를 멈추지 않게 한다 (에이전트의 브라우저 조작과 화면 찍기가 그때도 돼야 한다).
+// 비용: 가려진 동안에도 화면을 그리므로 전력을 조금 더 쓴다.
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+
+const guarded = new WeakSet<Electron.Session>();
+// 내장 브라우저의 페이지가 클라이언트 인증서를 요구해도 주지 않는다 (기본 동작은 저장소의 첫 인증서를 저절로 쓴다).
+app.on('select-client-certificate', (event, contents, _url, _list, callback) => {
+  if (contents?.getType() !== 'webview') return;
+  event.preventDefault();
+  (callback as (cert?: Electron.Certificate) => void)();
+});
 
 async function start(): Promise<void> {
   await app.whenReady();
@@ -51,11 +73,19 @@ async function start(): Promise<void> {
       return { action: 'deny' };
     });
     contents.on('will-navigate', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault(); });
-    // 카메라, 마이크, 위치 같은 권한은 주지 않는다.
-    contents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+    // 그 저장소(세션)에 한 번만 건다: 카메라·마이크·위치 같은 권한은 주지 않고, 파일을 내려받지 못하게 한다.
+    const session = contents.session;
+    if (!guarded.has(session)) {
+      guarded.add(session);
+      session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+      session.setPermissionCheckHandler(() => false);
+      session.on('will-download', (event) => event.preventDefault());
+    }
   });
+  const browserHost = createBrowserHost();
   try {
     core = await createCore({
+      browser: browserHost.driver,
       // 개발·검증용으로 다른 폴더를 쓸 수 있게 한다. 평소에는 설정하지 않는다.
       dataDir: process.env.DURE_DATA_DIR || app.getPath('userData'),
       worktreeRoot: process.env.DURE_WORKTREE_ROOT || join(homedir(), 'dure', 'worktrees'),
@@ -75,7 +105,7 @@ async function start(): Promise<void> {
     app.exit(1);
     return;
   }
-  unregisterIpc = registerIpc(core);
+  unregisterIpc = registerIpc(core, browserHost);
   createWindow();
 }
 

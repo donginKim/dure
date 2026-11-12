@@ -1,9 +1,9 @@
 import type {
   AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
-  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff,
+  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -167,6 +167,16 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  browser: {
+    /** 화면이 만든 브라우저 페이지(webview)를 알린다. 에이전트의 조작이 이 페이지로 간다 */
+    register(workspaceId: string, webContentsId: number): Promise<void>;
+    /** 에이전트가 처음 여는 주소를 열어도 되는지 묻는 요청 */
+    requests(projectId: string): Promise<BrowserRequest[]>;
+    /** 허용은 그 프로젝트에서 그 주소(호스트와 포트)에 적용되고, 두레를 다시 켤 때까지 유지된다 */
+    decide(requestId: string, allow: boolean): Promise<void>;
+    /** 에이전트가 페이지를 열려 할 때 */
+    onOpen(cb: (workspaceId: string, url: string) => void): () => void;
+  };
 }
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
@@ -184,6 +194,7 @@ export const IPC_CHANNELS = [
   'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
+  'browser.register', 'browser.requests', 'browser.decide',
   'commit.state', 'commit.diff', 'commit.run', 'commit.push',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
@@ -197,6 +208,8 @@ export const IPC_EVENTS = {
   terminalData: 'dure:terminal-data',
   terminalExit: 'dure:terminal-exit',
   changed: 'dure:changed',
+  /** 에이전트가 그 워크스페이스의 브라우저 페이지를 열려 한다: 화면이 페이지를 만들고 등록한다 (workspaceId, url) */
+  browserOpen: 'dure:browser-open',
 } as const;
 
 export const ipcName = (channel: IpcChannel): string => `dure:${channel}`;

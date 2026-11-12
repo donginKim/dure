@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { validHost } from './browserService';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -10,6 +11,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPermissionMode: 'ask',
   worktreeRoot: '',
   repoRoot: '',
+  agentBrowser: 'ask',
+  agentBrowserHosts: '',
   claudePath: '',
   claudeModel: '',
   claudeEffort: '',
@@ -116,6 +119,15 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   defaultPermissionMode: oneOf('기본 권한 모드', 'ask', 'bypass'),
   worktreeRoot: path('작업 폴더 위치'),
   repoRoot: path('새 저장소 위치'),
+  agentBrowser: oneOf('에이전트의 브라우저 사용', 'ask', 'local', 'off'),
+  agentBrowserHosts: (v) => {
+    const t = String(v ?? '').trim();
+    if (t.length > 2000) throw new Error('허용할 주소: 너무 깁니다.');
+    for (const h of t.split(/[\s,]+/).filter(Boolean)) {
+      if (!validHost(h)) throw new Error(`허용할 주소: 호스트 이름만 적으세요 (예: staging.example.com). 잘못된 것: ${h}`);
+    }
+    return t;
+  },
   claudePath: path('Claude Code 실행 파일'),
   claudeModel: model,
   claudeEffort: oneOf('effort', '', 'low', 'medium', 'high', 'xhigh', 'max'),

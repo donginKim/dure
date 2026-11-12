@@ -16,7 +16,27 @@ npx -y pnpm@12.18.0 run pack:mac:x64    # Intel Mac
 
 설정은 `electron-builder.yml` 에 있다.
 
-## 받는 사람이 처음 열 때
+## 서명하고 공증해서 만들기 (받는 사람이 경고 없이 연다)
+
+Apple Developer Program (유료) 계정이 있어야 한다. 한 번만 준비한다.
+
+1. **Developer ID Application 인증서**를 이 PC 의 키체인에 넣는다.
+   - "키체인 접근" 앱 → 메뉴 "키체인 접근 → 인증서 지원 → 인증 기관에서 인증서 요청" → 이메일과 이름을 적고 "디스크에 저장됨" 을 골라 `.certSigningRequest` 파일을 만든다.
+   - https://developer.apple.com/account/resources/certificates/add 에서 "Developer ID Application" 을 고르고 그 파일을 올린다. 받은 `.cer` 를 더블클릭해 키체인에 넣는다.
+   - 확인: `security find-identity -v -p codesigning` 에 "Developer ID Application: 이름 (팀 ID)" 가 보인다.
+2. **공증용 인증 정보**를 키체인에 넣는다.
+   - https://account.apple.com → "로그인 및 보안 → 앱 암호" 에서 앱 전용 암호를 만든다.
+   - `xcrun notarytool store-credentials dure-notary --apple-id <Apple ID 이메일> --team-id <팀 ID>` 를 실행하고 그 암호를 붙여 넣는다 (암호는 키체인에 들어가고 파일로 남지 않는다).
+
+만들기:
+
+```sh
+APPLE_KEYCHAIN_PROFILE=dure-notary npx -y pnpm@12.18.0 run pack:mac:signed
+```
+
+Apple 실리콘용과 Intel용을 함께 만들고, 서명하고, Apple 에 올려 공증을 받는다 (몇 분 걸린다). 인증서와 암호는 저장소에 넣지 않는다.
+
+## 받는 사람이 처음 열 때 (서명 없이 만든 것)
 
 이 앱은 Apple 개발자 인증서로 서명하지 않았고 공증도 받지 않았다 (임시 서명만 돼 있다). 그래서 내려받은 앱을 처음 열면 macOS 가 막는다.
 

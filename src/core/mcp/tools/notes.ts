@@ -7,10 +7,68 @@ const OFF = '사용자가 에이전트에게 메모를 열어 두지 않았다. 
 const MAX_READ = 40_000;
 
 /**
- * 사용자의 메모장을 읽는 도구. 읽기 전용이다: 메모를 만들거나 고치는 도구는 없다.
- * 사용자가 설정에서 켰을 때만 된다.
+ * 사용자의 메모장을 읽고 적는 도구. 읽기와 쓰기는 사용자가 설정에서 따로 켠다.
+ * 쓰기는 새 메모를 만들거나 끝에 덧붙이는 것뿐이다: 적힌 글을 고치거나 메모를 지우는 도구는 없다.
  */
-export const noteTools: ToolBundle = (server, _ctx, deps) => {
+const WRITE_OFF = '사용자가 에이전트에게 메모 쓰기를 열어 두지 않았다. 사용자에게 두레의 설정에서 "에이전트가 메모 쓰기" 를 켜 달라고 하라.';
+/** 에이전트가 한 번에 적을 수 있는 글의 길이 */
+const MAX_WRITE = 20_000;
+
+export const noteTools: ToolBundle = (server, ctx, deps) => {
+  // 누가 언제 적었는지 메모 안에 남긴다: 사용자가 나중에 봐도 자기가 적은 것과 가릴 수 있다.
+  const stamp = (): string => {
+    const d = new Date();
+    const two = (n: number): string => String(n).padStart(2, '0');
+    const who = ctx.workspace.role === 'coordinator' ? '조율 에이전트' : `"${ctx.workspace.name}" 에이전트`;
+    return `${ctx.project.name} · ${who} · ${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+  };
+
+  server.registerTool(
+    'note_write',
+    {
+      description: '사용자의 메모장에 새 메모를 적는다 (사용자가 "메모해 줘" 라고 했을 때). 새 메모만 만든다: 이미 있는 메모를 고치거나 지우지 못한다. 있는 메모에 더 적으려면 note_append 를 쓴다. 사용자가 설정에서 켰을 때만 된다. 비밀 값(비밀번호, 토큰)은 적지 마라.',
+      inputSchema: { title: z.string().max(200).optional().describe('메모의 제목 (짧게)'), body: z.string().describe('메모의 내용') },
+    },
+    async ({ title, body }) => {
+      if (!deps.notesWriteForAgents()) return fail(WRITE_OFF);
+      const text = String(body ?? '').trim();
+      if (!text) return fail('메모의 내용이 없다.');
+      if (text.length > MAX_WRITE) return fail(`한 번에 ${MAX_WRITE.toLocaleString()}자까지 적을 수 있다. 줄여서 적어라.`);
+      try {
+        const n = deps.notes.create({ title, body: `${text}\n\n— ${stamp()}` });
+        return ok({ id: n.id, title: n.title || '(제목 없음)', saved: true, note: '사용자의 메모장에 적었다. 사용자는 두레의 "메모" 에서 볼 수 있다.' });
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+  server.registerTool(
+    'note_append',
+    {
+      description: '이미 있는 메모의 끝에 덧붙인다. 앞에 적힌 글은 바뀌지 않는다. 메모는 id (note_search 가 돌려준 값) 나 꼭 같은 제목으로 가리킨다. 사용자가 설정에서 켰을 때만 된다.',
+      inputSchema: { id: z.string().optional().describe('메모의 id'), title: z.string().optional().describe('id 를 모를 때: 메모의 제목 (꼭 같아야 한다)'), text: z.string().describe('덧붙일 글') },
+    },
+    async ({ id, title, text }) => {
+      if (!deps.notesWriteForAgents()) return fail(WRITE_OFF);
+      const add = String(text ?? '').trim();
+      if (!add) return fail('덧붙일 글이 없다.');
+      if (add.length > MAX_WRITE) return fail(`한 번에 ${MAX_WRITE.toLocaleString()}자까지 적을 수 있다. 줄여서 적어라.`);
+      let target = id ? deps.notes.get(id) : undefined;
+      if (!target && title) {
+        const same = deps.notes.byTitle(title);
+        if (same.length > 1) return fail(`제목이 "${title}" 인 메모가 둘 이상이다. 사용자에게 어느 것인지 물어라.`);
+        target = same[0];
+      }
+      if (!target) return fail('그런 메모가 없다. 새로 적으려면 note_write 를 써라.');
+      try {
+        const n = deps.notes.append(target.id, `[덧붙임 · ${stamp()}]\n${add}`);
+        return ok({ id: n.id, title: n.title || '(제목 없음)', saved: true });
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+
   server.registerTool(
     'note_search',
     {

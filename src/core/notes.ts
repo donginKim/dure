@@ -67,6 +67,27 @@ export class NoteStore extends EventEmitter {
     return this.get(old.id)!;
   }
 
+  /** 메모의 끝에 덧붙인다. 이미 적힌 글은 건드리지 않는다 (한 번에 한다: 그 사이에 다른 쪽이 고친 것을 덮어쓰지 않는다). */
+  append(id: string, text: string): Note {
+    const add = String(text ?? '');
+    if (!add.trim()) throw new Error('덧붙일 글이 없습니다.');
+    const done = this.db.transaction(() => {
+      const old = this.get(id);
+      if (!old) throw new Error('메모가 없습니다 (지워졌을 수 있습니다).');
+      const body = `${old.body.replace(/\s+$/, '')}${old.body.trim() ? '\n\n' : ''}${add}`;
+      if (body.length > MAX_NOTE_BODY) throw new Error(`메모가 너무 길어집니다 (${MAX_NOTE_BODY.toLocaleString()}자까지). 새 메모에 적으세요.`);
+      this.db.prepare('UPDATE notes SET body = ?, updated_at = ? WHERE id = ?').run(body, Date.now(), old.id);
+      return old.id;
+    })();
+    this.emit('changed');
+    return this.get(done)!;
+  }
+
+  /** 제목이 꼭 같은 메모들. */
+  byTitle(title: string): Note[] {
+    return (this.db.prepare('SELECT * FROM notes WHERE title = ? ORDER BY updated_at DESC').all(oneLine(title, MAX_NOTE_TITLE)) as Row[]).map(toNote);
+  }
+
   remove(id: string): void {
     if (this.db.prepare('DELETE FROM notes WHERE id = ?').run(String(id)).changes) this.emit('changed');
   }

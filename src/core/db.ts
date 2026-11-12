@@ -162,6 +162,56 @@ const MIGRATIONS: string[] = [
     UNIQUE (project_id, name)
   );
   `,
+  `
+  -- 다른 사람의 두레와 연결
+  CREATE TABLE peer_identity (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+  CREATE TABLE peers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    pub TEXT NOT NULL,
+    address TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT 'review',
+    direct INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE shares (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    owner_peer TEXT NOT NULL,
+    project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE share_members (
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    peer_id TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'member',
+    PRIMARY KEY (share_id, peer_id)
+  );
+  CREATE TABLE workspace_sharing (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    audience TEXT NOT NULL,
+    peers TEXT NOT NULL DEFAULT '[]'
+  );
+  CREATE TABLE remote_workspaces (
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    peer_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    listed INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (share_id, peer_id, workspace_id)
+  );
+  CREATE TABLE peer_inbox (
+    id TEXT PRIMARY KEY,
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    from_workspace TEXT NOT NULL,
+    to_workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    thread TEXT NOT NULL,
+    artifacts TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

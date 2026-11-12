@@ -23,7 +23,11 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
   const { messages, workspaces, delivery } = deps;
   // 조율 에이전트도 받는 쪽이 될 수 있다 (워크스페이스가 보고한다).
   const peers = () => workspaces.listAll(ctx.project.id);
-  const nameOf = (id: string): string => (id === USER_RECIPIENT ? USER_NAME : workspaces.get(id)?.name ?? '지워진 워크스페이스');
+  const nameOf = (id: string): string => {
+    if (id === USER_RECIPIENT) return USER_NAME;
+    const remote = messages.remote(id);
+    return remote ? `${remote.name}@${remote.owner}` : workspaces.get(id)?.name ?? '지워진 워크스페이스';
+  };
   const senderName = (m: Message): string => (m.from.kind === 'user' ? '사용자' : m.from.kind === 'system' ? '두레' : nameOf(m.from.workspaceId));
   // 이름이 "사용자" 인 워크스페이스와 진짜 사용자를 구분할 수 있게 종류를 함께 준다.
   const senderKind = (m: Message): string => (m.from.kind === 'workspace' ? 'workspace' : m.from.kind);
@@ -33,7 +37,7 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
     {
       description: `같은 프로젝트의 다른 워크스페이스 에이전트에게 메시지를 보낸다. 받은 에이전트는 스스로 깨어나 읽는다. 답장이면 thread_id 를 넣는다. 사용자가 대화에 남긴 말에 답할 때는 to 를 "${USER_NAME}" 로 한다: 사용자의 대화 패널에 보인다 (평소의 보고는 메시지가 아니라 응답으로 하라).`,
       inputSchema: {
-        to: z.string().describe(`받는 워크스페이스의 이름 (project_overview 로 확인). 사용자에게 답할 때는 "${USER_NAME}"`),
+        to: z.string().describe(`받는 워크스페이스의 이름 (project_overview 로 확인). 다른 사람의 두레에 있는 워크스페이스는 "이름@사람". 사용자에게 답할 때는 "${USER_NAME}"`),
         body: z.string(),
         thread_id: z.string().optional(),
         artifact_ids: z.array(z.string()).optional(),
@@ -44,6 +48,15 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
         try {
           const m = messages.send({ projectId: ctx.project.id, from: { kind: 'workspace', workspaceId: ctx.workspace.id }, toWorkspaceId: USER_RECIPIENT, body, threadId: thread_id, artifactIds: artifact_ids });
           return ok({ messageId: m.id, threadId: m.threadId, delivery: '사용자의 대화 패널에 표시됐다' });
+        } catch (e) {
+          return fail(e instanceof Error ? e.message : String(e));
+        }
+      }
+      // 다른 사람의 두레에 있는 워크스페이스: "이름@사람". 사용자가 공개한 워크스페이스에서만 보낼 수 있다.
+      if (to.includes('@')) {
+        try {
+          const m = await deps.peers.sendRemote({ fromWorkspaceId: ctx.workspace.id, to, body, threadId: thread_id, artifactIds: artifact_ids });
+          return ok({ messageId: m.id, threadId: m.threadId, delivery: '다른 사람의 두레로 보냈다. 그쪽 사용자가 보고 넘겨줘야 그 에이전트에게 갈 수 있다: 답이 바로 오지 않을 수 있으니 기다리지 말고 네 일을 계속하라.' });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));
         }

@@ -317,6 +317,12 @@ export interface Settings {
   agentBrowser: 'ask' | 'local' | 'off';
   /** 에이전트에게 허용할 바깥 주소 (호스트를 쉼표나 공백으로 나눈다). 로컬 주소는 적지 않아도 된다 */
   agentBrowserHosts: string;
+  /** 다른 사람의 두레와 연결하는가. 켜면 같은 네트워크에서 듣는다 (기본은 꺼짐) */
+  peersEnabled: boolean;
+  /** 다른 사람에게 보이는 내 이름. 빈 값이면 이 PC 의 사용자 이름 */
+  peerName: string;
+  /** 다른 두레의 연결을 받는 포트 */
+  peerPort: number;
   /** Claude Code 실행 파일의 절대 경로. 빈 값이면 PATH 에서 찾는다 */
   claudePath: string;
   /** Claude Code 의 모델. 빈 값이면 Claude Code 의 기본 */
@@ -525,4 +531,59 @@ export interface BrowserRequest {
   /** 허용의 단위: 프로토콜, 호스트, 포트 (예: http://localhost:3000) */
   origin: string;
   url: string; createdAt: number;
+}
+
+// ---- 다른 사람의 두레와 연결 ----
+/** 그 사람의 에이전트가 보낸 메시지를 받는 방식. review: 내가 보고 넘겨준다. direct: 바로 내 에이전트에게 전달한다 */
+export type PeerMode = 'review' | 'direct';
+/** 연결된 사람 (다른 PC 의 두레) */
+export interface Peer {
+  id: string; name: string;
+  /** 열쇠의 짧은 지문 */
+  fingerprint: string;
+  address: string; mode: PeerMode;
+  /** 내가 직접 연결했는가. 아니면 함께하는 프로젝트의 참여자로 알게 된 사람이다 */
+  direct: boolean;
+  /** 같은 네트워크에서 지금 보이는가 */
+  online: boolean;
+  createdAt: number;
+}
+/** 연결 요청. in: 받은 것(내가 수락한다), out: 보낸 것(상대의 수락을 기다린다) */
+export interface PeerRequest {
+  id: string; peerId: string; name: string; address: string; fingerprint: string;
+  /** 두 화면에 같아야 하는 확인 코드 */
+  code: string;
+  direction: 'in' | 'out';
+  /** 이미 연결된 사람인데 열쇠가 달라졌다 (두레를 다시 깔았거나, 누가 그 사람인 척한다) */
+  keyChanged: boolean;
+  createdAt: number;
+}
+/** 같은 네트워크에서 보이는 두레 */
+export interface FoundPeer { peerId: string; name: string; address: string; known: boolean }
+export interface PeerStatus {
+  enabled: boolean; id: string; name: string; fingerprint: string;
+  /** 듣고 있는 포트. 꺼져 있거나 열지 못했으면 null */
+  port: number | null;
+  /** 켰는데 열지 못한 이유 */
+  error?: string;
+}
+export interface ShareMember { peerId: string; name: string; me: boolean; owner: boolean; online: boolean }
+/** 함께하는 프로젝트. 내 프로젝트 하나에 이어 붙어 있다 */
+export interface Share { id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[] }
+export interface ShareInvite { id: string; shareId: string; name: string; fromPeerId: string; fromName: string; createdAt: number }
+/** 워크스페이스를 누구에게 보일지. none: 아무에게도. all: 참여자 전체. selected: 고른 사람만 */
+export type SharingAudience = 'none' | 'all' | 'selected';
+export interface WorkspaceSharing { workspaceId: string; audience: SharingAudience; peers: string[] }
+/** 다른 사람이 나에게 공개한 워크스페이스 */
+export interface RemoteWorkspace {
+  /** 메시지의 보낸 쪽·받는 쪽에 들어가는 id */
+  ref: string;
+  shareId: string; projectId: string; peerId: string; peerName: string; name: string;
+  /** 에이전트와 화면에 보이는 이름: 워크스페이스@사람 */
+  label: string;
+}
+/** 다른 사람의 에이전트가 보낸 메시지 중, 내가 보고 넘겨주기를 기다리는 것 */
+export interface HeldMessage {
+  id: string; projectId: string; fromRef: string; fromLabel: string; toWorkspaceId: string;
+  body: string; artifacts: { kind: string; title: string; body: string }[]; createdAt: number;
 }

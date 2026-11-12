@@ -7,6 +7,7 @@ import type { CleanupService } from '../cleanup';
 import type { BrowserService } from '../browserService';
 import type { CoordinatorService } from '../coordinator';
 import type { DbService } from '../dbService';
+import type { PeerService } from '../peers/peerService';
 import type { Git } from '../git';
 import type { CommitDraftStore } from '../commitDrafts';
 import type { DeliveryService } from '../delivery';
@@ -32,6 +33,7 @@ export interface McpDeps {
   coordinator: CoordinatorService;
   dbs: DbService;
   browser: BrowserService;
+  peers: PeerService;
   git: Git;
   /** 에이전트가 자기 워크스페이스의 요약과 표시 이름을 갱신한다. 반영된 것과 반영하지 않은 이유를 돌려준다 */
   describe(workspaceId: string, patch: { summary?: unknown; name?: unknown }): { summary?: string; name?: string; note?: string };

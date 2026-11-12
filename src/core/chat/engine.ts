@@ -241,8 +241,8 @@ export class ChatEngine extends EventEmitter {
     return l;
   }
 
-  say(workspaceId: string, text: string): void {
-    this.mustGet(workspaceId).session.say(text);
+  say(workspaceId: string, text: string, images: { mediaType: string; data: string }[] = []): void {
+    this.mustGet(workspaceId).session.say(text, images);
   }
 
   async interrupt(workspaceId: string): Promise<void> {

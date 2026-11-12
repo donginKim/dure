@@ -11,6 +11,7 @@
   --ok: #6fbf8b;
   --warn: #e0b34f;
   --radius: 6px;
+  --titlebar: 28px;
   font-family: -apple-system, 'Apple SD Gothic Neo', 'Pretendard', system-ui, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -21,7 +22,9 @@ html { color-scheme: dark; }
 body { background: var(--bg); overflow: hidden; }
 button, input, select { font: inherit; color: inherit; }
 
-.app { display: grid; grid-template-columns: 280px 1fr; height: 100%; }
+.app { display: grid; grid-template-columns: 280px 1fr; height: 100%; padding-top: var(--titlebar); box-sizing: border-box; }
+/* 창의 제목 줄 자리: 앱과 같은 색으로 칠하고, 여기를 잡아 창을 옮긴다 (macOS 의 신호등 단추가 이 위에 놓인다). */
+body::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: var(--titlebar); z-index: 50; -webkit-app-region: drag; background: linear-gradient(to right, var(--panel) 279px, var(--line) 279px, var(--line) 280px, var(--bg) 280px); }
 
 /* 왼쪽 목록 */
 .sidebar { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
@@ -695,3 +698,11 @@ select.share-on { border-color: #6b5a2a; color: var(--accent); }
 .tag.assign-declined { color: var(--danger, #c25b5b); }
 
 .held-answer { width: 100%; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }
+
+/* 입력창에 붙인 이미지 */
+.composer { flex-wrap: wrap; }
+.composer-images { flex-basis: 100%; order: -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 6px; }
+.composer-image { position: relative; width: 56px; height: 56px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
+.composer-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.composer-image button { position: absolute; top: 1px; right: 1px; width: 18px; height: 18px; line-height: 16px; padding: 0; border: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.65); color: #fff; cursor: pointer; font-size: 13px; }
+.composer-images-hint { color: var(--muted); font-size: 11.5px; }

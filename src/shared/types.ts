@@ -641,3 +641,10 @@ export interface AssignChoice {
   /** 워크스페이스의 이름을 바꾸고 싶을 때 */
   name?: string;
 }
+
+/** 대화에 붙여 보내는 이미지 (붙여넣기). data 는 base64 */
+export interface ChatImage { mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'; data: string }
+export const CHAT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+/** 한 번에 보낼 수 있는 이미지의 수와 한 장의 크기 (바이트) */
+export const MAX_CHAT_IMAGES = 5;
+export const MAX_CHAT_IMAGE_BYTES = 5 * 1024 * 1024;

@@ -3,7 +3,7 @@ import { USER_NAME } from '@shared/messages';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { AgentKind, CreateWorkspaceInput, TerminalInfo, Workspace, Settings, ModelChoice } from '@shared/types';
+import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice } from '@shared/types';
 import { baseInstructions, coordinatorInstructions } from './agents/instructions';
 import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
@@ -79,6 +79,22 @@ const MAX_NAME = 40;
 const MAX_SUMMARY = 80;
 /** 에이전트가 이름을 다시 바꿀 수 있을 때까지의 간격 */
 const RENAME_GAP_MS = 5 * 60_000;
+
+/** 화면에서 온 이미지를 확인한다: 종류, 수, 크기, base64 인지. 어긋나면 던진다 (조용히 빼면 사용자는 보낸 줄 안다). */
+export function cleanImages(raw: unknown): ChatImage[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new Error('이미지가 올바르지 않습니다.');
+  if (raw.length > MAX_CHAT_IMAGES) throw new Error(`이미지는 한 번에 ${MAX_CHAT_IMAGES}장까지 보낼 수 있습니다.`);
+  return raw.map((x) => {
+    const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
+    const mediaType = CHAT_IMAGE_TYPES.find((t) => t === o.mediaType);
+    const data = typeof o.data === 'string' ? o.data : '';
+    if (!mediaType) throw new Error('보낼 수 있는 이미지는 PNG, JPEG, GIF, WebP 입니다.');
+    if (!data || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new Error('이미지가 올바르지 않습니다.');
+    if (data.length * 0.75 > MAX_CHAT_IMAGE_BYTES) throw new Error(`이미지가 너무 큽니다 (한 장에 ${MAX_CHAT_IMAGE_BYTES / 1024 / 1024}MB 까지).`);
+    return { mediaType, data };
+  });
+}
 
 export class WorkspaceService extends EventEmitter {
   /** 에이전트 터미널 id → 워크스페이스 id */
@@ -778,10 +794,13 @@ export class WorkspaceService extends EventEmitter {
   }
 
   /** 사용자가 채팅 입력창에서 보낸 글을 에이전트의 터미널에 써 넣는다. */
-  async sendUserInput(id: string, text: string): Promise<void> {
+  async sendUserInput(id: string, text: string, rawImages: unknown = []): Promise<void> {
     // eslint-disable-next-line no-control-regex
     const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
-    if (!message) throw new Error('보낼 글을 입력하세요.');
+    const images = cleanImages(rawImages);
+    if (!message && images.length === 0) throw new Error('보낼 글을 입력하세요.');
+    if (images.length && !this.engine?.has(id)) throw new Error('이미지는 대화 화면에서 에이전트가 켜져 있을 때만 보낼 수 있습니다 (터미널 방식에서는 보낼 수 없습니다).');
+    if (images.length && message.startsWith('/')) throw new Error('슬래시 명령에는 이미지를 붙일 수 없습니다.');
     const owner = this.d.workspaces.get(id);
     if (owner && this.isProjectClosed(owner.projectId)) throw new Error(DONE_PROJECT);
     if (this.engine?.has(id)) {
@@ -792,7 +811,7 @@ export class WorkspaceService extends EventEmitter {
       const wsNow = this.d.workspaces.get(id);
       // 작업 중에 보낸 글은 UserPromptSubmit 을 부르지 않을 수 있다. 사용자가 끼어든 것으로 센다.
       if (wsNow && wsNow.status !== 'idle') this.d.messages.userIntervened(wsNow.projectId);
-      this.engine.say(id, message);
+      this.engine.say(id, message, images);
       this.chat?.refreshSoon(id, [300, 1200, 3000]);
       return;
     }

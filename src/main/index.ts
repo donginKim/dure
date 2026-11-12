@@ -21,6 +21,9 @@ function createWindow(): void {
     width: 1400,
     height: 900,
     title: '두레',
+    // 창 위쪽의 제목 줄을 따로 두지 않는다: 앱의 색이 창 끝까지 이어진다 (신호등 단추는 왼쪽 위에 그대로 있다).
+    titleBarStyle: 'hiddenInset',
+    backgroundColor: '#15171c',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

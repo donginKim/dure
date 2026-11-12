@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import type { ChatItem, ChatQuestion, ChatStep, ChatView, Message, SlashCommand, Workspace } from '@shared/types';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type ChatImage, type ChatItem, type ChatQuestion, type ChatStep, type ChatView, type Message, type SlashCommand, type Workspace } from '@shared/types';
 import { applyMention, elapsed, matchCommands, matchMentions, mergeEntries, stepsLabel, stepsRunning, type Entry, type Mention, type PeerEntry } from '../chatView';
 import { clock, deliveryNote, workspaceName } from '../conversationView';
 import { Attachment, type ConversationData } from './ConversationPanel';
@@ -308,13 +308,42 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     el.scrollTop = el.scrollHeight;
   };
 
+  // 붙여넣은 이미지. 보내기 전까지 입력창 위에 보인다.
+  const [images, setImages] = useState<ChatImage[]>([]);
+  const addImages = (files: File[]): void => {
+    setError('');
+    for (const f of files) {
+      const mediaType = CHAT_IMAGE_TYPES.find((t) => t === f.type);
+      if (!mediaType) { setError('붙일 수 있는 이미지는 PNG, JPEG, GIF, WebP 입니다.'); continue; }
+      if (f.size > MAX_CHAT_IMAGE_BYTES) { setError(`이미지가 너무 큽니다 (한 장에 ${MAX_CHAT_IMAGE_BYTES / 1024 / 1024}MB 까지).`); continue; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const data = String(reader.result ?? '').replace(/^data:[^,]*,/, '');
+        if (!data) return;
+        setImages((list) => {
+          if (list.length >= MAX_CHAT_IMAGES) { setError(`이미지는 한 번에 ${MAX_CHAT_IMAGES}장까지 보낼 수 있습니다.`); return list; }
+          return [...list, { mediaType, data }];
+        });
+      };
+      reader.readAsDataURL(f);
+    }
+  };
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = [...e.clipboardData.items].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).map((i) => i.getAsFile()).filter((f): f is File => f !== null);
+    if (files.length === 0) return;
+    // 이미지를 붙였다: 글로 붙지 않게 하고 (파일 이름이 들어가는 것을 막는다) 이미지로 받는다.
+    e.preventDefault();
+    addImages(files);
+  };
+
   const send = async (): Promise<void> => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if ((!text && images.length === 0) || sending) return;
     setSending(true);
     setError('');
     try {
-      await window.dure.chat.send(workspace.id, text);
+      await window.dure.chat.send(workspace.id, text, images.length ? images : undefined);
+      setImages([]);
       if (text.startsWith('/') && !text.includes('\n')) {
         // 바로 끝나는 명령(/context 등)은 1초 안에 결과가 기록된다. 그렇지 않으면 고르는 화면이 떠 있는 것이다.
         const count = entryCount.current;
@@ -457,6 +486,17 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
             <div className="slash-foot">↑↓ 고르기 · Tab 넣기 · Esc 닫기</div>
           </div>
         )}
+        {images.length > 0 && (
+          <div className="composer-images">
+            {images.map((img, i) => (
+              <div key={i} className="composer-image">
+                <img src={`data:${img.mediaType};base64,${img.data}`} alt={`붙인 이미지 ${i + 1}`} />
+                <button title="이 이미지는 보내지 않습니다" onClick={() => setImages((list) => list.filter((_, k) => k !== i))}>×</button>
+              </div>
+            ))}
+            <span className="composer-images-hint">보내기를 누르면 에이전트에게 함께 갑니다</span>
+          </div>
+        )}
         {mention && (
           <div className="slash-menu" role="listbox">
             {mention.items.map((m, i) => (
@@ -482,8 +522,11 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
           onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKey}
+          onPaste={onPaste}
+          onDragOver={(e) => { if ([...e.dataTransfer.items].some((i) => i.type.startsWith('image/'))) e.preventDefault(); }}
+          onDrop={(e) => { const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/')); if (files.length) { e.preventDefault(); addImages(files); } }}
         />
-        <button className="btn primary" disabled={!draft.trim() || sending} onClick={() => void send()} title="보내기 (Enter) · 줄바꿈은 Shift+Enter">보내기</button>
+        <button className="btn primary" disabled={(!draft.trim() && images.length === 0) || sending} onClick={() => void send()} title="보내기 (Enter) · 줄바꿈은 Shift+Enter">보내기</button>
       </div>
     );
   }

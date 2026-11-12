@@ -1,4 +1,5 @@
 import type {
+  ChatImage,
   AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut,
 } from './types';
@@ -140,7 +141,8 @@ export interface DureApi {
     get(workspaceId: string): Promise<ChatView>;
     /** 단계 하나의 입력·출력 원문 */
     step(workspaceId: string, stepId: string): Promise<{ input: string; output: string | null } | null>;
-    send(workspaceId: string, text: string): Promise<void>;
+    /** images: 붙여넣은 이미지 (대화 방식의 에이전트에게만 보낼 수 있다) */
+    send(workspaceId: string, text: string, images?: ChatImage[]): Promise<void>;
     /** always: 허용하고 앞으로 같은 것은 묻지 않는다 (채팅 방식) */
     /** requestId: 화면에 보인 요청의 id (채팅 방식). 그 요청에만 답이 간다 */
     answerPermission(workspaceId: string, answer: 'allow' | 'deny' | 'always', requestId?: string): Promise<void>;

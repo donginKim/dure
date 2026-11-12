@@ -109,7 +109,7 @@ const api: DureApi = {
   chat: {
     get: (workspaceId) => call('chat.get', workspaceId),
     step: (workspaceId, stepId) => call('chat.step', workspaceId, stepId),
-    send: (workspaceId, text) => call('chat.send', workspaceId, text),
+    send: (workspaceId, text, images) => call('chat.send', workspaceId, text, images),
     answerPermission: (workspaceId, answer, requestId) => call('chat.answerPermission', workspaceId, answer, requestId),
     answerQuestion: (workspaceId, requestId, answers) => call('chat.answerQuestion', workspaceId, requestId, answers),
     dismissQuestion: (workspaceId, requestId) => call('chat.dismissQuestion', workspaceId, requestId),

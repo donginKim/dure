@@ -12,8 +12,9 @@
     "test": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/vitest/vitest.mjs run",
     "spike": "ELECTRON_RUN_AS_NODE=1 electron",
     "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty",
-    "pack:mac": "electron-vite build && electron-builder --mac --arm64",
-    "pack:mac:x64": "electron-vite build && electron-builder --mac --x64"
+    "pack:mac": "electron-vite build && electron-builder --mac --arm64 -c.mac.identity=- -c.mac.hardenedRuntime=false",
+    "pack:mac:x64": "electron-vite build && electron-builder --mac --x64 -c.mac.identity=- -c.mac.hardenedRuntime=false",
+    "pack:mac:signed": "electron-vite build && electron-builder --mac --arm64 --x64 -c.mac.hardenedRuntime=true -c.mac.notarize=true"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

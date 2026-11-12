@@ -1,5 +1,6 @@
 # 두레를 macOS 앱으로 묶는다. `pnpm run pack:mac` 으로 만든다 (결과는 dist/).
-# 서명·공증은 하지 않는다: Apple 개발자 계정이 없어도 만들 수 있게 한다. 받는 사람은 처음 열 때 한 번 허용해야 한다 (docs/packaging.md).
+# pack:mac 은 서명·공증 없이 만든다 (Apple 개발자 계정이 없어도 된다. 받는 사람은 처음 열 때 한 번 허용해야 한다).
+# pack:mac:signed 는 Developer ID 로 서명하고 공증한다 (docs/packaging.md).
 appId: dev.dure.app
 # 파일 이름은 영문으로 둔다: 한글 이름으로 묶으면 Electron 45 가 시작하자마자 죽는다 (실측). 화면에 보이는 이름은 아래 CFBundleDisplayName 이다.
 productName: Dure
@@ -20,10 +21,10 @@ mac:
     - target: dmg
     - target: zip
   artifactName: dure-${version}-${arch}.${ext}
-  # "-" 는 임시 서명이다 (인증서 없이). Apple 실리콘에서는 서명이 전혀 없는 앱이 실행되지 않는다.
-  identity: "-"
-  hardenedRuntime: false
+  # 서명은 명령에서 정한다 (package.json 의 pack:mac 은 임시 서명, pack:mac:signed 는 Developer ID 서명과 공증).
   gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     CFBundleDisplayName: 두레
     # 다른 사람의 두레와 같은 네트워크에서 직접 연결할 때 macOS 가 보여 주는 설명

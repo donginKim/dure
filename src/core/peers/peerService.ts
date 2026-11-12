@@ -60,7 +60,10 @@ const RATE_PER_MIN = 30;
 const oneLine = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, max);
 /** 사람과 워크스페이스의 이름에는 @ 를 쓰지 않는다 ("워크스페이스@사람" 으로 가리키기 때문이다). */
 /** # 도 쓰지 않는다: 이름이 같은 사람을 가를 때 두레가 "이름#지문" 으로 붙인다. */
-const cleanName = (s: unknown, fallback: string): string => oneLine(s, 40).replace(/[@"#]/g, '').trim() || fallback;
+// 모양만 다른 글자(전각, 합자)는 하나로 맞추고, 보이지 않는 글자는 지운다: 눈에는 같은 이름인데 다른 이름으로 치지 않게.
+const cleanName = (s: unknown, fallback: string): string => oneLine(String(s ?? '').normalize('NFKC').replace(/[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0]/g, '').replace(/\s+/g, ' '), 40).replace(/[@"#]/g, '').trim() || fallback;
+/** 같은 이름인지 볼 때 쓰는 모양 (대소문자와 공백을 무시한다). */
+const nameKey = (s: string): string => s.toLowerCase().replace(/\s+/g, '');
 const isId = (s: unknown): s is string => typeof s === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 const isAddress = (s: unknown): s is string => typeof s === 'string' && s.length <= 255 && /^(\[[0-9a-f:.]+\]|[a-z0-9.-]+):\d{1,5}$/i.test(s);
 /**
@@ -70,13 +73,17 @@ const isAddress = (s: unknown): s is string => typeof s === 'string' && s.length
 const isLanAddress = (s: unknown): s is string => {
   if (!isAddress(s)) return false;
   const host = s.slice(0, s.lastIndexOf(':')).toLowerCase();
+  const port = Number(s.slice(s.lastIndexOf(':') + 1));
+  if (!(port > 0 && port < 65536)) return false;
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
   if (v4) {
+    // 앞에 0 이 붙은 숫자는 받지 않는다 (주소를 읽는 쪽이 8진수로 읽어 다른 주소가 된다).
+    if (v4.slice(1).some((n) => String(Number(n)) !== n || Number(n) > 255)) return false;
     const [a, b] = [Number(v4[1]), Number(v4[2])];
-    if (v4.slice(1).some((n) => Number(n) > 255)) return false;
-    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+    // 내 PC 자신(127.x)은 받지 않는다: 남이 내 두레를 시켜 내 PC 의 다른 프로그램에 요청을 보내게 할 수 없다.
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
   }
-  return /^\[(::1|fe[89ab][0-9a-f]:[0-9a-f:]*|f[cd][0-9a-f]{2}:[0-9a-f:]*)\]$/.test(host);
+  return /^\[(fe[89ab][0-9a-f]:[0-9a-f:]*|f[cd][0-9a-f]{2}:[0-9a-f:]*)\]$/.test(host);
 };
 /** 상대가 돌려준 거절의 까닭. 상대가 적은 글을 그대로 옮기지 않는다 (그 글이 내 에이전트에게 가기 때문이다): 아는 것만 내 말로 바꾼다. */
 const REMOTE_ERRORS: Record<string, string> = {
@@ -222,8 +229,13 @@ export class PeerService extends EventEmitter {
   // ---- 찾기 ----
 
   private onSeen(p: { id: string; name: string; address: string }): void {
-    if (!isId(p.id) || !isAddress(p.address) || p.id === this.get('id')) return;
-    if (!this.seen.has(p.id) && this.seen.size >= MAX_SEEN) return;
+    if (!isId(p.id) || !isLanAddress(p.address) || p.id === this.get('id')) return;
+    // 꽉 찼으면 모르는 사람부터 밀어낸다 (가짜로 채워 아는 사람이 안 보이게 하지 못한다).
+    if (!this.seen.has(p.id) && this.seen.size >= MAX_SEEN) {
+      const stranger = [...this.seen.keys()].find((id) => !this.peerRow(id));
+      if (!stranger || !this.peerRow(p.id)) return;
+      this.seen.delete(stranger);
+    }
     // 누구나 아무 id 로 자기를 알릴 수 있다: 여기서 본 주소는 적어 두지 않는다.
     // 보낼 때 적어 둔 주소로 닿지 않으면 이 주소로 해 보고, 그 사람의 열쇠로 감싼 응답이 와야 주소를 바꾼다 (sendTo).
     this.seen.set(p.id, { name: cleanName(p.name, '이름 없음'), address: p.address });
@@ -249,8 +261,9 @@ export class PeerService extends EventEmitter {
   private label(peerId: string): string {
     const r = this.peerRow(peerId);
     if (!r) return '알 수 없는 사람';
-    const twins = (this.d.db.prepare('SELECT count(*) AS n FROM peers WHERE name = ? AND id != ?').get(r.name, r.id) as { n: number }).n;
-    return twins > 0 || r.name === this.myName() ? `${r.name}#${fingerprint(r.pub).slice(0, 4)}` : r.name;
+    const key = nameKey(r.name);
+    const twin = key === nameKey(this.myName()) || (this.d.db.prepare('SELECT id, name FROM peers WHERE id != ?').all(r.id) as { id: string; name: string }[]).some((x) => nameKey(x.name) === key);
+    return twin ? `${r.name}#${fingerprint(r.pub)}` : r.name;
   }
 
   private toPeer(r: PeerRow): Peer {
@@ -298,7 +311,15 @@ export class PeerService extends EventEmitter {
       }
     })();
     for (const [id, inv] of this.invites) if (inv.fromPeerId === peerId) this.invites.delete(id);
-    this.rate.delete(peerId);
+    for (const k of this.rate.keys()) if (k.endsWith(`|${peerId}`)) this.rate.delete(k);
+    // 그 사람이 나눠 준 일 가운데 아직 수락하지 않은 것도 지운다.
+    this.d.db.prepare("DELETE FROM assignments_in WHERE from_peer = ? AND state = 'pending'").run(peerId);
+    this.dropStrangers();
+  }
+
+  /** 어느 프로젝트에도 없고 직접 연결하지도 않은 사람의 기록을 지운다 (목록으로만 알게 된 사람이 쌓이지 않게). */
+  private dropStrangers(): void {
+    this.d.db.prepare('DELETE FROM peers WHERE direct = 0 AND id NOT IN (SELECT peer_id FROM share_members)').run();
   }
 
   private upsertPeer(p: { id: string; name: string; pub: string; address: string }, direct: boolean): void {
@@ -365,7 +386,7 @@ export class PeerService extends EventEmitter {
     throw new PeerOfflineError('그 사람의 두레에 닿지 않습니다 (꺼져 있거나 같은 네트워크가 아닙니다).');
   }
 
-  private sendPeer(peerId: string, payload: Omit<Payload, 'id' | 'port' | 'name'>): Promise<Record<string, unknown>> {
+  private async sendPeer(peerId: string, payload: Omit<Payload, 'id' | 'port' | 'name'>): Promise<Record<string, unknown>> {
     const r = this.peerRow(peerId);
     if (!r) throw new Error('연결된 사람이 아닙니다.');
     return this.sendTo(r, payload);
@@ -391,7 +412,7 @@ export class PeerService extends EventEmitter {
   }
 
   /** 함께하는 프로젝트 안에서 보낸다 (그 프로젝트에서의 열쇠로). */
-  private sendShare(shareId: string, peerId: string, payload: Omit<Payload, 'id' | 'port' | 'name'>): Promise<Record<string, unknown>> {
+  private async sendShare(shareId: string, peerId: string, payload: Omit<Payload, 'id' | 'port' | 'name'>): Promise<Record<string, unknown>> {
     const to = this.memberTarget(shareId, peerId);
     if (!to) throw new Error('함께하는 사람이 아닙니다.');
     return this.sendTo(to, payload);
@@ -473,7 +494,10 @@ export class PeerService extends EventEmitter {
     const p = this.pending.get(requestId);
     if (!p || !p.pub) throw new Error('확인할 요청이 아닙니다.');
     // 먼저 알린다: 상대에게 닿지 않으면 확인한 것으로 치지 않는다.
-    await this.sendTo({ id: p.peerId, pub: p.pub, address: p.address }, { type: 'pair.accept' });
+    // 어느 요청을 확인했는지 코드로 묶는다: 거두고 다시 요청한 뒤의 옛 확인이 새 요청에 붙지 않는다.
+    await this.sendTo({ id: p.peerId, pub: p.pub, address: p.address }, { type: 'pair.accept', code: this.toRequest(p).code });
+    // 기다리는 동안 거뒀거나 지났으면 확인한 것으로 치지 않는다.
+    if (this.pending.get(requestId) !== p) throw new Error('요청이 이미 거둬졌습니다. 다시 요청하세요.');
     p.mine = true;
     if (p.theirs) this.finishPair(p);
     this.emit('changed');
@@ -852,8 +876,9 @@ export class PeerService extends EventEmitter {
       if (path === 'pair') return this.onPair(body, host);
       if (path === 'msg') return await this.onEnvelope(body, host);
       return { ok: false, error: 'unknown' };
-    } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : 'error' };
+    } catch {
+      // 안에서 난 오류의 글은 내보내지 않는다.
+      return { ok: false, error: 'error' };
     }
   }
 
@@ -911,8 +936,8 @@ export class PeerService extends EventEmitter {
     const peer = this.peerRow(from);
     const pubs = new Set<string>();
     if (peer) pubs.add(peer.pub);
-    for (const r of this.d.db.prepare('SELECT DISTINCT pub FROM share_members WHERE peer_id = ? AND pub IS NOT NULL').all(from) as { pub: string }[]) pubs.add(r.pub);
     for (const p of this.pending.values()) if (p.peerId === from && p.pub) pubs.add(p.pub);
+    for (const r of this.d.db.prepare('SELECT DISTINCT pub FROM share_members WHERE peer_id = ? AND pub IS NOT NULL').all(from) as { pub: string }[]) pubs.add(r.pub);
     let payload: Payload | undefined;
     let used = '';
     for (const pub of [...pubs].slice(0, MAX_KEYS_TRIED)) {
@@ -931,9 +956,11 @@ export class PeerService extends EventEmitter {
 
     if (payload.type === 'pair.accept') {
       // 상대가 코드를 확인하고 눌렀다. 나도 눌렀으면 연결된다.
-      const p = [...this.pending.values()].find((x) => x.peerId === from && x.pub === used);
+      const p = [...this.pending.values()].find((x) => x.peerId === from && x.pub === used && this.toRequest(x).code === payload!.code);
       if (p) {
         p.theirs = true;
+        // 열쇠로 감싸 온 이름이 그 사람이 정한 이름이다 (요청에 적혀 온 이름은 중간에서 바뀔 수 있다).
+        p.name = cleanName(payload.name, p.name);
         if (p.mine) this.finishPair(p);
         this.emit('changed');
         return reply({ ok: true });
@@ -945,7 +972,7 @@ export class PeerService extends EventEmitter {
     // 주소와 이름을 따라간다 (그 열쇠로 적어 둔 것만).
     const port = Number(payload.port);
     const address = `${host.includes(':') && !host.startsWith('[') ? `[${host}]` : host}:${port}`;
-    if (Number.isInteger(port) && isAddress(address)) this.learnAddress(peer.id, used, address);
+    if (Number.isInteger(port) && port > 0 && port < 65536 && isAddress(address)) this.learnAddress(peer.id, used, address);
     const name = cleanName(payload.name, peer.name);
     if (peer.pub === used && name !== peer.name) this.d.db.prepare('UPDATE peers SET name = ? WHERE id = ?').run(name, peer.id);
     return reply(await this.onPayload(this.peerRow(peer.id) ?? peer, payload, used));
@@ -998,6 +1025,7 @@ export class PeerService extends EventEmitter {
             // 처음 듣는 사람이면 이름을 알아 둔다. 이미 아는 사람의 열쇠·이름·주소는 이 목록이 바꾸지 못한다:
             // 여기서 받은 열쇠는 이 프로젝트 안에서만 쓴다 (share_members.pub).
             if (!known) this.upsertPeer({ id: m.id, name: cleanName(m.name, '이름 없음'), pub: m.pub, address: '' }, false);
+            if (rows.length >= 30) break;
             rows.push({ id: m.id, pub: m.pub, address: isLanAddress(m.address) ? m.address : '' });
           }
           const before = new Map((this.d.db.prepare('SELECT * FROM share_members WHERE share_id = ?').all(s.id) as MemberRow[]).map((r) => [r.peer_id, r]));
@@ -1007,7 +1035,10 @@ export class PeerService extends EventEmitter {
             const old = before.get(r.id);
             this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state, pub, address) VALUES (?, ?, 'member', ?, ?)").run(s.id, r.id, r.pub, old && old.pub === r.pub && old.address ? old.address : r.address);
           }
-          this.d.db.prepare(`DELETE FROM remote_workspaces WHERE share_id = ? AND peer_id NOT IN (${rows.map(() => '?').join(',')})`).run(s.id, ...rows.map((r) => r.id));
+          const keep = rows.map(() => '?').join(',');
+          this.d.db.prepare(`DELETE FROM remote_workspaces WHERE share_id = ? AND peer_id NOT IN (${keep})`).run(s.id, ...rows.map((r) => r.id));
+          this.d.db.prepare(`DELETE FROM peer_inbox WHERE share_id = ? AND from_peer NOT IN (${keep})`).run(s.id, ...rows.map((r) => r.id));
+          this.dropStrangers();
         })();
         this.emit('changed');
         this.publishSoon();
@@ -1045,6 +1076,9 @@ export class PeerService extends EventEmitter {
             this.d.db.prepare('INSERT INTO remote_workspaces (share_id, peer_id, workspace_id, name, listed) VALUES (?, ?, ?, ?, 1) ON CONFLICT(share_id, peer_id, workspace_id) DO UPDATE SET name = excluded.name, listed = 1')
               .run(s.id, peer.id, w.id, cleanName(w.name, '워크스페이스'));
           }
+          // 목록에서 빠진 것의 이름은 남겨 두지만, 한 사람의 것이 끝없이 쌓이지는 않게 한다.
+          const n = (this.d.db.prepare('SELECT count(*) AS n FROM remote_workspaces WHERE share_id = ? AND peer_id = ?').get(s.id, peer.id) as { n: number }).n;
+          if (n > 3 * MAX_DIRECTORY) this.d.db.prepare('DELETE FROM remote_workspaces WHERE share_id = ? AND peer_id = ? AND listed = 0').run(s.id, peer.id);
         })();
         this.emit('changed');
         return { ok: true };
@@ -1077,22 +1111,27 @@ export class PeerService extends EventEmitter {
     if (!body || body.length > MAX_BODY) return no('bad_body');
     const thread = isId(p.thread) ? p.thread : crypto.randomUUID();
     const now = Date.now();
-    const recent = (this.rate.get(peer.id) ?? []).filter((t) => now - t < 60_000);
+    // 상한은 프로젝트와 사람마다 따로 센다: 다른 프로젝트에서 같은 id 를 쓰는 것이 이 프로젝트의 그 사람을 막지 못한다.
+    const rateKey = `${s.id}|${peer.id}`;
+    const recent = (this.rate.get(rateKey) ?? []).filter((t) => now - t < 60_000);
     if (recent.length >= RATE_PER_MIN) return no('rate');
-    this.rate.set(peer.id, [...recent, now]);
+    if (this.rate.size > 2000) this.rate.clear();
+    this.rate.set(rateKey, [...recent, now]);
     const artifacts: WireArtifact[] = (Array.isArray(p.artifacts) ? p.artifacts : []).slice(0, MAX_ARTIFACTS)
       .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
       .map((a) => ({ kind: oneLine(a.kind, 20), title: oneLine(a.title, 120) || '자료', body: String(a.body ?? '').slice(0, MAX_ARTIFACT_BODY) }));
     // 보낸 워크스페이스의 이름을 알아 둔다 (목록에 없던 것이어도 누가 보냈는지 보여 줄 수 있게. 목록에는 올리지 않는다).
     this.d.db.prepare('INSERT INTO remote_workspaces (share_id, peer_id, workspace_id, name, listed) VALUES (?, ?, ?, ?, 0) ON CONFLICT(share_id, peer_id, workspace_id) DO UPDATE SET name = excluded.name')
       .run(s.id, peer.id, from.id, cleanName(from.name, '워크스페이스'));
-    if (peer.mode === 'direct') {
+    // "바로 전달" 은 내가 직접 연결해 그렇게 정한 열쇠로 온 것만이다. 프로젝트를 연 사람이 알려 준 열쇠로 온 것은 언제나 보고 넘겨준다.
+    if (peer.mode === 'direct' && peer.direct === 1 && peer.pub === used) {
       this.deliver({ projectId: s.project_id, fromRef: remoteRef(peer.id, from.id), toWorkspaceId: to.id, body, thread, artifacts });
       return { ok: true, delivery: 'delivered' };
     }
     // 사용자가 보고 넘겨줄 때까지 붙잡아 둔다. 너무 쌓이면 받지 않는다.
-    const waitingCount = (this.d.db.prepare('SELECT count(*) AS n FROM peer_inbox WHERE from_peer = ?').get(peer.id) as { n: number }).n;
-    if (waitingCount >= 50) return no('inbox_full');
+    const waitingCount = (this.d.db.prepare('SELECT count(*) AS n FROM peer_inbox WHERE share_id = ? AND from_peer = ?').get(s.id, peer.id) as { n: number }).n;
+    const waitingAll = (this.d.db.prepare('SELECT count(*) AS n FROM peer_inbox WHERE share_id = ?').get(s.id) as { n: number }).n;
+    if (waitingCount >= 50 || waitingAll >= 200) return no('inbox_full');
     this.d.db.prepare('INSERT INTO peer_inbox (id, share_id, from_peer, from_workspace, to_workspace_id, body, thread, artifacts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(crypto.randomUUID(), s.id, peer.id, from.id, to.id, body, thread, JSON.stringify(artifacts), now);
     this.emit('changed');

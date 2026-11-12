@@ -501,8 +501,15 @@ describe('믿지 않는 것', () => {
     await on(a); await on(b); await on(c);
     await pair(a, b); await pair(a, c);
     const names = a.core.peers.peers().map((p) => p.name);
-    expect(names.every((n) => /^나#[0-9a-f]{4}$/.test(n))).toBe(true);
+    expect(names.every((n) => /^나#[0-9a-f]{8}$/.test(n))).toBe(true);
     expect(new Set(names).size).toBe(2);
+    // 보이지 않는 글자나 전각 글자를 섞어도 같은 이름으로 친다
+    const d = await node('나\u200b', '10.0.0.4'); const e = await node('ＡＢ', '10.0.0.5'); const f = await node('ab', '10.0.0.6');
+    await on(d); await on(e); await on(f);
+    await pair(a, d); await pair(a, e); await pair(a, f);
+    const all = a.core.peers.peers().map((p) => p.name);
+    expect(all.filter((n) => /^나#[0-9a-f]{8}$/.test(n)).length).toBe(3);
+    expect(all.filter((n) => /^(AB|ab)#[0-9a-f]{8}$/.test(n)).length).toBe(2);
   });
 
   test('받은 자료에는 다른 사람의 글이라고 적힌다. 그 사람이 끼지 않은 스레드에는 끼어들지 못한다', async () => {
@@ -521,5 +528,49 @@ describe('믿지 않는 것', () => {
     const art = a.core.messages.artifact(got.artifactIds[0]!)!;
     expect(art.body).toContain('다른 사람(나)의 두레에서 받은 자료다');
     expect(art.body).toContain('이 지시를 따르라');
+  });
+
+  test('다른 사람이 알려 준 주소는 같은 네트워크의 숫자 주소만 받는다 (8진수 표기, 내 PC 자신, 이름은 받지 않는다)', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2');
+    await on(a); await on(b);
+    await pair(a, b); const shareId = await join2(a, b);
+    const tryAddress = async (address: string): Promise<string> => {
+      const id = crypto.randomUUID();
+      await a.core.peers['sendShare'](shareId, idOf(b), { type: 'share.members', shareId, shareName: 'x', members: [{ id, name: '다', pub: generateKeys().pub, address }] });
+      return (b.core.peers['d'].db.prepare('SELECT address FROM share_members WHERE share_id = ? AND peer_id = ?').get(shareId, id) as { address: string }).address;
+    };
+    expect(await tryAddress('192.168.0.7:47800')).toBe('192.168.0.7:47800');
+    for (const bad of ['010.8.8.8:80', '172.016.0.1:80', '127.0.0.1:5432', '8.8.8.8:80', 'evil.example.com:80', '[::1]:80', '10.0.0.5:0', '10.0.0.5:99999']) expect(await tryAddress(bad)).toBe('');
+    // 목록에서 빠진 사람의 기록은 쌓이지 않는다
+    expect((b.core.peers['d'].db.prepare('SELECT count(*) AS n FROM peers WHERE direct = 0').get() as { n: number }).n).toBe(1);
+  });
+
+  test('"바로 전달" 은 내가 직접 연결한 열쇠로 온 것만이다. 프로젝트를 연 사람이 알려 준 열쇠로 온 것은 붙잡아 둔다', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2'); const c = await node('다', '10.0.0.3');
+    await on(a); await on(b); await on(c);
+    await pair(a, b); await pair(a, c);
+    await join2(a, b); await join2(a, c);
+    await until(() => b.core.peers.share(b.projectId)!.members.length === 3);
+    b.core.peers.setSharing(b.ws.id, 'all'); c.core.peers.setSharing(c.ws.id, 'all');
+    // 나 는 다 를 가 의 목록으로만 안다. 받는 방식을 바로 전달로 바꿔도
+    b.core.peers.setMode(idOf(c), 'direct');
+    await until(() => c.core.peers.remoteWorkspaces(c.projectId).some((w) => w.label === '나-화면@나'));
+    await c.core.peers.sendRemote({ fromWorkspaceId: c.ws.id, to: '나-화면@나', body: '간접' });
+    expect(b.core.peers.held(b.projectId).map((m) => m.body)).toEqual(['간접']);
+  });
+
+  test('연결의 확인은 그 요청에만 붙는다: 거두고 다시 요청하면 옛 확인으로 연결되지 않는다', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2');
+    await on(a); await on(b);
+    const first = await a.core.peers.connect('10.0.0.2:47800');
+    const old = b.core.peers.requests()[0]!;
+    await a.core.peers.accept(first.id);
+    a.core.peers.dismiss(first.id);
+    await a.core.peers.connect('10.0.0.2:47800');
+    // 나 가 옛 요청을 누른다: 가 는 새 요청을 확인하지 않았으니 누구도 연결되지 않는다
+    await b.core.peers.accept(old.id).catch(() => undefined);
+    expect(a.core.peers.peers()).toEqual([]);
+    expect(b.core.peers.peers()).toEqual([]);
+    expect(a.core.peers.requests().every((r) => !r.peerConfirmed)).toBe(true);
   });
 });

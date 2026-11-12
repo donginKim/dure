@@ -7,7 +7,12 @@ const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], is
 /** 프로젝트 안에서 약속, 결정, 결과를 공유하는 자료 도구. 파일은 복사하지 않고 절대 경로로 가리킨다. */
 export const artifactTools: ToolBundle = (server, ctx, deps) => {
   const { messages, workspaces } = deps;
-  const by = (workspaceId: string | null): string => (workspaceId ? workspaces.get(workspaceId)?.name ?? '지워진 워크스페이스' : '지워진 워크스페이스');
+  const by = (workspaceId: string | null): string => {
+    if (!workspaceId) return '지워진 워크스페이스';
+    // 다른 사람의 두레에서 받은 자료는 그렇다고 적는다.
+    const remote = messages.remote(workspaceId);
+    return remote ? `${remote.name}@${remote.owner} (다른 사람의 두레에서 받은 자료)` : workspaces.get(workspaceId)?.name ?? '지워진 워크스페이스';
+  };
 
   server.registerTool(
     'artifact_publish',

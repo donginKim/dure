@@ -519,6 +519,15 @@ export class PeerService extends EventEmitter {
     });
   }
 
+  /** 화면이 메시지의 보낸 쪽·받는 쪽을 보여 줄 때 쓰는 이름표: ref → "워크스페이스@사람". 목록에서 빠진 것도 들어 있다. */
+  remoteNames(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const r of this.d.db.prepare('SELECT peer_id, workspace_id, name FROM remote_workspaces').all() as { peer_id: string; workspace_id: string; name: string }[]) {
+      out[remoteRef(r.peer_id, r.workspace_id)] = remoteLabel(r.name, this.peerRow(r.peer_id)?.name ?? '알 수 없는 사람');
+    }
+    return out;
+  }
+
   /** 다른 사람의 워크스페이스의 이름과 주인. 메시지를 보여 줄 때 쓴다. */
   nameOf(ref: string): { name: string; owner: string } | undefined {
     const p = parseRemoteRef(ref);

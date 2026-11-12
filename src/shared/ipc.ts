@@ -1,9 +1,9 @@
 import type {
   AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
-  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest,
+  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -167,6 +167,38 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** 다른 사람의 두레와의 연결 */
+  peers: {
+    status(): Promise<PeerStatus>;
+    /** 같은 네트워크에서 보이는 두레 */
+    found(): Promise<FoundPeer[]>;
+    list(): Promise<Peer[]>;
+    requests(): Promise<PeerRequest[]>;
+    /** 주소(호스트:포트)의 두레에 연결을 요청한다 */
+    connect(address: string): Promise<PeerRequest>;
+    accept(requestId: string): Promise<void>;
+    dismiss(requestId: string): Promise<void>;
+    setMode(peerId: string, mode: PeerMode): Promise<void>;
+    remove(peerId: string): Promise<void>;
+    share(projectId: string): Promise<Share | null>;
+    createShare(projectId: string): Promise<Share>;
+    invite(shareId: string, peerId: string): Promise<void>;
+    invites(): Promise<ShareInvite[]>;
+    acceptInvite(inviteId: string, projectId: string): Promise<Share>;
+    declineInvite(inviteId: string): Promise<void>;
+    leave(projectId: string): Promise<void>;
+    removeMember(shareId: string, peerId: string): Promise<void>;
+    sharing(workspaceId: string): Promise<WorkspaceSharing>;
+    setSharing(workspaceId: string, audience: SharingAudience, peers: string[]): Promise<WorkspaceSharing>;
+    /** 다른 사람이 나에게 공개한 워크스페이스 */
+    remote(projectId: string): Promise<RemoteWorkspace[]>;
+    /** ref → "워크스페이스@사람" */
+    names(): Promise<Record<string, string>>;
+    /** 내가 보고 넘겨주기를 기다리는 메시지 */
+    held(projectId: string): Promise<HeldMessage[]>;
+    pass(heldId: string): Promise<void>;
+    drop(heldId: string): Promise<void>;
+  };
   browser: {
     /** 화면이 만든 브라우저 페이지(webview)를 알린다. 에이전트의 조작이 이 페이지로 간다 */
     register(workspaceId: string, webContentsId: number): Promise<void>;
@@ -194,6 +226,9 @@ export const IPC_CHANNELS = [
   'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
+  'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
+  'peers.share', 'peers.createShare', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
+  'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.drop',
   'browser.register', 'browser.requests', 'browser.decide',
   'commit.state', 'commit.diff', 'commit.run', 'commit.push',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',

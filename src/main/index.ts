@@ -1,4 +1,6 @@
 import { homedir } from 'node:os';
+import { createBonjourDiscovery } from '@core/peers/bonjour';
+import { createHttpTransport } from '@core/peers/httpTransport';
 import { createBrowserHost } from './browserDriver';
 import { join } from 'node:path';
 import { app, BrowserWindow, dialog, safeStorage } from 'electron';
@@ -86,6 +88,9 @@ async function start(): Promise<void> {
   try {
     core = await createCore({
       browser: browserHost.driver,
+      // 다른 사람의 두레와의 연결: 같은 네트워크에서 HTTP 로 직접 주고받고, Bonjour 로 서로 찾는다. 설정에서 켜야 듣는다.
+      peerTransport: createHttpTransport(),
+      peerDiscovery: createBonjourDiscovery(),
       // 개발·검증용으로 다른 폴더를 쓸 수 있게 한다. 평소에는 설정하지 않는다.
       dataDir: process.env.DURE_DATA_DIR || app.getPath('userData'),
       worktreeRoot: process.env.DURE_WORKTREE_ROOT || join(homedir(), 'dure', 'worktrees'),

@@ -4,7 +4,7 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -152,6 +152,30 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       held: core.messages.heldCount(w.id),
       error: core.delivery.error(w.id),
     }])),
+    'peers.status': () => core.peers.status(),
+    'peers.found': () => core.peers.found(),
+    'peers.list': () => core.peers.peers(),
+    'peers.requests': () => core.peers.requests(),
+    'peers.connect': (address: string) => core.peers.connect(String(address)),
+    'peers.accept': (requestId: string) => core.peers.accept(String(requestId)),
+    'peers.dismiss': (requestId: string) => core.peers.dismiss(String(requestId)),
+    'peers.setMode': (peerId: string, mode: PeerMode) => core.peers.setMode(String(peerId), mode),
+    'peers.remove': (peerId: string) => core.peers.removePeer(String(peerId)),
+    'peers.share': (projectId: string) => core.peers.share(String(projectId)),
+    'peers.createShare': (projectId: string) => core.peers.createShare(String(projectId)),
+    'peers.invite': (shareId: string, peerId: string) => core.peers.invite(String(shareId), String(peerId)),
+    'peers.invites': () => core.peers.shareInvites(),
+    'peers.acceptInvite': (inviteId: string, projectId: string) => core.peers.acceptInvite(String(inviteId), String(projectId)),
+    'peers.declineInvite': (inviteId: string) => core.peers.declineInvite(String(inviteId)),
+    'peers.leave': (projectId: string) => core.peers.leave(String(projectId)),
+    'peers.removeMember': (shareId: string, peerId: string) => core.peers.removeMember(String(shareId), String(peerId)),
+    'peers.sharing': (workspaceId: string) => core.peers.sharing(String(workspaceId)),
+    'peers.setSharing': (workspaceId: string, audience: SharingAudience, peers: string[]) => core.peers.setSharing(String(workspaceId), audience, Array.isArray(peers) ? peers.map(String) : []),
+    'peers.remote': (projectId: string) => core.peers.remoteWorkspaces(String(projectId)),
+    'peers.names': () => core.peers.remoteNames(),
+    'peers.held': (projectId: string) => core.peers.held(String(projectId)),
+    'peers.pass': (heldId: string) => core.peers.pass(String(heldId)),
+    'peers.drop': (heldId: string) => core.peers.drop(String(heldId)),
     'browser.register': (workspaceId: string, webContentsId: number) => {
       if (!core.workspaces.get(String(workspaceId))) throw new Error('워크스페이스가 없습니다.');
       browser.register(String(workspaceId), Number(webContentsId));
@@ -209,6 +233,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onCleanupChanged = (): void => changed('cleanup');
   const onDbChanged = (): void => changed('db');
   const onBrowserChanged = (): void => changed('browser');
+  const onPeersChanged = (): void => changed('peers');
   // 승인으로 새 저장소가 등록될 수 있다.
   const onCoordinatorChanged = (): void => { changed('coordinator'); changed('repos'); };
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
@@ -227,6 +252,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.cleanup.on('changed', onCleanupChanged);
   core.dbs.on('changed', onDbChanged);
   core.browser.on('changed', onBrowserChanged);
+  core.peers.on('changed', onPeersChanged);
   core.coordinator.on('changed', onCoordinatorChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
@@ -243,6 +269,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.cleanup.off('changed', onCleanupChanged);
     core.dbs.off('changed', onDbChanged);
     core.browser.off('changed', onBrowserChanged);
+    core.peers.off('changed', onPeersChanged);
     core.coordinator.off('changed', onCoordinatorChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);

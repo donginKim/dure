@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "ELECTRON_RUN_AS_NODE=1 electron ./node_modules/vitest/vitest.mjs run",
     "spike": "ELECTRON_RUN_AS_NODE=1 electron",
-    "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty"
+    "postinstall": "electron-rebuild -f -w better-sqlite3,node-pty",
+    "pack:mac": "electron-vite build && electron-builder --mac --arm64",
+    "pack:mac:x64": "electron-vite build && electron-builder --mac --x64"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -35,10 +37,12 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.7",
     "vitest": "^5.1.0"
   },
-  "packageManager": "pnpm@12.18.0"
+  "packageManager": "pnpm@12.18.0",
+  "author": "dure"
 }

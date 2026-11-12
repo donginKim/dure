@@ -1,0 +1,36 @@
+# 두레를 macOS 앱으로 묶는다. `pnpm run pack:mac` 으로 만든다 (결과는 dist/).
+# 서명·공증은 하지 않는다: Apple 개발자 계정이 없어도 만들 수 있게 한다. 받는 사람은 처음 열 때 한 번 허용해야 한다 (docs/packaging.md).
+appId: dev.dure.app
+# 파일 이름은 영문으로 둔다: 한글 이름으로 묶으면 Electron 45 가 시작하자마자 죽는다 (실측). 화면에 보이는 이름은 아래 CFBundleDisplayName 이다.
+productName: Dure
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# 네이티브 모듈은 묶음(asar) 밖에 둔다: SQLite 와 터미널(node-pty 의 spawn-helper)은 파일로 있어야 돈다.
+asarUnpack:
+  - node_modules/better-sqlite3/**
+  - node_modules/node-pty/**
+npmRebuild: true
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+    - target: zip
+  artifactName: dure-${version}-${arch}.${ext}
+  # "-" 는 임시 서명이다 (인증서 없이). Apple 실리콘에서는 서명이 전혀 없는 앱이 실행되지 않는다.
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  extendInfo:
+    CFBundleDisplayName: 두레
+    # 다른 사람의 두레와 같은 네트워크에서 직접 연결할 때 macOS 가 보여 주는 설명
+    NSLocalNetworkUsageDescription: 같은 네트워크에 있는 다른 사람의 두레를 찾고 연결합니다. 설정에서 "다른 사람과 연결" 을 켰을 때만 씁니다.
+    NSBonjourServices:
+      - _dure._tcp
+    LSMinimumSystemVersion: "12.0"
+dmg:
+  title: Dure ${version}
+publish: null

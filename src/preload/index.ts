@@ -128,6 +128,11 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  pr: {
+    info: (workspaceId) => call('pr.info', workspaceId),
+    create: (workspaceId, input) => call('pr.create', workspaceId, input),
+    open: (workspaceId, url) => call('pr.open', workspaceId, url),
+  },
   checkpoints: {
     list: (workspaceId) => call('checkpoints.list', workspaceId),
     create: (workspaceId, label) => call('checkpoints.create', workspaceId, label),

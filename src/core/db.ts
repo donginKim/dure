@@ -293,6 +293,15 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX checkpoints_ws ON checkpoints (workspace_id, created_at);
   `,
+  `
+  -- PR 초안: 에이전트가 적어 두면 사용자가 고쳐서 PR 을 만든다
+  CREATE TABLE pr_drafts (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

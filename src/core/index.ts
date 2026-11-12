@@ -18,6 +18,7 @@ import { NoteStore } from './notes';
 import { AttentionService } from './attention';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
+import { PrService } from './pr';
 import { noteTools } from './mcp/tools/notes';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
@@ -63,6 +64,7 @@ export interface Core {
   attention: AttentionService;
   usage: UsageStore;
   checkpoints: CheckpointService;
+  prs: PrService;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;
@@ -143,6 +145,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const notes = new NoteStore(db);
   const usage = new UsageStore(db, workspaces);
   const checkpoints = new CheckpointService({ db, workspaces, git });
+  const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
   const cleanup = new CleanupService({ db, workspaces, git, dir: join(o.dataDir, 'cleanup') });
   messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
@@ -161,6 +164,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     notes,
     notesForAgents: () => settings.get().notesForAgents,
     notesWriteForAgents: () => settings.get().notesWriteForAgents,
+    prs,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -284,7 +288,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

@@ -1,4 +1,5 @@
 import type {
+  PrInfo,
   Checkpoint, CheckpointPreview,
   UsageSummary,
   AttentionItem,
@@ -175,6 +176,14 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** PR 만들기 */
+  pr: {
+    info(workspaceId: string): Promise<PrInfo>;
+    /** GitHub 에 PR 을 만들고 그 주소를 돌려준다 */
+    create(workspaceId: string, input: { title: string; body: string }): Promise<string>;
+    /** PR 을 만드는 웹 화면(또는 만들어진 PR)을 브라우저로 연다 */
+    open(workspaceId: string, url?: string): Promise<void>;
+  };
   /** 되돌리기 지점: 워크스페이스의 작업 폴더를 그때의 모습으로 되돌린다 */
   checkpoints: {
     list(workspaceId: string): Promise<Checkpoint[]>;
@@ -280,6 +289,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'pr.info', 'pr.create', 'pr.open',
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',
   'attention.list',

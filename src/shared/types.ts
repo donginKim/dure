@@ -713,3 +713,18 @@ export type CheckpointKind = 'auto' | 'manual' | 'safety';
 export interface Checkpoint { id: string; workspaceId: string; label: string; kind: CheckpointKind; createdAt: number }
 /** 그 지점으로 되돌리면 무엇이 바뀌는지 */
 export interface CheckpointPreview { files: string[]; moreFiles: number; commits: number }
+
+// ---- PR 만들기 ----
+export interface PrInfo {
+  /** 어느 서비스인지 알 수 있는 원격인가 (GitHub, Bitbucket, GitLab) */
+  host: 'github' | 'bitbucket' | 'gitlab' | null;
+  /** PR 을 만드는 웹 화면의 주소. 모르는 원격이면 null */
+  url: string | null;
+  /** 두레 안에서 바로 만들 수 있는가 (GitHub 이고 gh 가 깔려 있다) */
+  canCreate: boolean;
+  /** 이 브랜치가 원격에 올라가 있고 올리지 않은 커밋이 없는가 */
+  pushed: boolean;
+  base: string; head: string;
+  /** 에이전트가 적어 둔 초안, 없으면 커밋 제목들로 만든 것 */
+  title: string; body: string;
+}

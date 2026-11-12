@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CommitResult, CommitState, Workspace } from '@shared/types';
+import type { CommitResult, CommitState, PrInfo, Workspace } from '@shared/types';
 import { fileLabel, forgetEdit, pathsToCommit, pushHint, recallEdit, rememberEdit, statusLabel } from '../commitView';
 import { clock } from '../conversationView';
 import { Dialog } from './dialogs';
@@ -178,6 +178,52 @@ export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onC
       </div>
       {pushError && <pre className="error commit-out">{pushError}</pre>}
       {pushOutput && <pre className="commit-out ok">{pushOutput}</pre>}
+      <PrSection workspaceId={workspace.id} refresh={`${pushOutput}|${committed?.hash ?? ''}`} />
     </Dialog>
+  );
+}
+
+/** PR 만들기: push 한 브랜치로 기준 브랜치에 들어가는 PR 을 만든다. 제목과 설명은 에이전트의 초안이나 커밋 제목으로 채워진다. */
+function PrSection({ workspaceId, refresh }: { workspaceId: string; refresh: string }) {
+  const [info, setInfo] = useState<PrInfo | null>(null);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [made, setMade] = useState('');
+  useEffect(() => {
+    let alive = true;
+    window.dure.pr.info(workspaceId).then((i) => { if (!alive) return; setInfo(i); setTitle((t) => t || i.title); setBody((b) => b || i.body); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [workspaceId, refresh]);
+  if (!info || !info.url) return null;
+  const create = (): void => {
+    setBusy(true); setError('');
+    window.dure.pr.create(workspaceId, { title, body }).then(setMade).catch((e: Error) => setError(e.message)).finally(() => setBusy(false));
+  };
+  return (
+    <div className="commit-pr">
+      <div className="commit-push">
+        <div className="grow">
+          <div className="commit-push-title">PR</div>
+          <div className="muted commit-push-hint">{info.head} → {info.base}{info.pushed ? '' : ' · 먼저 push 해야 합니다 (올라간 커밋으로 만듭니다)'}</div>
+        </div>
+        <button className="btn" disabled={!info.pushed} onClick={() => setOpen((v) => !v)}>{open ? '접기' : 'PR 만들기…'}</button>
+      </div>
+      {open && info.pushed && (
+        <div className="commit-pr-form">
+          <input type="text" value={title} placeholder="PR 의 제목" onChange={(e) => setTitle(e.target.value)} />
+          <textarea value={body} rows={6} placeholder="PR 의 설명 (무엇을 왜 바꿨는지, 어떻게 확인했는지)" onChange={(e) => setBody(e.target.value)} />
+          <div className="commit-actions">
+            {info.canCreate && <button className="btn primary" disabled={busy || !title.trim()} onClick={create}>{busy ? '만드는 중…' : 'PR 만들기'}</button>}
+            <button className="btn" onClick={() => { void window.dure.pr.open(workspaceId).catch((e: Error) => setError(e.message)); }}>브라우저에서 열기</button>
+            {!info.canCreate && <span className="muted commit-push-hint">{info.host === 'github' ? 'gh (GitHub CLI) 가 없어 브라우저에서 만듭니다. 제목과 설명은 복사해 붙이세요.' : '이 저장소는 브라우저에서 만듭니다. 제목과 설명은 복사해 붙이세요.'}</span>}
+          </div>
+        </div>
+      )}
+      {error && <pre className="error commit-out">{error}</pre>}
+      {made && <div className="commit-done">PR 을 만들었습니다: <button className="link" onClick={() => { void window.dure.pr.open(workspaceId, made); }}>{made}</button></div>}
+    </div>
   );
 }

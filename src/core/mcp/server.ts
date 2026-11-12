@@ -10,6 +10,7 @@ import type { CoordinatorService } from '../coordinator';
 import type { DbService } from '../dbService';
 import type { SlackService } from '../slackService';
 import type { NoteStore } from '../notes';
+import type { PrService } from '../pr';
 import type { PeerService } from '../peers/peerService';
 import type { Git } from '../git';
 import type { CommitDraftStore } from '../commitDrafts';
@@ -37,6 +38,7 @@ export interface McpDeps {
   dbs: DbService;
   slack: SlackService;
   notes: NoteStore;
+  prs: PrService;
   /** 사용자가 에이전트에게 메모를 열어 두었는가 */
   notesForAgents(): boolean;
   /** 사용자가 에이전트에게 메모 쓰기를 열어 두었는가 */

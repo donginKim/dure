@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage, shell } from 'electron';
 import { isTerminalReply } from '@core/agents/trustPrompt';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
@@ -55,6 +55,16 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'pr.info': (workspaceId: string) => core.prs.info(String(workspaceId)),
+    'pr.create': (workspaceId: string, input: { title: string; body: string }) => core.prs.create(String(workspaceId), { title: String(input?.title ?? ''), body: String(input?.body ?? '') }),
+    'pr.open': async (workspaceId: string, url?: string) => {
+      // 여는 주소는 그 워크스페이스의 원격 저장소 아래의 것만이다 (화면이 아무 주소나 열게 하지 않는다).
+      const info = await core.prs.info(String(workspaceId));
+      const base = info.url ? new URL(info.url).origin : null;
+      const target = url && base && String(url).startsWith(`${base}/`) ? String(url) : info.url;
+      if (!target) throw new Error('이 원격 저장소의 PR 화면을 알 수 없습니다.');
+      await shell.openExternal(target);
+    },
     'checkpoints.list': (workspaceId: string) => core.checkpoints.list(String(workspaceId)),
     'checkpoints.create': (workspaceId: string, label?: string) => core.checkpoints.create(String(workspaceId), String(label ?? '') || '직접 만든 지점', 'manual'),
     'checkpoints.preview': (id: string) => core.checkpoints.preview(String(id)),

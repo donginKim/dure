@@ -774,3 +774,7 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .cp-confirm { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
 .cp-files { white-space: pre; font: 11.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; color: var(--muted); max-height: 120px; overflow: auto; background: var(--bg); border-radius: 6px; padding: 6px 8px; }
 .tag.cp-safety { color: var(--warn); }
+
+/* 커밋 창의 PR 구역 */
+.commit-pr-form { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.commit-pr-form input, .commit-pr-form textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; outline: none; resize: vertical; }

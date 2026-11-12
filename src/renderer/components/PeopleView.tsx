@@ -122,7 +122,7 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
           {peers.length === 0 && <div className="rows-empty">연결된 사람이 없습니다.</div>}
           {peers.map((p) => (
             <div key={p.id} className="row">
-              <span className={`dot ${p.online ? 'idle' : 'stopped'}`} title={p.online ? '같은 네트워크에서 보입니다' : '지금은 보이지 않습니다'} />
+              <span className={`dot ${p.online ? 'idle' : 'stopped'}`} title={p.online ? '켜져 있습니다 (방금 닿았습니다)' : '지금은 닿지 않습니다'} />
               <div className="grow">
                 <div>{p.name} {!p.direct && <span className="tag" title="내가 직접 연결한 사람이 아니라, 함께하는 프로젝트의 참여자로 알게 된 사람입니다">프로젝트로 알게 됨</span>}</div>
                 <div className="path">{p.address || '주소 모름'} · 열쇠 지문 {p.fingerprint}</div>

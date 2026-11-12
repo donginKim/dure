@@ -170,7 +170,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
                     <select value={it.owner ?? ''} title="맡을 사람: 다른 사람을 고르면 그 사람에게 나눠 줍니다" onChange={(e) => setOwner(i, e.target.value)}>
                       <option value="">내가 맡음</option>
                       {it.owner && !people.some((p) => p.peerId === it.owner) && <option value={it.owner}>(함께하지 않는 사람)</option>}
-                      {people.map((p) => <option key={p.peerId} value={p.peerId}>{p.name} 에게{p.online ? '' : ' (지금 안 보임)'}</option>)}
+                      {people.map((p) => <option key={p.peerId} value={p.peerId}>{p.name} 에게{p.online ? '' : ' (지금 안 닿음)'}</option>)}
                     </select>
                   )}
                   {it.existing ? <span className="muted">저장소 {repoName(it.repoId)}</span> : it.owner ? null : (

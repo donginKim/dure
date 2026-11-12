@@ -20,7 +20,7 @@ async function setup() {
   });
   const front = mk('front');
   const back = mk('back');
-  const server = await startMcpServer({ workspaces, projects, repos, todos, messages: undefined as never, delivery: undefined as never, commitDrafts: undefined as never, cleanup: undefined as never, coordinator: undefined as never, dbs: undefined as never, slack: undefined as never, notes: undefined as never, notesForAgents: () => false, browser: undefined as never, peers: { remoteWorkspaces: () => [], people: () => [], assignable: () => [] } as never, assignments: undefined as never, describe: () => ({}), git: undefined as never, onHook: () => '' }, [todoTools]);
+  const server = await startMcpServer({ workspaces, projects, repos, todos, messages: undefined as never, delivery: undefined as never, commitDrafts: undefined as never, cleanup: undefined as never, coordinator: undefined as never, dbs: undefined as never, slack: undefined as never, notes: undefined as never, notesForAgents: () => false, notesWriteForAgents: () => false, browser: undefined as never, peers: { remoteWorkspaces: () => [], people: () => [], assignable: () => [] } as never, assignments: undefined as never, describe: () => ({}), git: undefined as never, onHook: () => '' }, [todoTools]);
   const client = new Client({ name: 'test', version: '0' });
   await client.connect(new StreamableHTTPClientTransport(new URL(server.url), { requestInit: { headers: { Authorization: 'Bearer tok-front' } } }));
   const call = async (name: string, args: Record<string, unknown> = {}) => {

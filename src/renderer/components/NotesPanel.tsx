@@ -27,6 +27,15 @@ export function NotesPanel({ onClose }: { onClose: () => void }) {
     load();
     return window.dure.onChanged((topic) => { if (topic === 'notes') load(); });
   }, [load]);
+  // 열어 둔 메모를 다른 쪽(에이전트)이 바꾸면 따라간다. 내가 적는 중이면 내 글이 먼저다.
+  const openId = note?.id;
+  useEffect(() => {
+    if (!openId) return undefined;
+    return window.dure.onChanged((topic) => {
+      if (topic !== 'notes' || pending.current) return;
+      void window.dure.notes.get(openId).then((n) => { if (n && !pending.current) setNote((cur) => (cur && cur.id === n.id && cur.updatedAt !== n.updatedAt ? n : cur)); });
+    });
+  }, [openId]);
 
   const flush = useCallback(async (): Promise<void> => {
     clearTimeout(timer.current);

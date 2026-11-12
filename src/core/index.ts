@@ -152,6 +152,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     get slack() { return slack; },
     notes,
     notesForAgents: () => settings.get().notesForAgents,
+    notesWriteForAgents: () => settings.get().notesWriteForAgents,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },

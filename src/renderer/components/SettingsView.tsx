@@ -245,6 +245,9 @@ export function SettingsView() {
           <Row label="에이전트가 메모 읽기" help="켜면 에이전트가 내 메모장에서 메모를 찾아 읽을 수 있습니다 (읽기만 하고 고치지 못합니다). 모든 프로젝트의 에이전트가 모든 메모를 읽을 수 있으니, 비밀번호 같은 것을 메모에 적어 두었다면 켜지 마세요." {...row('notesForAgents')}>
             <Toggle on={s.notesForAgents} onChange={(v) => save('notesForAgents', v)} label="에이전트가 메모 읽기" />
           </Row>
+          <Row label="에이전트가 메모 쓰기" help='켜면 에이전트에게 "이거 메모해 줘" 라고 시킬 수 있습니다. 에이전트는 새 메모를 만들거나 있는 메모의 끝에 덧붙이기만 합니다: 적힌 글을 고치거나 메모를 지우지 못합니다. 에이전트가 적은 글에는 어느 프로젝트의 어느 에이전트가 언제 적었는지 남습니다. 읽기를 꺼 두어도 쓰기만 켤 수 있습니다.' {...row('notesWriteForAgents')}>
+            <Toggle on={s.notesWriteForAgents} onChange={(v) => save('notesWriteForAgents', v)} label="에이전트가 메모 쓰기" />
+          </Row>
         </div>
       </div>
 

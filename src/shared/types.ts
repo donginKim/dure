@@ -345,6 +345,8 @@ export interface Settings {
   notifyAgentOnCommit: boolean;
   /** 에이전트가 메모를 찾아 읽을 수 있다 (읽기만) */
   notesForAgents: boolean;
+  /** 에이전트가 새 메모를 쓰고 메모에 덧붙일 수 있다 (고치거나 지우지는 못한다) */
+  notesWriteForAgents: boolean;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */

@@ -39,6 +39,8 @@ export interface McpDeps {
   notes: NoteStore;
   /** 사용자가 에이전트에게 메모를 열어 두었는가 */
   notesForAgents(): boolean;
+  /** 사용자가 에이전트에게 메모 쓰기를 열어 두었는가 */
+  notesWriteForAgents(): boolean;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;

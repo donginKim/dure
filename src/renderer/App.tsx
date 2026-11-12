@@ -10,6 +10,7 @@ import { ProjectsHome } from './components/ProjectsHome';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
 import { AttentionView } from './components/AttentionView';
+import { WorkTimeView } from './components/WorkTimeView';
 import { attentionTarget } from './attentionView';
 import { NotesPanel } from './components/NotesPanel';
 import { Sidebar } from './components/Sidebar';
@@ -167,8 +168,9 @@ export function App() {
         )}
         {current?.type === 'settings' && <SettingsView />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
+        {current?.type === 'worktime' && <WorkTimeView onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
       </main>
       {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
     </div>

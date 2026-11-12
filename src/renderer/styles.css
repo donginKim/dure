@@ -778,3 +778,18 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 /* 커밋 창의 PR 구역 */
 .commit-pr-form { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .commit-pr-form input, .commit-pr-form textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; outline: none; resize: vertical; }
+
+/* 근무시간 달력 */
+.work-status { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 14px; }
+.work-status.on { border-color: var(--ok); }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-week { color: var(--muted); font-size: 11.5px; text-align: center; padding: 2px 0 4px; }
+.cal-week.weekend, .cal-cell.weekend .cal-day { color: var(--danger); opacity: 0.85; }
+.cal-cell { min-height: 78px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.cal-cell.blank { background: none; border-color: transparent; cursor: default; }
+.cal-cell.has { background: var(--panel-2); }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.picked { outline: 2px solid var(--accent); outline-offset: -1px; }
+.cal-day { font-size: 12px; color: var(--muted); }
+.cal-total { font-size: 13px; font-weight: 600; }
+.cal-range { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }

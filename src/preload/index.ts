@@ -128,6 +128,13 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  worktime: {
+    status: () => call('worktime.status'),
+    month: (year, month) => call('worktime.month', year, month),
+    rememberCurrent: () => call('worktime.rememberCurrent'),
+    forgetNetworks: () => call('worktime.forgetNetworks'),
+    removeSession: (id) => call('worktime.removeSession', id),
+  },
   pr: {
     info: (workspaceId) => call('pr.info', workspaceId),
     create: (workspaceId, input) => call('pr.create', workspaceId, input),

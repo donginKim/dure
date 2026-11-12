@@ -55,6 +55,11 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'worktime.status': () => core.worktime.status(),
+    'worktime.month': (year: number, month: number) => core.worktime.month(Number(year), Number(month)),
+    'worktime.rememberCurrent': () => core.worktime.rememberCurrent(),
+    'worktime.forgetNetworks': () => core.worktime.forgetNetworks(),
+    'worktime.removeSession': (id: string) => core.worktime.removeSession(String(id)),
     'pr.info': (workspaceId: string) => core.prs.info(String(workspaceId)),
     'pr.create': (workspaceId: string, input: { title: string; body: string }) => core.prs.create(String(workspaceId), { title: String(input?.title ?? ''), body: String(input?.body ?? '') }),
     'pr.open': async (workspaceId: string, url?: string) => {
@@ -284,6 +289,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onUpdateChanged = (): void => changed('update');
   const onNotesChanged = (): void => changed('notes');
   const onCheckpointsChanged = (): void => changed('checkpoints');
+  const onWorktimeChanged = (): void => changed('worktime');
   // 확인할 것: Dock 아이콘에 수를 적고, 새로 생기면 알림을 띄운다 (두레를 보고 있을 때는 띄우지 않는다).
   const onAttentionChanged = (): void => {
     changed('attention');
@@ -332,6 +338,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.updates.on('changed', onUpdateChanged);
   core.notes.on('changed', onNotesChanged);
   core.checkpoints.on('changed', onCheckpointsChanged);
+  core.worktime.on('changed', onWorktimeChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -356,6 +363,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.updates.off('changed', onUpdateChanged);
     core.notes.off('changed', onNotesChanged);
     core.checkpoints.off('changed', onCheckpointsChanged);
+    core.worktime.off('changed', onWorktimeChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- 두레의 아이콘: 엮인 두 고리 (함께 엮여 일한다). macOS 아이콘의 여백과 둥근 모서리에 맞췄다. -->
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2e38"/><stop offset="1" stop-color="#15171c"/></linearGradient></defs>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <g fill="none" stroke-width="66" stroke-linecap="round">
+    <circle cx="410" cy="512" r="156" stroke="#d9a441"/>
+    <circle cx="614" cy="512" r="156" stroke="#f3e3bd"/>
+    <!-- 왼쪽 고리가 오른쪽 고리의 위로 지나가는 부분: 엮인 것처럼 보이게 한다 -->
+    <path d="M410 356 a156 156 0 0 1 136 79" stroke="#d9a441"/>
+  </g>
+</svg>

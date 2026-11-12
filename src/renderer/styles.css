@@ -799,3 +799,7 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .work-break { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
 .work-break-input { width: 130px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; outline: none; }
 .work-break-input.bad { border-color: var(--danger); }
+
+/* 창의 오른쪽 아래에 떠 있는 근무 표시 */
+.work-badge { position: fixed; right: 10px; bottom: 8px; z-index: 30; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: inherit; font-size: 11.5px; font-variant-numeric: tabular-nums; cursor: pointer; opacity: 0.92; }
+.work-badge:hover { color: var(--text); border-color: var(--accent); opacity: 1; }

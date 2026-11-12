@@ -1,4 +1,4 @@
-import { breakLabel, duration, hhmm, monthGrid, monthTotal, parseBreak } from '../../src/renderer/worktimeView';
+import { breakLabel, duration, hhmm, monthGrid, monthTotal, parseBreak, workBadge } from '../../src/renderer/worktimeView';
 
 test('걸린 시간과 시각을 읽기 쉽게 적는다', () => {
   expect(duration(20_000)).toBe('1분 미만');
@@ -35,4 +35,18 @@ test('휴게 시간을 여러 꼴로 적을 수 있다', () => {
   expect(parseBreak('')).toBe(0);
   expect(parseBreak('점심')).toBeNull();
   expect(breakLabel(90)).toBe('1시간 30분');
+});
+
+test('창 구석의 근무 표시: 근무 중일 때만, 오늘 몇 시간째인지', () => {
+  const open = { id: 's', day: 'd', startAt: 0, endAt: 0, open: true, auto: false };
+  const base = { enabled: true, unit: 'half' as const, openSession: open, atWork: true, todayMs: 5.5 * 3_600_000 };
+  expect(workBadge(base)).toBe('근무 중 · 5시간 30분');
+  // 올려 적은 출근 시각이 아직 오지 않았다
+  expect(workBadge({ ...base, todayMs: 0 })).toBe('근무 중 · 0분');
+  // 퇴근했거나, 재지 않으면 보이지 않는다
+  expect(workBadge({ ...base, openSession: null })).toBeNull();
+  expect(workBadge({ ...base, enabled: false })).toBeNull();
+  // 붙어 있던 시간 그대로 세는 방식에서는 근무지에 붙어 있을 때
+  expect(workBadge({ ...base, unit: 'minute', openSession: null, atWork: true, todayMs: 45 * 60_000 })).toBe('근무 중 · 45분');
+  expect(workBadge({ ...base, unit: 'minute', openSession: null, atWork: false })).toBeNull();
 });

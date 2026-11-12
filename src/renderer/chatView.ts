@@ -238,7 +238,8 @@ export interface Mention { label: string; hint: string }
  */
 export function matchMentions(draft: string, caret: number, all: Mention[], limit = 8): { start: number; items: Mention[] } | null {
   const before = draft.slice(0, caret);
-  const m = /(^|\s)@([^\s@]*)$/.exec(before);
+  // 이름에 공백이 들 수 있어 공백도 이어서 본다 (맞는 이름이 없으면 닫힌다).
+  const m = /(^|\s)@([^@\n]{0,40})$/.exec(before);
   if (!m || all.length === 0) return null;
   const q = m[2]!.toLowerCase();
   const key = (x: Mention): string => x.label.replace(/^@/, '').toLowerCase();
@@ -250,6 +251,7 @@ export function matchMentions(draft: string, caret: number, all: Mention[], limi
 
 /** 고른 것을 넣는다: "@글자" 를 그 이름으로 바꾸고 뒤에 공백을 둔다. 새 글과 커서 자리를 돌려준다. */
 export function applyMention(draft: string, caret: number, start: number, label: string): { text: string; caret: number } {
-  const text = `${draft.slice(0, start)}${label} ${draft.slice(caret).replace(/^ /, '')}`;
+  // 낱말 가운데에서 골랐으면 커서 뒤에 남은 낱말 조각도 지운다.
+  const text = `${draft.slice(0, start)}${label} ${draft.slice(caret).replace(/^[^\s@]*/, '').replace(/^ /, '')}`;
   return { text, caret: start + label.length + 1 };
 }

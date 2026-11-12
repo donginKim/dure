@@ -177,5 +177,9 @@ describe('@ 로 사람 고르기', () => {
   test('고르면 그 낱말만 바뀌고 커서는 그 뒤로 간다', () => {
     expect(applyMention('이건 @디 에게 물어봐', 5, 3, '@디자인')).toEqual({ text: '이건 @디자인 에게 물어봐', caret: 8 });
     expect(applyMention('@', 1, 0, '@개발')).toEqual({ text: '@개발 ', caret: 4 });
+    // 낱말 가운데에서 고르면 뒤에 남은 조각도 지운다
+    expect(applyMention('@개ㅂ 에게', 2, 0, '@개발')).toEqual({ text: '@개발 에게', caret: 4 });
+    // 공백이 든 이름도 이어서 찾는다
+    expect(matchMentions('@Kim D', 6, [{ label: '@Kim Dong', hint: '' }])?.items.length).toBe(1);
   });
 });

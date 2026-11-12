@@ -57,7 +57,8 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
       }
       // 다른 사람의 두레에 있는 워크스페이스: "이름@사람". 사용자가 공개한 워크스페이스에서만 보낼 수 있다.
       // 이름에 @ 가 든 내 워크스페이스가 있으면 그쪽이 먼저다.
-      if (to.includes('@') && !peers().some((w) => w.name === to.trim())) {
+      // "@사람" 은 언제나 사람이다.
+      if (to.trim().startsWith('@') || (to.includes('@') && !peers().some((w) => w.name === to.trim()))) {
         try {
           const m = await deps.peers.sendRemote({ fromWorkspaceId: ctx.workspace.id, to, body, threadId: thread_id, artifactIds: artifact_ids });
           if (to.trim().startsWith('@')) return ok({ messageId: m.id, threadId: m.threadId, delivery: '그 사람의 두레 화면에 질문으로 떴다. 에이전트가 아니라 사람이 읽고 답한다: 답이 늦거나 오지 않을 수 있으니 기다리지 말고 네 일을 계속하라. 답은 이 스레드로 온다.' });

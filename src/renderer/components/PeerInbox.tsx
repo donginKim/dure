@@ -8,6 +8,8 @@ import type { HeldMessage, Workspace } from '@shared/types';
 /** 나에게 직접 물은 것: 내가 답하거나, 내 조율 에이전트에게 넘기거나, 버린다. */
 function Question({ h, act }: { h: HeldMessage; act: (p: Promise<void>) => void }) {
   const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = (): void => { setBusy(true); act(window.dure.peers.answer(h.id, text).finally(() => setBusy(false))); };
   const toCoordinator = (): void => act(window.dure.coordinator.get(h.projectId).then((c) => window.dure.peers.pass(h.id, c.workspace.id)));
   return (
     <div className="permit">
@@ -19,7 +21,7 @@ function Question({ h, act }: { h: HeldMessage; act: (p: Promise<void>) => void 
       <textarea className="held-answer" value={text} rows={Math.min(6, Math.max(2, text.split('\n').length))} placeholder="답을 적으세요. 물은 에이전트에게 돌아갑니다" onChange={(e) => setText(e.target.value)} />
       <div className="permit-hint">다른 사람의 에이전트가 쓴 글입니다. 내 조율 에이전트에게 넘기면 그 에이전트가 읽고 대신 답할 수 있습니다 (지시가 아니라 다른 사람의 글이라고 함께 알려 줍니다).</div>
       <div className="permit-actions">
-        <button className="btn primary" disabled={!text.trim()} onClick={() => act(window.dure.peers.answer(h.id, text))}>답 보내기</button>
+        <button className="btn primary" disabled={!text.trim() || busy} onClick={send}>{busy ? '보내는 중…' : '답 보내기'}</button>
         <button className="btn" onClick={toCoordinator}>조율 에이전트에게 넘기기</button>
         <button className="btn" onClick={() => act(window.dure.peers.drop(h.id))}>버리기</button>
       </div>

@@ -622,4 +622,40 @@ describe('사람에게 묻기', () => {
     expect(res).toContain('messageId');
     expect(a.core.peers.held(a.projectId)).toMatchObject([{ toWorkspaceId: a.ws.id, body: 'POST /login', fromLabel: '나-화면@나' }]);
   });
+
+  test('물은 것의 답은 "바로 전달" 인 사람이 보내도 내가 먼저 본다. 답은 물은 만큼만 받는다', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2');
+    await on(a); await on(b);
+    await pair(a, b); const shareId = await join2(a, b);
+    a.core.peers.setMode(idOf(b), 'direct');
+    const sent = await a.core.peers.sendRemote({ fromWorkspaceId: a.ws.id, to: '@나', body: '질문' });
+    const reply = (body: string): Promise<unknown> => b.core.peers['sendShare'](shareId, idOf(a), { type: 'message', shareId, from: { id: b.ws.id, name: '나-화면' }, to: a.ws.id, body, thread: sent.threadId, artifacts: [] });
+    await reply('답 1');
+    // 가-화면 은 공개돼 있지 않다: 에이전트에게 바로 가지 않고 붙잡힌다
+    expect(a.core.messages.undelivered(a.ws.id)).toEqual([]);
+    expect(a.core.peers.held(a.projectId).map((m) => m.body)).toEqual(['답 1']);
+    await reply('답 2'); await reply('답 3');
+    await expect(reply('답 4')).rejects.toThrow('보낼 수 없다');
+    expect(a.core.peers.held(a.projectId).length).toBe(3);
+  });
+
+  test('공개하지 않은 워크스페이스는 사람에게 짧은 글만, 답 없는 질문이 쌓이지 않는 만큼만 묻는다', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2');
+    await on(a); await on(b);
+    await pair(a, b); await join2(a, b);
+    const art = a.core.messages.publish({ projectId: a.projectId, workspaceId: a.ws2.id, kind: 'note', title: '내부 메모', body: '비밀' });
+    const ask = (o: { body?: string; artifactIds?: string[]; from?: string } = {}): Promise<unknown> => a.core.peers.sendRemote({ fromWorkspaceId: o.from ?? a.ws.id, to: '@나', body: o.body ?? '질문', artifactIds: o.artifactIds });
+    await expect(ask({ artifactIds: [art.id] })).rejects.toThrow('자료를 붙여 보낼 수 없다');
+    await expect(ask({ body: 'x'.repeat(2001) })).rejects.toThrow('2000자까지만');
+    await ask(); await ask(); await ask();
+    await expect(ask()).rejects.toThrow('아직 답이 없다');
+    // 답이 오면 다시 물을 수 있다
+    const q = b.core.peers.held(b.projectId);
+    for (const x of q) await b.core.peers.answer(x.id, '답');
+    for (const x of a.core.peers.held(a.projectId)) a.core.peers.pass(x.id);
+    await ask();
+    // 공개한 워크스페이스는 자료도 붙일 수 있다
+    a.core.peers.setSharing(a.ws2.id, 'all');
+    await ask({ from: a.ws2.id, artifactIds: [art.id], body: 'x'.repeat(3000) });
+  });
 });

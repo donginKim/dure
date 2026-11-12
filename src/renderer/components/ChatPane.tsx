@@ -272,6 +272,8 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     const off = window.dure.onChanged((topic) => { if (topic === 'peers') load(); });
     return () => { alive = false; off(); };
   }, [workspace.projectId]);
+  // 코드가 글을 바꾼 뒤(명령 고르기, 파일 넣기, 보내기)에도 커서 자리를 맞춘다.
+  useEffect(() => { const el = input.current; if (el) setCaret(el.selectionStart ?? draft.length); }, [draft]);
   const mention = useMemo(() => (menuClosed === draft ? null : matchMentions(draft, caret, mentionable)), [draft, caret, mentionable, menuClosed]);
   const pickMention = (m: Mention): void => {
     if (!mention) return;
@@ -334,7 +336,10 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       const n = mention.items.length;
       if (e.key === 'ArrowDown') { e.preventDefault(); setMenuAt((i) => (i + 1) % n); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setMenuAt((i) => (i - 1 + n) % n); return; }
-      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) { e.preventDefault(); pickMention(mention.items[Math.min(menuAt, n - 1)]!); return; }
+      const chosen = mention.items[Math.min(menuAt, n - 1)]!;
+      // 이미 다 친 이름이면 Enter 는 보내기다.
+      const typed = draft.slice(mention.start, caret) === chosen.label;
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !typed)) { e.preventDefault(); pickMention(chosen); return; }
       if (e.key === 'Escape') { e.preventDefault(); setMenuClosed(draft); return; }
     }
     // 슬래시 명령 목록이 떠 있으면 ↑↓ 로 고르고 Tab 이나 Enter 로 넣는다.

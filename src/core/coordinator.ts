@@ -248,7 +248,7 @@ export class CoordinatorService extends EventEmitter {
       const ownerKey = oneLine(o.owner, 80);
       if (ownerKey) {
         const who = people.filter((p) => p.peerId === ownerKey || p.name === ownerKey);
-        if (who.length !== 1) { problems.push(`"${name}": 맡을 사람 "${ownerKey}" 을(를) 찾을 수 없다. 함께하는 사람: ${people.map((p) => p.name).join(', ') || '없음 (사용자가 프로젝트를 함께 열고 사람을 초대해야 한다)'}`); continue; }
+        if (who.length !== 1) { problems.push(`"${name}": 맡을 사람 "${ownerKey}" 을(를) 찾을 수 없다. 나눠 줄 수 있는 사람: ${people.map((p) => p.name).join(', ') || '없음 (일을 나눠 주는 것은 프로젝트를 함께 연 사람만 할 수 있다. 사용자가 이 프로젝트를 함께하는 프로젝트로 열고 사람을 초대해야 한다)'}`); continue; }
         items.push({ name, repoId: '', baseBranch: '', role, todos, existing: false, owner: who[0]!.peerId });
         continue;
       }

@@ -47,7 +47,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       changed('projects');
     },
     'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
-    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId), people: core.peers.people(projectId) }),
+    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId), people: core.peers.assignable(projectId) }),
     'coordinator.approve': (proposalId: string, decision: PlanDecision) => core.coordinator.approve(proposalId, decision),
     'coordinator.pickSpec': async () => {
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];

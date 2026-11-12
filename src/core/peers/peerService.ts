@@ -94,6 +94,7 @@ const REMOTE_ERRORS: Record<string, string> = {
   rate: '너무 자주 보낸다. 잠시 뒤에 보내라',
   inbox_full: '받는 쪽의 사용자가 아직 확인하지 않은 메시지가 많다. 기다려라',
   unknown_type: '상대의 두레가 이 기능을 모른다 (판이 다를 수 있다)',
+  not_leader: '일을 나눠 주는 것은 프로젝트를 연 사람만 할 수 있다',
   no_assignment: '그런 배정이 없다',
   bad_assignment: '배정의 내용이 올바르지 않다',
   assign_busy: '받는 쪽에 아직 확인하지 않은 배정이 많다',
@@ -645,6 +646,15 @@ export class PeerService extends EventEmitter {
   people(projectId: string): { peerId: string; name: string; online: boolean }[] {
     const s = this.shareOfProject(projectId);
     return s ? this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), online: this.seen.has(id) })).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)) : [];
+  }
+
+  /**
+   * 일을 나눠 줄 수 있는 사람들. 프로젝트를 연 사람(리더)만 나눠 준다: 내가 연 프로젝트가 아니면 비어 있다.
+   * (기획서를 분석해 일을 가르는 사람이 하나여야, 서로 다른 계획이 엇갈려 내려오지 않는다.)
+   */
+  assignable(projectId: string): { peerId: string; name: string; online: boolean }[] {
+    const s = this.shareOfProject(projectId);
+    return s && this.isMine(s) ? this.people(projectId) : [];
   }
 
   /** 함께하는 사람 한 명에게 보낸다. 닿지 않으면 던진다. */

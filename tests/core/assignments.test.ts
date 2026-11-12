@@ -113,7 +113,9 @@ test('받는 사람이 수락하면 그 사람의 PC 에 워크스페이스와 T
   expect(note).toContain('기획서 정리');
   expect(note).toContain('"조율@기획"');
   const arts = dev.core.messages.artifacts(dev.projectId);
-  expect(arts.map((x) => [x.title, x.body])).toEqual([['기획서 정리 (기획 이(가) 보냄)', '정리한 글']]);
+  expect(arts.map((x) => x.title)).toEqual(['기획서 정리 (기획 이(가) 보냄)']);
+  // 다른 사람이 쓴 글이라는 표시가 붙는다
+  expect(arts[0]!.body).toMatch(/^\[다른 사람\(기획\)이 보낸 기획서 정리다[^\]]*\]\n\n정리한 글$/);
   // 기획자 쪽: 수락을 알고, 조율 에이전트에게 알린다
   await until(() => pm.core.assignments.outgoing(pm.projectId)[0]!.state === 'accepted');
   expect(pm.core.messages.undelivered(coordinator.id).map((m) => m.body).join('\n')).toContain('개발 이(가) 나눠 준 일을 수락했다');
@@ -211,4 +213,17 @@ test('함께하지 않는 사람에게는 나눠 줄 수 없다. 남이 보낸 �
   expect(got.items[0]!.todos[0]!.title).toBe('t0 줄');
   // 내가 보내지 않은 배정에 대한 "수락" 은 받지 않는다
   await expect(dev.core.peers.sendMember(dev.projectId, pm.id, { type: 'assign.accepted', aid: crypto.randomUUID(), workspaces: [] })).rejects.toThrow('그런 배정이 없다');
+});
+
+test('일을 나눠 주는 것은 프로젝트를 연 사람만 한다: 참여자가 보낸 배정은 받지 않는다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  await until(() => dev.core.peers.people(dev.projectId).length === 2);
+  // 참여자의 조율 에이전트에게는 나눠 줄 사람이 보이지 않는다
+  expect(dev.core.peers.assignable(dev.projectId)).toEqual([]);
+  expect(pm.core.peers.assignable(pm.projectId).map((p) => p.name)).toEqual(['개발', '디자인']);
+  await expect(dev.core.assignments.send(dev.projectId, des.id, { summary: '', items: [{ name: '몰래', role: '', todos: [] }] })).rejects.toThrow('프로젝트를 연 사람만');
+  // 고친 두레로 직접 보내도 받는 쪽이 거절한다
+  await expect(dev.core.peers.sendMember(dev.projectId, des.id, { type: 'assign', assignment: { aid: crypto.randomUUID(), summary: '', items: [{ name: '몰래', role: '', todos: [] }] } })).rejects.toThrow('프로젝트를 연 사람만');
+  expect(des.core.assignments.incoming()).toEqual([]);
 });

@@ -53,7 +53,7 @@ export const workspaceTools: ToolBundle = (server, ctx, deps) => {
     async () => {
       const repos = deps.repos.list(ctx.project.id);
       const others = deps.peers.remoteWorkspaces(ctx.project.id);
-      const people = deps.peers.people(ctx.project.id);
+      const people = deps.peers.assignable(ctx.project.id);
       const workspaces = deps.workspaces.listAll(ctx.project.id);
       const repoName = (id: string): string => repos.find((r) => r.id === id)?.name ?? '';
       const coordinator = ctx.workspace.role === 'coordinator';

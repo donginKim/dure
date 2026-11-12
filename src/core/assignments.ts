@@ -76,6 +76,7 @@ export class AssignmentService extends EventEmitter {
   async send(projectId: string, peerId: string, a: Body): Promise<string> {
     const body = cleanBody(a);
     if (!body) throw new Error('나눠 줄 일이 없습니다.');
+    if (!this.d.peers.share(projectId)?.mine) throw new Error('일을 나눠 주는 것은 프로젝트를 연 사람만 할 수 있습니다.');
     const id = crypto.randomUUID();
     await this.d.peers.sendMember(projectId, peerId, { type: 'assign', assignment: { aid: id, ...body } });
     const now = Date.now();
@@ -153,6 +154,8 @@ export class AssignmentService extends EventEmitter {
     const a = (p.assignment && typeof p.assignment === 'object' ? p.assignment : {}) as Record<string, unknown>;
     const body = cleanBody(a);
     if (!isId(a.aid) || !body) return { ok: false, error: 'bad_assignment' };
+    // 프로젝트를 연 사람(리더)이 나눠 준 것만 받는다.
+    if (this.d.peers.share(projectId)?.ownerPeerId !== peer.id) return { ok: false, error: 'not_leader' };
     if (this.d.db.prepare('SELECT 1 FROM assignments_in WHERE id = ?').get(a.aid)) return { ok: true };
     const waiting = (this.d.db.prepare("SELECT count(*) AS n FROM assignments_in WHERE from_peer = ? AND state = 'pending'").get(peer.id) as { n: number }).n;
     if (waiting >= MAX_PENDING) return { ok: false, error: 'assign_busy' };

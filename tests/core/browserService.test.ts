@@ -11,14 +11,17 @@ let ws: Workspace;
 let page: { url: string; title: string; lines: string[]; refs: number; cut: boolean };
 let calls: string[];
 let elements: Record<number, 'input' | 'button' | 'disabled'>;
+let frames: string[] | null;
+let navs: number;
 
 const driver: BrowserDriver = {
-  ensure: async (_id, url) => { calls.push(`ensure ${url}`); },
+  ensure: async (_id, url) => { calls.push(`ensure ${url}`); return false; },
   navigate: async (_id, url) => { calls.push(`navigate ${url}`); page = { ...page, url }; },
   info: async () => ({ url: page.url, title: page.title }),
   // 페이지 안에서 도는 글을 흉내 낸다: 어떤 글이 왔는지 보고 그 결과를 돌려준다.
   evaluate: async (_id, expr) => {
     if (expr.includes('const MAX =')) return page;
+    if (!expr.includes('location.origin !== ' + JSON.stringify(new URL(page.url).origin))) throw new Error('조작 글에 주소 확인이 없다');
     if (expr.includes("new KeyboardEvent('keydown'")) { calls.push(`key ${/const key = "(\w+)"/.exec(expr)?.[1]}`); return { ok: true }; }
     const ref = Number(/data-dure-ref="(\d+)"/.exec(expr)?.[1]);
     const el = elements[ref];
@@ -35,6 +38,8 @@ const driver: BrowserDriver = {
   idle: async () => undefined,
   screenshot: async () => ({ data: 'AAAA', mimeType: 'image/jpeg' }),
   logs: () => ['[오류] boom', '[경고] slow'],
+  frames: () => frames ?? [page.url],
+  navigations: () => navs,
 };
 
 async function call(workspaceId: string, name: string, args: unknown = {}): Promise<string> {
@@ -48,6 +53,8 @@ async function call(workspaceId: string, name: string, args: unknown = {}): Prom
 
 beforeEach(async () => {
   calls = [];
+  frames = null;
+  navs = 0;
   page = { url: '', title: '', lines: ['제목1: 할 일', '[1] 입력(text) "새 할 일"', '[2] 버튼 "추가"'], refs: 2, cut: false };
   elements = { 1: 'input', 2: 'button', 3: 'disabled' };
   core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), browser: driver, browserWaitMs: 80 });
@@ -73,15 +80,15 @@ test('allowedUrl: 로컬 주소와 허용한 호스트(하위 도메인 포함)�
 
 test('browser_open: 페이지를 만들고 주소를 연 뒤, 보이는 내용을 번호와 함께 돌려준다', async () => {
   const text = await call(ws.id, 'browser_open', { url: 'localhost:3000' });
-  expect(calls).toEqual(['ensure http://localhost:3000', 'navigate http://localhost:3000']);
-  expect(text).toContain('주소: http://localhost:3000');
+  expect(calls).toEqual(['ensure http://localhost:3000/', 'navigate http://localhost:3000/']);
+  expect(text).toContain('주소: http://localhost:3000/');
   expect(text).toContain('[2] 버튼 \\"추가\\"');
   expect(text).toContain('누르거나 입력할 수 있는 것: 2개');
 });
 
 test('허용되지 않은 주소는 열지 않는다. 사용자가 설정에 적으면 열 수 있다', async () => {
-  expect(await call(ws.id, 'browser_open', { url: 'https://example.com' })).toContain('이 주소는 에이전트가 볼 수 없다');
-  expect(await call(ws.id, 'browser_open', { url: 'file:///etc/passwd' })).toContain('볼 수 없다');
+  expect(await call(ws.id, 'browser_open', { url: 'https://example.com' })).toContain('이 주소는 에이전트가 열 수 없다');
+  expect(await call(ws.id, 'browser_open', { url: 'file:///etc/passwd' })).toContain('열 수 없다');
   expect(calls).toEqual([]);
   core.settings.update({ agentBrowserHosts: 'example.com' });
   expect(await call(ws.id, 'browser_open', { url: 'https://example.com' })).toContain('주소: https://example.com');
@@ -94,8 +101,10 @@ test('사용자가 같은 페이지를 다른 곳으로 옮겼으면 그 내용�
   calls = [];
   for (const [tool, args] of [['browser_snapshot', {}], ['browser_click', { ref: 2 }], ['browser_type', { ref: 1, text: 'x' }], ['browser_press', { key: 'Enter' }], ['browser_screenshot', {}], ['browser_console', {}]] as const) {
     const text = await call(ws.id, tool, args);
-    expect(text).toContain('이 주소는 에이전트가 볼 수 없다');
+    expect(text).toContain('에이전트가 볼 수 없는 주소다');
+    // 내용도, 그 주소도 주지 않는다
     expect(text).not.toContain('비밀 메일');
+    expect(text).not.toContain('mail.example.com');
     expect(text).not.toContain('AAAA');
     expect(text).not.toContain('boom');
   }
@@ -207,8 +216,9 @@ describe('처음 여는 주소의 허용 (기본 설정)', () => {
     calls = [];
     for (const [tool, args] of [['browser_snapshot', {}], ['browser_click', { ref: 2 }], ['browser_type', { ref: 1, text: 'x' }], ['browser_screenshot', {}], ['browser_console', {}]] as const) {
       const text = await call(ws.id, tool, args);
-      expect(text).toContain('사용자가 허용하지 않은 주소다');
+      expect(text).toContain('에이전트가 볼 수 없는 주소다');
       expect(text).not.toContain('Jupyter');
+      expect(text).not.toContain('8888');
       expect(text).not.toContain('AAAA');
     }
     expect(calls).toEqual([]);
@@ -225,5 +235,97 @@ describe('처음 여는 주소의 허용 (기본 설정)', () => {
     expect(await call(ws2.id, 'browser_open', { url: 'http://localhost:3000' })).toContain('아직 허용하지 않았다');
     expect(core.browser.pending(p2).length).toBe(1);
     expect(core.browser.pending(projectId)).toEqual([]);
+  });
+});
+
+describe('리뷰에서 찾은 것', () => {
+  test('페이지 안에 허용되지 않은 주소의 프레임이 있으면 화면을 찍지 않는다', async () => {
+    await call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    frames = ['http://localhost:3000/', 'about:blank', 'https://bank.example.com/account'];
+    const text = await call(ws.id, 'browser_screenshot');
+    expect(text).toContain('허용되지 않은 주소의 프레임');
+    expect(text).not.toContain('AAAA');
+    expect(text).not.toContain('bank.example.com');
+    frames = ['http://localhost:3000/', 'http://localhost:3000/inner'];
+    expect(await call(ws.id, 'browser_screenshot')).toContain('AAAA');
+  });
+
+  test('찍는 사이에 페이지가 넘어갔으면 그림을 주지 않는다', async () => {
+    await call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    const real = driver.screenshot;
+    driver.screenshot = async (...a) => { navs++; return real(...a); };
+    try {
+      const text = await call(ws.id, 'browser_screenshot');
+      expect(text).toContain('찍는 사이에 페이지가 넘어갔다');
+      expect(text).not.toContain('AAAA');
+    } finally { driver.screenshot = real; }
+  });
+
+  test('페이지가 돌려준 값은 믿지 않는다: 크기와 모양을 다시 본다', async () => {
+    await call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    page = { ...page, lines: Array.from({ length: 2000 }, () => 'x'.repeat(5000)), refs: '<b>많음</b>' as never };
+    const big = await call(ws.id, 'browser_snapshot');
+    expect(big.length).toBeLessThan(40_000);
+    expect(big).toContain('뒤를 잘랐다');
+    expect(big).not.toContain('많음');
+    page = { ...page, lines: null as never };
+    expect(await call(ws.id, 'browser_snapshot')).toContain('페이지를 읽지 못했다');
+    page = { ...page, lines: 'not a list' as never };
+    expect(await call(ws.id, 'browser_snapshot')).toContain('페이지를 읽지 못했다');
+  });
+
+  test('같은 워크스페이스의 호출은 한 줄로 선다: 확인과 실행 사이에 다른 호출이 끼어들지 않는다', async () => {
+    await call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    calls = [];
+    const real = driver.evaluate;
+    let active = 0; let most = 0;
+    driver.evaluate = async (...a) => { active++; most = Math.max(most, active); await new Promise((r) => setTimeout(r, 20)); active--; return real(...a); };
+    try {
+      await Promise.all([call(ws.id, 'browser_click', { ref: 2 }), call(ws.id, 'browser_type', { ref: 1, text: 'a' }), call(ws.id, 'browser_snapshot'), call(ws.id, 'browser_click', { ref: 2 })]);
+    } finally { driver.evaluate = real; }
+    expect(most).toBe(1);
+  });
+
+  test('설정의 호스트: 모양이 이상한 것은 받지 않는다', () => {
+    for (const bad of ['...', '-.-', '.example.com', 'example.com.', 'a..b', '-a.com', 'a-.com', 'nodot']) expect(() => core.settings.update({ agentBrowserHosts: bad })).toThrow('호스트 이름만');
+    expect(core.settings.update({ agentBrowserHosts: 'staging.example.com, docs.example.io' }).agentBrowserHosts).toBe('staging.example.com, docs.example.io');
+    expect(parseHosts('...  -.-  .example.com good.example.com')).toEqual(['good.example.com']);
+  });
+});
+
+describe('허용 흐름의 보강', () => {
+  beforeEach(() => { core.settings.update({ agentBrowser: 'ask', autoStartOnMessage: false }); });
+
+  test('같은 주소를 묻던 요청은 한 번의 결정으로 모두 끝난다', async () => {
+    const repo2 = await core.addRepo(projectId, makeRepo('back'));
+    const ws2 = await core.service.create({ projectId, repoId: repo2.id, name: '백엔드', baseBranch: 'main', agentKind: 'claude' });
+    const a = call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    const b = call(ws2.id, 'browser_open', { url: 'http://localhost:3000/x' });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(core.browser.pending(projectId).length).toBe(2);
+    core.browser.decide(core.browser.pending(projectId)[0]!.id, true);
+    expect(core.browser.pending(projectId)).toEqual([]);
+    expect(await a).toContain('주소: http://localhost:3000/');
+    expect(await b).toContain('주소: http://localhost:3000/x');
+  });
+
+  test('거부한 주소는 한동안 다시 묻지 않고 바로 거절한다 (조르지 못한다)', async () => {
+    const a = call(ws.id, 'browser_open', { url: 'http://localhost:8888' });
+    await new Promise((r) => setTimeout(r, 40));
+    core.browser.decide(core.browser.pending(projectId)[0]!.id, false);
+    expect(await a).toContain('거부했다');
+    expect(await call(ws.id, 'browser_open', { url: 'http://localhost:8888/tree' })).toContain('방금');
+    expect(core.browser.pending(projectId)).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  test('허용을 기다리는 사이에 설정을 껐으면 허용해도 열지 않는다', async () => {
+    const a = call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    await new Promise((r) => setTimeout(r, 40));
+    const id = core.browser.pending(projectId)[0]!.id;
+    core.settings.update({ agentBrowser: 'off' });
+    core.browser.decide(id, true);
+    expect(await a).toContain('꺼 두었다');
+    expect(calls).toEqual([]);
   });
 });

@@ -24,7 +24,7 @@ export function BrowserRequests({ projectId, workspaceId, workspaces }: { projec
         <div key={r.id} className="permit">
           <div className="permit-title">{who(r.workspaceId)}가 내장 브라우저로 {r.origin} 을(를) 열려 합니다</div>
           <pre className="permit-what db-sql">{r.url}</pre>
-          <div className="permit-hint">허용하면 이 프로젝트의 에이전트가 이 주소의 페이지를 읽고, 누르고, 입력할 수 있습니다 (두레를 다시 켤 때까지). 페이지의 내용은 에이전트의 대화에 들어갑니다. 내가 띄우게 한 개발 서버가 맞는지 확인하세요.</div>
+          <div className="permit-hint">허용하면 이 프로젝트의 에이전트가 이 주소의 페이지를 읽고, 누르고, 입력할 수 있습니다 (두레를 다시 켤 때까지). 페이지의 내용은 에이전트의 대화에 들어갑니다. 그 페이지가 다른 곳으로 보내는 요청까지 막지는 못하므로, 내가 띄우게 한 개발 서버가 맞는지 확인하세요.</div>
           <div className="permit-actions">
             <button className="btn primary" onClick={() => decide(r, true)}>허용</button>
             <button className="btn" onClick={() => decide(r, false)}>거부</button>

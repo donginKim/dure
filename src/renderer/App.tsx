@@ -25,6 +25,7 @@ export function App() {
   // DB 조회 승인을 기다리는 워크스페이스. 에이전트는 '작업 중' 으로 보이지만 실제로는 사용자를 기다린다.
   const [dbWaiting, setDbWaiting] = useState<Set<string>>(new Set());
   const [browserWaiting, setBrowserWaiting] = useState<Set<string>>(new Set());
+  const [loaded, setLoaded] = useState(false);
   // 프로젝트 id → 그 프로젝트의 대화
   const [talk, setTalk] = useState<Record<string, ConversationData>>({});
   const [selection, setSelection] = useState<Selection>(null);
@@ -41,6 +42,7 @@ export function App() {
       ]);
       setProjects(ps);
       setWorkspaces(ws.flat());
+      setLoaded(true);
       setRepos(rs.flat());
       setTodos(ts.flat());
       setPending(Object.assign({}, ...pe));
@@ -99,7 +101,7 @@ export function App() {
   return (
     <div className="app">
       <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} selection={current} onSelect={setSelection} onCreateProject={createProject} />
-      <BrowserHost workspaces={workspaces} />
+      <BrowserHost workspaces={workspaces} loaded={loaded} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
         {node && (

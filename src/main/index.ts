@@ -35,6 +35,10 @@ function createWindow(): void {
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    // 두레 자신의 저장소(세션)를 쓰지 못하게 한다: 브라우저용 저장소가 아니면 붙이지 않는다.
+    if (!String(params.partition ?? '').startsWith('persist:dure-browser')) event.preventDefault();
+    delete (params as Record<string, unknown>).allowpopups;
     if (!/^https?:\/\//i.test(params.src ?? '')) event.preventDefault();
   });
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -47,8 +51,17 @@ function createWindow(): void {
 }
 
 // 두레 창이 다른 창에 가려지거나 최소화돼도 Chromium 이 화면 그리기를 멈추지 않게 한다 (에이전트의 브라우저 조작과 화면 찍기가 그때도 돼야 한다).
+// 비용: 가려진 동안에도 화면을 그리므로 전력을 조금 더 쓴다.
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
+
+const guarded = new WeakSet<Electron.Session>();
+// 내장 브라우저의 페이지가 클라이언트 인증서를 요구해도 주지 않는다 (기본 동작은 저장소의 첫 인증서를 저절로 쓴다).
+app.on('select-client-certificate', (event, contents, _url, _list, callback) => {
+  if (contents?.getType() !== 'webview') return;
+  event.preventDefault();
+  (callback as (cert?: Electron.Certificate) => void)();
+});
 
 async function start(): Promise<void> {
   await app.whenReady();
@@ -60,8 +73,14 @@ async function start(): Promise<void> {
       return { action: 'deny' };
     });
     contents.on('will-navigate', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault(); });
-    // 카메라, 마이크, 위치 같은 권한은 주지 않는다.
-    contents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+    // 그 저장소(세션)에 한 번만 건다: 카메라·마이크·위치 같은 권한은 주지 않고, 파일을 내려받지 못하게 한다.
+    const session = contents.session;
+    if (!guarded.has(session)) {
+      guarded.add(session);
+      session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+      session.setPermissionCheckHandler(() => false);
+      session.on('will-download', (event) => event.preventDefault());
+    }
   });
   const browserHost = createBrowserHost();
   try {

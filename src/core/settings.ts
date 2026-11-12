@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { validHost } from './browserService';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -123,7 +124,7 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
     const t = String(v ?? '').trim();
     if (t.length > 2000) throw new Error('허용할 주소: 너무 깁니다.');
     for (const h of t.split(/[\s,]+/).filter(Boolean)) {
-      if (!/^[a-z0-9.-]+$/i.test(h) || !h.includes('.')) throw new Error(`허용할 주소: 호스트 이름만 적으세요 (예: staging.example.com). 잘못된 것: ${h}`);
+      if (!validHost(h)) throw new Error(`허용할 주소: 호스트 이름만 적으세요 (예: staging.example.com). 잘못된 것: ${h}`);
     }
     return t;
   },

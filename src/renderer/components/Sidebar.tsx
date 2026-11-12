@@ -5,7 +5,11 @@ import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting }: {
+export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting, peerWaiting, peopleAlert = 0 }: {
+  /** 다른 사람의 메시지가 넘겨주기를 기다리는 워크스페이스 */
+  peerWaiting?: Set<string>;
+  /** 받은 연결 요청과 초대의 수 */
+  peopleAlert?: number;
   /** DB 조회 승인을 기다리는 워크스페이스 */
   dbWaiting?: Set<string>;
   /** 브라우저 주소 허용을 기다리는 워크스페이스 */
@@ -73,6 +77,7 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
                     <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
                     {dbWaiting?.has(w.id) && <div className="ws-wait" title="에이전트가 DB 조회 승인을 기다립니다. 워크스페이스를 열어 허용하거나 거부하세요">DB 조회 승인 대기</div>}
                     {browserWaiting?.has(w.id) && <div className="ws-wait" title="에이전트가 브라우저로 주소를 열어도 되는지 묻고 있습니다. 워크스페이스를 열어 허용하거나 거부하세요">브라우저 주소 허용 대기</div>}
+                    {peerWaiting?.has(w.id) && <div className="ws-wait" title="다른 사람의 에이전트가 보낸 메시지가 있습니다. 워크스페이스를 열어 넘겨주거나 버리세요">다른 사람의 메시지 확인 대기</div>}
                     {(() => {
                       const info = talk[project.id]?.delivery[w.id];
                       if (!info || (info.waiting === 0 && info.held === 0)) return null;
@@ -118,6 +123,9 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
           </>
         )}
       </div>
+      <button className={`side-settings side-people${selection?.type === 'people' ? ' selected' : ''}`} title="두레를 쓰는 다른 사람과 연결합니다" onClick={() => onSelect({ type: 'people' })}>
+        <span className="gear" aria-hidden>◎</span>사람{peopleAlert > 0 && <span className="pip" title="확인할 요청이나 초대가 있습니다" />}
+      </button>
       <button className={`side-settings${selection?.type === 'settings' ? ' selected' : ''}`} onClick={() => onSelect({ type: 'settings' })}>
         <span className="gear" aria-hidden>⚙</span>설정
       </button>

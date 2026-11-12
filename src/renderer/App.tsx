@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { PeopleView } from './components/PeopleView';
+import { setRemoteNames } from './peersView';
 import { BrowserHost } from './components/BrowserHost';
 import type { DeliveryInfo } from '@shared/ipc';
 import type { Artifact, Message, Project, ProjectFlow, Repo, Thread, Todo, Workspace } from '@shared/types';
@@ -26,6 +28,8 @@ export function App() {
   const [dbWaiting, setDbWaiting] = useState<Set<string>>(new Set());
   const [browserWaiting, setBrowserWaiting] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
+  const [peerWaiting, setPeerWaiting] = useState<Set<string>>(new Set());
+  const [peopleAlert, setPeopleAlert] = useState(0);
   // 프로젝트 id → 그 프로젝트의 대화
   const [talk, setTalk] = useState<Record<string, ConversationData>>({});
   const [selection, setSelection] = useState<Selection>(null);
@@ -50,6 +54,14 @@ export function App() {
       const opens = await Promise.all(ps.map((p) => window.dure.browser.requests(p.id).catch(() => [])));
       setDbWaiting(new Set(reqs.flat().map((r) => r.workspaceId)));
       setBrowserWaiting(new Set(opens.flat().map((r) => r.workspaceId)));
+      // 다른 사람의 두레: 이름표, 넘겨주기를 기다리는 메시지, 받은 요청과 초대
+      const [names, held, reqs2, invs] = await Promise.all([
+        window.dure.peers.names().catch(() => ({})), Promise.all(ps.map((p) => window.dure.peers.held(p.id).catch(() => []))),
+        window.dure.peers.requests().catch(() => []), window.dure.peers.invites().catch(() => []),
+      ]);
+      setRemoteNames(names);
+      setPeerWaiting(new Set(held.flat().map((h) => h.toWorkspaceId)));
+      setPeopleAlert(reqs2.filter((r) => r.direction === 'in').length + invs.length);
       const talks = await Promise.all(ps.map(async (p): Promise<[string, ConversationData]> => {
         const [threads, artifacts, flow, delivery] = await Promise.all([
           window.dure.messages.threads(p.id), window.dure.artifacts.list(p.id), window.dure.messages.flow(p.id), window.dure.messages.delivery(p.id),
@@ -100,7 +112,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} />
       <BrowserHost workspaces={workspaces} loaded={loaded} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
@@ -131,7 +143,8 @@ export function App() {
           />
         )}
         {current?.type === 'settings' && <SettingsView />}
-        {!node && !workspace && current?.type !== 'settings' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
+        {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
       </main>
     </div>
   );

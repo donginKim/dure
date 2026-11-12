@@ -661,3 +661,17 @@ input[type='password']:focus { border-color: var(--accent); }
 .browser-url { flex: 1; min-width: 0; font: 12.5px ui-monospace, 'SF Mono', Menlo, monospace; }
 .browser-view { border: 0; background: #fff; display: flex; }
 .browser-slot { flex: 1; min-height: 0; background: #fff; }
+
+/* 다른 사람과 연결 */
+.side-people { margin-bottom: 0; border-bottom: 0; }
+.pair-code { font: 600 30px/1.2 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: 4px; color: var(--accent); }
+.people-manual { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.people-manual input { flex: 1; min-width: 0; max-width: 420px; }
+.row.bad { color: var(--danger); }
+.lead { color: var(--muted); line-height: 1.6; max-width: 760px; margin: -6px 0 22px; }
+.share-row { align-items: flex-start; }
+.share-pick { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+.share-pick .check { margin: 2px 0; }
+select.share-on { border-color: #6b5a2a; color: var(--accent); }
+.held-artifact { font-size: 12.5px; }
+.held-artifact summary { cursor: pointer; color: var(--muted); }

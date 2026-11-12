@@ -108,7 +108,7 @@ export function SettingsView() {
   const row = (key: Key): { changed: boolean; error?: string; onReset: () => void } => ({
     changed: s[key] !== defaults[key], error: errors[key], onReset: () => save(key, defaults[key]),
   });
-  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize') => (v: string): void => {
+  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize' | 'peerPort') => (v: string): void => {
     const n = Number(v.trim());
     if (!v.trim() || Number.isNaN(n)) { setErrors((e) => ({ ...e, [key]: '숫자를 쓰세요.' })); return; }
     save(key, n);
@@ -218,6 +218,21 @@ export function SettingsView() {
           </Row>
           <Row label="실행 파일" help="비워 두면 PATH 에서 codex 를 찾습니다." {...row('codexPath')}>
             <TextInput wide value={s.codexPath} placeholder="/전체/경로/codex" onCommit={(v) => save('codexPath', v)} />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>다른 사람과 연결</h2></div>
+        <div className="set-box">
+          <Row label="다른 사람과 연결" help="켜면 같은 네트워크(같은 사무실, 같은 VPN)의 다른 두레가 나를 찾고 연결을 요청할 수 있습니다. 연결은 내가 수락해야 되고, 내 워크스페이스는 공개하기 전에는 보이지 않습니다. 처음 켤 때 macOS 가 '들어오는 연결을 허용할지' 물을 수 있습니다." {...row('peersEnabled')}>
+            <Toggle on={s.peersEnabled} onChange={(v) => save('peersEnabled', v)} label="다른 사람과 연결" />
+          </Row>
+          <Row label="내 이름" help="다른 사람에게 보이는 이름입니다. 비워 두면 이 PC 의 사용자 이름을 씁니다. 상대의 에이전트는 내 워크스페이스를 '워크스페이스@이 이름' 으로 가리킵니다." {...row('peerName')}>
+            <TextInput value={s.peerName} placeholder="이 PC 의 사용자 이름" onCommit={(v) => save('peerName', v)} />
+          </Row>
+          <Row label="연결 포트" help="다른 두레의 연결을 받는 포트입니다. 다른 프로그램과 겹치면 바꾸세요. 주소로 직접 연결할 때 상대에게 이 번호를 알려 줍니다." {...row('peerPort')}>
+            <TextInput numeric value={String(s.peerPort)} onCommit={number('peerPort')} />
           </Row>
         </div>
       </div>

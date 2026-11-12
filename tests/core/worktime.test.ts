@@ -113,7 +113,7 @@ describe('출퇴근 기록 (30분 단위로 올림, 퇴근은 단추로)', () =>
 
   test('09:14 에 와이파이에 붙으면 09:30 출근, 15:20 에 퇴근을 누르면 15:30 퇴근: 그날 6시간', async () => {
     const t = setup();                               // 09:00, 집
-    t.settings.update({ workTimeUnit: 'half' });
+    t.settings.update({ workTimeUnit: 'half', workGraceMin: 0 });
     await t.svc.tick();
     expect(t.svc.status()).toMatchObject({ unit: 'half', openSession: null, todayMs: 0 });
     await t.pass(13);
@@ -186,5 +186,48 @@ describe('출퇴근 기록 (30분 단위로 올림, 퇴근은 단추로)', () =>
     expect(t.svc.month(2026, 11).map((d) => [d.day, d.breakMin, d.totalMs])).toEqual([['2026-11-13', 1200, 0], ['2026-11-20', 30, 0]]);
     expect(() => t.svc.setBreak('2026-11-13', -5)).toThrow('0분부터');
     expect(() => t.svc.setBreak('어제', 30)).toThrow('날짜가 올바르지 않습니다');
+  });
+
+  test('정각·30분을 막 지나 확인되면 그 시각에 출근한 것으로 적는다 (여유). 여유를 넘으면 다음 30분으로 올린다', async () => {
+    const t = setup();                               // 08:00 으로 맞춘다
+    t.jump(-3_600_000);
+    t.settings.update({ workTimeUnit: 'half' });
+    t.at(OFFICE);
+    t.jump(2 * 60_000);                              // 08:02 에 처음 확인된다
+    await t.svc.tick();
+    expect(hm(t.svc.status().openSession!.startAt)).toBe('08:00');
+    t.svc.removeSession(t.svc.status().openSession!.id);
+    t.jump(4 * 60_000);                              // 08:06: 여유 5분을 넘었다
+    expect(hm(t.svc.clockIn().openSession!.startAt)).toBe('08:30');
+    // 여유를 0 으로 두면 조금만 지나도 올린다
+    t.svc.removeSession(t.svc.status().openSession!.id);
+    t.settings.update({ workGraceMin: 0 });
+    t.jump(25 * 60_000);                             // 08:31
+    expect(hm(t.svc.clockIn().openSession!.startAt)).toBe('09:00');
+  });
+
+  test('출근·퇴근 시각을 직접 고치고, 빠진 기록을 더할 수 있다', async () => {
+    const t = setup();
+    t.settings.update({ workTimeUnit: 'half', workGraceMin: 0 });
+    t.at(OFFICE);
+    t.jump(60_000);                                  // 09:01 → 09:30 으로 적힌다
+    await t.svc.tick();
+    const open = t.svc.status().openSession!;
+    expect(hm(open.startAt)).toBe('09:30');
+    // 출근을 09:00 으로 고친다: 아직 근무 중인 채로 남는다
+    expect(t.svc.editSession(open.id, { startAt: at(9, 0) })).toMatchObject({ open: true });
+    expect(hm(t.svc.status().openSession!.startAt)).toBe('09:00');
+    // 퇴근 시각을 적으면 그 시각에 퇴근한 것으로 닫힌다
+    const closed = t.svc.editSession(open.id, { endAt: at(18, 0) });
+    expect([hm(closed.startAt), hm(closed.endAt), closed.open]).toEqual(['09:00', '18:00', false]);
+    expect(t.svc.status()).toMatchObject({ openSession: null, clockedOut: true, todayMs: 9 * 3_600_000 });
+    expect(() => t.svc.editSession(open.id, { endAt: at(8, 0) })).toThrow('앞설 수 없습니다');
+    expect(() => t.svc.editSession(open.id, { startAt: at(9, 0) - 86_400_000 })).toThrow('그날 안이어야');
+    expect(() => t.svc.editSession('nope', {})).toThrow('그런 기록이 없습니다');
+    // 빠진 날의 기록을 더한다
+    const added = t.svc.addSession(new Date(2026, 10, 10, 9, 0).getTime(), new Date(2026, 10, 10, 18, 30).getTime());
+    expect(added).toMatchObject({ day: '2026-11-10', open: false });
+    expect(t.svc.month(2026, 11).map((d) => [d.day, d.totalMs / 3_600_000])).toEqual([['2026-11-10', 9.5], ['2026-11-13', 9]]);
+    expect(() => t.svc.addSession(at(18, 0), at(9, 0))).toThrow('앞설 수 없습니다');
   });
 });

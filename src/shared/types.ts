@@ -358,6 +358,10 @@ export interface Settings {
    * minute: 붙어 있던 시간을 분 단위로 그대로 센다 (끊기면 멈춘다)
    */
   workTimeUnit: 'minute' | 'half';
+  /** 출근 여유 (분). 정각·30분에서 이만큼 안에 확인되면 그 정각·30분에 출근한 것으로 적는다 (확인이 조금 늦는 것을 봐준다) */
+  workGraceMin: number;
+  /** 하루에 채울 근무시간 (시간, 휴게 시간을 뺀 것). 채우면 "퇴근 가능!" 을 보인다. 0 이면 보이지 않는다 */
+  workDayHours: number;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -776,4 +780,6 @@ export interface WorkStatus {
   /** 오늘 출근했다가 퇴근했다 (지금은 출근한 상태가 아니다) */
   clockedOut: boolean;
   unit: 'minute' | 'half';
+  /** 하루에 채울 근무시간 (ms, 휴게 시간을 뺀 것). 0 이면 정해 두지 않았다 */
+  targetMs: number;
 }

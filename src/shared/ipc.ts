@@ -1,5 +1,5 @@
 import type {
-  WorkDay, WorkStatus,
+  WorkDay, WorkSession, WorkStatus,
   Brief,
   PrInfo,
   Checkpoint, CheckpointPreview,
@@ -191,6 +191,10 @@ export interface DureApi {
     rememberCurrent(): Promise<WorkStatus>;
     forgetNetworks(): Promise<void>;
     removeSession(id: string): Promise<void>;
+    /** 출근·퇴근 시각을 직접 고친다 */
+    editSession(id: string, patch: { startAt?: number; endAt?: number }): Promise<WorkSession>;
+    /** 기록을 직접 더한다 */
+    addSession(startAt: number, endAt: number): Promise<WorkSession>;
     /** 그날의 휴게 시간을 적는다 (분, 0 이면 지운다). 근무시간에서 뺀다 */
     setBreak(day: string, minutes: number): Promise<WorkDay>;
   };
@@ -312,7 +316,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
-  'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.setBreak',
+  'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',

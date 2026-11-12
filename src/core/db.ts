@@ -324,6 +324,11 @@ const MIGRATIONS: string[] = [
   -- 근무지로 기억해 둔 네트워크 (공유기의 MAC 주소로 알아본다)
   CREATE TABLE work_networks (gateway TEXT PRIMARY KEY, label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
   `,
+  `
+  -- 출퇴근 기록: 아직 퇴근하지 않은 구간(open)과, 퇴근을 누르지 않아 두레가 닫은 구간(auto)
+  ALTER TABLE work_sessions ADD COLUMN open INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE work_sessions ADD COLUMN auto INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

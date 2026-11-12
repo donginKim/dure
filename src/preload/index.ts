@@ -131,6 +131,8 @@ const api: DureApi = {
   worktime: {
     status: () => call('worktime.status'),
     month: (year, month) => call('worktime.month', year, month),
+    clockIn: () => call('worktime.clockIn'),
+    clockOut: () => call('worktime.clockOut'),
     rememberCurrent: () => call('worktime.rememberCurrent'),
     forgetNetworks: () => call('worktime.forgetNetworks'),
     removeSession: (id) => call('worktime.removeSession', id),

@@ -32,7 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifications: true,
   workTimeEnabled: false,
   workWifi: '',
-  workTimeUnit: 'minute',
+  workTimeUnit: 'half',
   terminalFontSize: 13,
   chatFontSize: 13.5,
 };

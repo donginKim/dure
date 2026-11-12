@@ -240,7 +240,7 @@ export class CoordinatorService extends EventEmitter {
   /** 저장소에서 지금 체크아웃된 브랜치. */
   currentBranch(repoPath: string): Promise<string> { return this.d.git.currentBranch(repoPath); }
 
-  private todos(raw: unknown, where: string, problems: string[]): PlanTodo[] {
+  private todos(raw: unknown, where: string, problems: string[], withUnder = false): PlanTodo[] {
     if (raw === undefined || raw === null) return [];
     if (!Array.isArray(raw)) { problems.push(`${where}: TODO 는 목록이어야 한다`); return []; }
     if (raw.length > MAX_TODOS) { problems.push(`${where}: TODO 가 너무 많다 (${MAX_TODOS}개까지)`); return []; }
@@ -249,7 +249,8 @@ export class CoordinatorService extends EventEmitter {
       const o: Record<string, unknown> = isObj(x) ? x : { title: x };
       const title = oneLine(o.title, 200);
       if (!title) { problems.push(`${where}: 제목이 없는 TODO 가 있다`); continue; }
-      out.push({ title, detail: text(o.detail, 1000), assignee: o.assignee === 'user' ? 'user' : 'agent' });
+      const under = withUnder ? oneLine(o.under, 200) : '';
+      out.push({ title, detail: text(o.detail, 1000), assignee: o.assignee === 'user' ? 'user' : 'agent', ...(under ? { under } : {}) });
     }
     return out;
   }
@@ -276,7 +277,7 @@ export class CoordinatorService extends EventEmitter {
       if (names.has(name)) { problems.push(`이름이 겹친다: "${name}"`); continue; }
       names.add(name);
       if (name === COORDINATOR_NAME) { problems.push(`"${COORDINATOR_NAME}" 은 조율 에이전트의 이름이라 쓸 수 없다`); continue; }
-      const todos = this.todos(o.todos, `"${name}"`, problems);
+      const todos = this.todos(o.todos, `"${name}"`, problems, true);
       const role = oneLine(o.role, 500);
       // 맡을 사람: 함께하는 사람의 이름이나 id. 그 사람에게 배정으로 보낸다 (그 사람의 저장소는 모른다: 저장소는 그 사람이 고른다).
       const ownerKey = oneLine(o.owner, 80);
@@ -312,7 +313,13 @@ export class CoordinatorService extends EventEmitter {
       if (!baseBranch) { problems.push(`"${name}": 저장소 ${repo.name} 의 기준 브랜치를 정할 수 없다`); continue; }
       items.push({ name, repoId: repo.id, baseBranch, role, todos, existing: false, owner: '' });
     }
-    return { newRepos, addRepos, items, projectTodos: this.todos(rawProjectTodos, '프로젝트 TODO', problems), problems };
+    const projectTodos = this.todos(rawProjectTodos, '프로젝트 TODO', problems);
+    // 딸릴 프로젝트 TODO 는 이 계획안에 있거나 이미 프로젝트에 있어야 한다.
+    const parents = new Set([...projectTodos.map((t) => t.title), ...this.d.todos.listProject(projectId).filter((t) => t.workspaceId === null).map((t) => t.title)]);
+    for (const it of items) for (const t of it.todos) {
+      if (t.under && !parents.has(t.under)) problems.push(`"${it.name}" 의 TODO "${t.title}": under 의 "${t.under}" 라는 프로젝트 TODO 가 없다 (project_todos 의 제목과 글자까지 같아야 한다)`);
+    }
+    return { newRepos, addRepos, items, projectTodos, problems };
   }
 
   /**
@@ -410,8 +417,15 @@ export class CoordinatorService extends EventEmitter {
           created.push(fresh);
           targets.set(it.name, fresh);
         }
-        for (const it of items) for (const t of it.todos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: targets.get(it.name)!.id, title: t.title, detail: t.detail, assignee: t.assignee }, 'agent').id);
-        for (const t of projectTodos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: null, ...t }, 'agent').id);
+        // 프로젝트 TODO 가 먼저다: 워크스페이스 TODO 가 그 아래에 딸린다 (제목으로 잇는다. 이미 있던 프로젝트 TODO 에도 딸릴 수 있다).
+        const parents = new Map<string, string>();
+        for (const t of this.d.todos.listProject(r.project_id)) if (t.workspaceId === null && !parents.has(t.title)) parents.set(t.title, t.id);
+        for (const t of projectTodos) {
+          const made = this.d.todos.add({ projectId: r.project_id, workspaceId: null, title: t.title, detail: t.detail, assignee: t.assignee }, 'agent');
+          todoIds.push(made.id);
+          parents.set(t.title, made.id);
+        }
+        for (const it of items) for (const t of it.todos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: targets.get(it.name)!.id, title: t.title, detail: t.detail, assignee: t.assignee, parentId: (t.under && parents.get(t.under)) || null }, 'agent').id);
       } catch (e) {
         // 보낸 배정도 거둔다.
         for (const id of sent) await this.d.assign!.cancel(id).catch(() => undefined);

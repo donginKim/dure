@@ -1,5 +1,5 @@
 import type { PlanDecision, ProposalItem } from '@shared/types';
-import { approveLabel, assignChoiceProblem, assignProgressLine, draftRepoId, fromDraft, planCounts, planProblem, specMessage, tidyPlan, toDraft } from '../../src/renderer/planView';
+import { approveLabel, assignChoiceProblem, assignProgressLine, draftRepoId, fromDraft, planCounts, planProblem, setProjectTodos, specMessage, tidyPlan, toDraft } from '../../src/renderer/planView';
 
 const item = (o: Partial<ProposalItem> = {}): ProposalItem => ({ name: '로그인 화면', repoId: 'r1', baseBranch: 'main', role: '', todos: [], existing: false, ...o });
 const todo = (title: string, assignee: 'agent' | 'user' = 'agent') => ({ title, detail: '', assignee });
@@ -116,4 +116,17 @@ test('이미 있는 폴더를 등록하는 계획: 등록만 있어도 승인할
   expect(planProblem({ addRepos: [f], items: [], projectTodos: [] })).toBeNull();
   expect(approveLabel({ addRepos: [f], items: [ws], projectTodos: [] })).toBe('승인하고 저장소 1개 등록, 워크스페이스 1개 만들기');
   expect(planProblem({ addRepos: [], items: [ws], projectTodos: [] })).toContain('등록할 저장소 목록에 없습니다');
+});
+
+test('setProjectTodos: 프로젝트 TODO 의 제목을 고치면 딸린 TODO 가 따라가고, 빼면 떼어 낸다', () => {
+  const d = toDraft({ newRepos: [], items: [item({ todos: [{ ...todo('폼'), under: '로그인' }, { ...todo('토큰'), under: '결제' }, todo('기타')] })], projectTodos: [todo('로그인'), todo('결제')] });
+  const renamed = setProjectTodos(d, [todo('로그인 기능'), todo('결제')]);
+  expect(renamed.items[0]!.todos.map((t) => t.under)).toEqual(['로그인 기능', '결제', undefined]);
+  const removed = setProjectTodos(renamed, [todo('결제')]);
+  expect(removed.items[0]!.todos.map((t) => t.under)).toEqual([undefined, '결제', undefined]);
+  expect('under' in removed.items[0]!.todos[0]!).toBe(false);
+  // 더하기만 했으면 그대로다
+  expect(setProjectTodos(removed, [todo('결제'), todo('')]).items).toEqual(removed.items);
+  // 보낼 때: under 의 공백을 다듬고, 빈 것은 뺀다
+  expect(tidyPlan({ items: [item({ todos: [{ ...todo('폼'), under: ' 로그인 ' }, { ...todo('x'), under: ' ' }] })], projectTodos: [todo('로그인')] }).items[0]!.todos).toEqual([{ ...todo('폼'), under: '로그인' }, todo('x')]);
 });

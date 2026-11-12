@@ -205,11 +205,11 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
                 <span className="t">{g.title}</span>
               </div>
               <Ticks items={g.items} />
-              <TodoList projectId={project.id} workspaceId={g.workspaceId} items={g.items} readOnly={done} />
+              <TodoList projectId={project.id} workspaceId={g.workspaceId} items={g.items} readOnly={done} links={{ all: todos, workspaces }} />
             </div>
           ))}
         </div>
-        <div className="help">프로젝트 항목은 프로젝트 전체의 할 일입니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</div>
+        <div className="help">프로젝트 항목은 프로젝트에서 이뤄야 하는 큰 일입니다. 워크스페이스 항목을 그 아래에 달면 (항목에 마우스를 올려 고릅니다), 딸린 일이 다 끝났을 때 프로젝트 항목이 저절로 완료됩니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</div>
       </div>
 
       <CleanupList project={project} readOnly={done} />

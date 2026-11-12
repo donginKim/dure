@@ -66,6 +66,11 @@ export interface Todo {
   projectId: string;
   /** null 이면 프로젝트 범위 항목 */
   workspaceId: string | null;
+  /**
+   * 이 항목이 딸린 프로젝트 TODO (워크스페이스 항목만 가진다). 프로젝트 항목은 딸린 워크스페이스 항목들의 묶음이다:
+   * 딸린 것이 다 끝나면 저절로 완료되고, 하나라도 시작되면 진행 중이 된다.
+   */
+  parentId: string | null;
   title: string;
   detail: string;
   status: TodoStatus;
@@ -431,6 +436,8 @@ export interface PlanTodo {
   detail: string;
   /** agent: 그 워크스페이스의 에이전트가 할 일. user: 사용자가 할 일 (결정, 커밋, 배포 등) */
   assignee: TodoAssignee;
+  /** 워크스페이스 TODO 에만: 이 일이 딸릴 프로젝트 TODO 의 제목. 비어 있으면 어디에도 딸리지 않는다 */
+  under?: string;
 }
 
 /** 계획안에 든 워크스페이스 하나와 그 TODO */

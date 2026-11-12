@@ -11,7 +11,9 @@ type Tab = 'todo' | 'talk';
 const remembered = new Map<string, { collapsed: boolean; tab: Tab }>();
 
 /** 워크스페이스 화면 오른쪽 패널: TODO 와 대화를 탭으로 오간다. */
-export function SidePanel({ workspace, workspaces, todos, pending, conversation, readOnly }: {
+export function SidePanel({ workspace, workspaces, todos, projectTodos, pending, conversation, readOnly }: {
+  /** 프로젝트 전체의 TODO: 이 워크스페이스의 일이 어느 프로젝트 항목에 딸렸는지 보이는 데 쓴다 */
+  projectTodos?: Todo[];
   /** 완료된 프로젝트: TODO 를 보기만 한다 */
   readOnly?: boolean;
   workspace: Workspace; workspaces: Workspace[]; todos: Todo[]; pending?: PendingInfo; conversation: ConversationData;
@@ -47,7 +49,7 @@ export function SidePanel({ workspace, workspaces, todos, pending, conversation,
         <button className="btn ghost" title="패널 접기" onClick={() => setState({ ...state, collapsed: true })}>접기</button>
       </div>
       {state.tab === 'todo'
-        ? <TodoBody workspace={workspace} items={todos} pending={pending} readOnly={readOnly} />
+        ? <TodoBody workspace={workspace} items={todos} pending={pending} readOnly={readOnly} links={projectTodos ? { all: projectTodos, workspaces } : undefined} />
         : (
           <div className="todo-scroll talk">
             <ConversationList

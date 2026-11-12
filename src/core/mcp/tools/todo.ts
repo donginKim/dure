@@ -44,16 +44,27 @@ export const todoTools: ToolBundle = (server, ctx, deps) => {
       : '이 워크스페이스의 TODO 와 프로젝트 범위 TODO 를 읽는다. userChanges 는 사용자가 두레 화면에서 바꾼 내용 중 아직 전달되지 않은 것이다.' },
     async () => {
       const all = todos.listProject(ctx.project.id);
+      const titleOf = new Map(all.map((t) => [t.id, t.title]));
+      const names = new Map(deps.workspaces.list(ctx.project.id).map((w) => [w.id, w.name]));
+      // 프로젝트 항목에는 딸린 워크스페이스 항목을, 워크스페이스 항목에는 딸린 프로젝트 항목의 제목을 붙인다.
+      const withLinks = (t: Todo) => ({
+        ...view(t),
+        ...(t.parentId && titleOf.has(t.parentId) ? { under: titleOf.get(t.parentId) } : {}),
+        ...(t.workspaceId === null && all.some((c) => c.parentId === t.id) ? {
+          note: '딸린 항목(children)이 다 끝나면 두레가 이 항목을 완료로 바꾼다. 상태를 직접 고칠 필요가 없다.',
+          children: all.filter((c) => c.parentId === t.id).map((c) => ({ workspace: names.get(c.workspaceId ?? '') ?? '', title: c.title, status: c.status })),
+        } : {}),
+      });
       return ok({
         items: [
           ...todos.listWorkspace(ctx.workspace.id),
           ...all.filter((t) => t.workspaceId === null),
-        ].map(view),
+        ].map(withLinks),
         // 조율 에이전트는 일을 나눠 맡긴 워크스페이스들의 진행을 본다.
         ...(coordinator ? {
           workspaces: deps.workspaces.list(ctx.project.id).map((w) => ({
             name: w.name, status: w.status, ...(w.summary ? { summary: w.summary } : {}),
-            todos: all.filter((t) => t.workspaceId === w.id).map((t) => ({ title: t.title, status: t.status, assignee: t.assignee })),
+            todos: all.filter((t) => t.workspaceId === w.id).map((t) => ({ title: t.title, status: t.status, assignee: t.assignee, ...(t.parentId && titleOf.has(t.parentId) ? { under: titleOf.get(t.parentId) } : {}) })),
           })),
         } : {}),
         // 다른 사람에게 나눠 준 일과 그 진행 (그 사람의 두레에 있다. 읽기 전용).

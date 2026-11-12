@@ -174,6 +174,31 @@ describe('계획안', () => {
     await expect(core.coordinator.approve(a.id, { items: a.items, projectTodos: [] })).rejects.toThrow('승인을 기다리는 계획안이 아닙니다.');
   });
 
+  test('워크스페이스의 TODO 는 under 로 프로젝트 TODO 에 딸리고, 다 끝나면 프로젝트 TODO 가 완료된다', async () => {
+    core.coordinator.ensure(projectId);
+    // 없는 프로젝트 TODO 를 가리키면 올리지 못한다
+    await expect(core.coordinator.propose(projectId, {
+      summary: '정리', workspaces: [W('로그인 화면', 'shop-front', { todos: [{ title: '폼', under: '없는 일' }] })], project_todos: ['로그인 기능'],
+    })).rejects.toThrow('"없는 일" 라는 프로젝트 TODO 가 없다');
+    const p = await core.coordinator.propose(projectId, {
+      summary: '정리', project_todos: ['로그인 기능', { title: '배포 승인', assignee: 'user' }],
+      workspaces: [
+        W('로그인 화면', 'shop-front', { todos: [{ title: '폼', under: '로그인 기능' }, '정리']}),
+        W('로그인 API', 'shop-back', { todos: [{ title: 'API', under: '로그인 기능' }] }),
+      ],
+    });
+    expect(p.items[0]!.todos.map((t) => t.under)).toEqual(['로그인 기능', undefined]);
+    const res = await core.coordinator.approve(p.id, { items: p.items, projectTodos: p.projectTodos });
+    expect(res.todos).toBe(5);
+    const all = core.todos.listProject(projectId);
+    const big = all.find((t) => t.title === '로그인 기능')!;
+    expect(all.filter((t) => t.parentId === big.id).map((t) => t.title).sort()).toEqual(['API', '폼']);
+    expect(all.find((t) => t.title === '정리')!.parentId).toBeNull();
+    for (const t of all.filter((x) => x.parentId === big.id)) core.todos.update(t.id, { status: 'done' }, { actor: 'user' });
+    expect(core.todos.get(big.id)!.status).toBe('done');
+    expect(all.find((t) => t.title === '배포 승인')!.status).toBe('todo');
+  });
+
   test('승인하면 사용자가 고친 최종 계획대로 워크스페이스와 TODO 를 만들고, 조율 에이전트에게 알린다', async () => {
     core.settings.update({ defaultPermissionMode: 'bypass' });
     const c = core.coordinator.ensure(projectId);

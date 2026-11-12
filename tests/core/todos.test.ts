@@ -1,6 +1,6 @@
 import { openDatabase } from '@core/db';
 import { ProjectStore, RepoStore, WorkspaceStore } from '@core/stores';
-import { pendingMessage, TodoConflictError, TodoService } from '@core/todos';
+import { pendingMessage, rollup, TodoConflictError, TodoService } from '@core/todos';
 
 function setup() {
   const db = openDatabase(':memory:');
@@ -257,5 +257,72 @@ describe('todoDigest (컨텍스트가 새로 시작될 때 다시 알려주는 �
     const text = todoDigest(todos.listWorkspace(front.id), [])!;
     expect(text).toContain('완료 1건, 취소 0건.');
     expect(text).not.toContain('할 일:');
+  });
+});
+
+describe('프로젝트 항목과 거기에 딸린 워크스페이스 항목', () => {
+  test('rollup: 다 끝나면 완료, 하나라도 시작되면 진행 중, 취소한 것은 빼고 본다', () => {
+    const s = (...list: string[]) => rollup(list.map((status) => ({ status: status as never })));
+    expect(s()).toBeNull();
+    expect(s('cancelled')).toBeNull();
+    expect(s('todo', 'todo')).toBe('todo');
+    expect(s('todo', 'doing')).toBe('doing');
+    expect(s('done', 'todo')).toBe('doing');
+    expect(s('done', 'done', 'cancelled')).toBe('done');
+  });
+
+  test('딸린 항목의 진행에 따라 프로젝트 항목의 상태가 저절로 바뀐다', () => {
+    const { todos, p, front, back } = setup();
+    const big = todos.add({ projectId: p.id, title: '로그인 기능' }, 'agent');
+    const a = todos.add({ projectId: p.id, workspaceId: front.id, title: '폼', parentId: big.id }, 'agent');
+    const b = todos.add({ projectId: p.id, workspaceId: back.id, title: 'API', parentId: big.id }, 'agent');
+    expect(a.parentId).toBe(big.id);
+    expect(todos.children(big.id).map((t) => t.title)).toEqual(['폼', 'API']);
+    expect(todos.get(big.id)!.status).toBe('todo');
+    todos.update(a.id, { status: 'doing' }, { actor: 'agent', rev: 1 });
+    expect(todos.get(big.id)).toMatchObject({ status: 'doing', rev: 2 });
+    todos.update(a.id, { status: 'done' }, { actor: 'agent', rev: 2 });
+    expect(todos.get(big.id)!.status).toBe('doing');
+    todos.update(b.id, { status: 'done' }, { actor: 'user' });
+    expect(todos.get(big.id)!.status).toBe('done');
+    // 새 일이 딸리면 다시 열린다
+    const c = todos.add({ projectId: p.id, workspaceId: back.id, title: '시험', parentId: big.id }, 'agent');
+    expect(todos.get(big.id)!.status).toBe('doing');
+    // 지우거나 취소하면 남은 것으로 다시 본다
+    todos.update(c.id, { status: 'cancelled' }, { actor: 'user' });
+    expect(todos.get(big.id)!.status).toBe('done');
+    todos.update(c.id, { status: 'todo' }, { actor: 'user' });
+    todos.remove(c.id, { actor: 'user' });
+    expect(todos.get(big.id)!.status).toBe('done');
+  });
+
+  test('달고 떼기: 같은 프로젝트의 프로젝트 항목에만 달 수 있고, 프로젝트 항목을 지우면 딸린 항목은 남는다', () => {
+    const { todos, projects, p, front } = setup();
+    const big = todos.add({ projectId: p.id, title: '큰 일' }, 'agent');
+    const other = todos.add({ projectId: p.id, title: '다른 큰 일' }, 'agent');
+    const a = todos.add({ projectId: p.id, workspaceId: front.id, title: '작은 일', status: 'done' }, 'agent');
+    expect(todos.setParent(a.id, big.id).parentId).toBe(big.id);
+    expect(todos.get(big.id)!.status).toBe('done');
+    // 옮기면 앞의 것은 그대로 두고 (딸린 것이 없다), 새 것이 맞춰진다
+    todos.setParent(a.id, other.id);
+    expect([todos.get(big.id)!.status, todos.get(other.id)!.status]).toEqual(['done', 'done']);
+    expect(todos.setParent(a.id, null).parentId).toBeNull();
+    // 워크스페이스 항목 아래, 다른 프로젝트의 항목 아래, 프로젝트 항목끼리는 안 된다
+    const b = todos.add({ projectId: p.id, workspaceId: front.id, title: '또 작은 일' }, 'agent');
+    expect(() => todos.setParent(a.id, b.id)).toThrow('그런 프로젝트 항목이 없습니다');
+    const p2 = projects.create('다른 프로젝트');
+    const far = todos.add({ projectId: p2.id, title: '남의 큰 일' }, 'agent');
+    expect(() => todos.setParent(a.id, far.id)).toThrow('그런 프로젝트 항목이 없습니다');
+    expect(() => todos.setParent(other.id, big.id)).toThrow('다른 항목 아래에 둘 수 없습니다');
+    expect(() => todos.add({ projectId: p.id, title: 'x', parentId: big.id }, 'agent')).toThrow('다른 항목 아래에 둘 수 없습니다');
+    // 프로젝트 항목을 지운다
+    todos.setParent(a.id, big.id);
+    todos.remove(big.id, { actor: 'user' });
+    expect(todos.get(a.id)).toMatchObject({ title: '작은 일', parentId: null });
+    // 취소해 둔 프로젝트 항목은 딸린 것이 바뀌어도 그대로다
+    todos.update(other.id, { status: 'cancelled' }, { actor: 'user' });
+    todos.setParent(b.id, other.id);
+    todos.update(b.id, { status: 'done' }, { actor: 'user' });
+    expect(todos.get(other.id)!.status).toBe('cancelled');
   });
 });

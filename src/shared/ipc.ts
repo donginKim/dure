@@ -183,6 +183,10 @@ export interface DureApi {
     status(): Promise<WorkStatus>;
     /** 그 달의 기록 (month 는 1~12) */
     month(year: number, month: number): Promise<WorkDay[]>;
+    /** 출근을 적는다 (지금 시각을 30분 단위로 올려서) */
+    clockIn(): Promise<WorkStatus>;
+    /** 퇴근을 적는다 (지금 시각을 30분 단위로 올려서) */
+    clockOut(): Promise<WorkStatus>;
     /** 지금 붙어 있는 네트워크를 근무지로 기억한다 */
     rememberCurrent(): Promise<WorkStatus>;
     forgetNetworks(): Promise<void>;
@@ -306,7 +310,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
-  'worktime.status', 'worktime.month', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession',
+  'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession',
   'pr.info', 'pr.create', 'pr.open',
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',

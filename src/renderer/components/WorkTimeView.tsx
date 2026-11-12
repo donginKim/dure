@@ -31,7 +31,7 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
   return (
     <div className="page">
       <h1>근무시간</h1>
-      <p className="lead">근무지의 와이파이에 붙어 있는 동안을 근무시간으로 잽니다. 두레가 켜져 있을 때만 재고, 1분마다 확인합니다. 5분 넘게 끊겼다 다시 붙으면 새 구간으로 적습니다.</p>
+      <p className="lead">근무지의 와이파이에 붙어 있는 동안을 근무시간으로 잽니다. 두레가 켜져 있을 때만 잽니다. 근무지의 와이파이에 붙으면 그날의 출근을 적고, 퇴근은 아래의 퇴근 단추로 적습니다. 시각은 30분 단위로 올려 적습니다 (09:14 → 09:30, 15:20 → 15:30).</p>
       {error && <div className="error" onClick={() => setError('')}>{error}</div>}
       {status && (
         <div className={`work-status${status.atWork ? ' on' : ''}`}>
@@ -39,11 +39,20 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
             <><span className="grow">근무시간을 재지 않고 있습니다. 설정에서 켜고 근무지의 와이파이 이름을 적으세요.</span><button className="btn primary" onClick={onOpenSettings}>설정 열기</button></>
           ) : (
             <>
-              <span className={`dot ${status.atWork ? 'working' : 'stopped'}`} />
+              <span className={`dot ${status.openSession || (status.unit === 'minute' && status.atWork) ? 'working' : 'stopped'}`} />
               <span className="grow">
-                {status.atWork ? <><b>근무 중</b>{status.since ? ` · ${hhmm(status.since)} 부터` : ''} · 오늘 {duration(status.todayMs)}</> : <>근무지의 네트워크가 아닙니다{status.todayMs > 0 ? ` · 오늘 ${duration(status.todayMs)}` : ''}</>}
-                <span className="muted"> · {status.ssid ? `지금 와이파이: ${status.ssid}` : status.ssidHidden ? 'macOS 가 와이파이 이름을 알려 주지 않습니다' : '와이파이에 붙어 있지 않습니다'}</span>
+                {status.unit === 'half' ? (
+                  status.openSession
+                    ? <><b>근무 중</b> · {hhmm(status.openSession.startAt)} 출근 · <b>오늘 {status.todayMs > 0 ? duration(status.todayMs) : '0분'}</b></>
+                    : status.clockedOut ? <>퇴근했습니다 · <b>오늘 {status.todayMs > 0 ? duration(status.todayMs) : '0분'}</b></> : <>아직 출근 전입니다{status.atWork ? '' : ' (근무지의 와이파이에 붙으면 출근으로 적습니다)'}</>
+                ) : (
+                  status.atWork ? <><b>근무 중</b>{status.since ? ` · ${hhmm(status.since)} 부터` : ''} · 오늘 {duration(status.todayMs)}</> : <>근무지의 네트워크가 아닙니다{status.todayMs > 0 ? ` · 오늘 ${duration(status.todayMs)}` : ''}</>
+                )}
+                <span className="muted"> · {status.ssid ? `지금 와이파이: ${status.ssid}` : status.atWork ? '근무지의 네트워크입니다' : status.ssidHidden ? 'macOS 가 와이파이 이름을 알려 주지 않습니다' : '와이파이에 붙어 있지 않습니다'}</span>
               </span>
+              {status.unit === 'half' && (status.openSession
+                ? <button className="btn primary" title="지금 시각을 30분 단위로 올려 퇴근으로 적습니다" onClick={() => run(window.dure.worktime.clockOut())}>퇴근</button>
+                : <button className="btn" title="지금 시각을 30분 단위로 올려 출근으로 적습니다 (와이파이에 붙으면 저절로 적히지만, 직접 누를 수도 있습니다)" onClick={() => run(window.dure.worktime.clockIn())}>{status.clockedOut ? '다시 출근' : '출근'}</button>)}
               {!status.atWork && !status.remembered && <button className="btn" title="와이파이 이름을 읽을 수 없을 때: 지금 붙어 있는 네트워크(공유기)를 근무지로 기억합니다" onClick={() => run(window.dure.worktime.rememberCurrent())}>지금 네트워크를 근무지로 기억</button>}
               <button className="btn ghost" onClick={onOpenSettings}>설정</button>
             </>
@@ -67,20 +76,20 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
           {monthGrid(ym.y, ym.m, days).map((c) => (c.day === null ? <div key={c.key} className="cal-cell blank" /> : (
             <button key={c.key} className={`cal-cell${c.weekend ? ' weekend' : ''}${c.key === today ? ' today' : ''}${c.key === picked ? ' picked' : ''}${c.data ? ' has' : ''}`} onClick={() => setPicked(c.key)}>
               <span className="cal-day">{c.day}</span>
-              {c.data && <><span className="cal-total">{duration(c.data.totalMs)}</span><span className="cal-range">{hhmm(c.data.firstAt)} ~ {hhmm(c.data.lastAt)}</span></>}
+              {c.data && <><span className="cal-total">{c.data.totalMs > 0 ? duration(c.data.totalMs) : '0분'}</span><span className="cal-range">{hhmm(c.data.firstAt)} ~ {c.data.sessions.some((x) => x.open) ? '근무 중' : hhmm(c.data.lastAt)}</span></>}
             </button>
           )))}
         </div>
       </div>
 
       <div className="section">
-        <div className="section-head"><h2>{picked} {detail && <span className="plan-hint">합계 {duration(detail.totalMs)} · {hhmm(detail.firstAt)} 에 처음, {hhmm(detail.lastAt)} 에 마지막</span>}</h2></div>
+        <div className="section-head"><h2>{picked} {detail && <span className="plan-hint">합계 {detail.totalMs > 0 ? duration(detail.totalMs) : '0분'}</span>}</h2></div>
         <div className="rows">
           {!detail && <div className="rows-empty">이 날의 기록이 없습니다.</div>}
           {detail?.sessions.map((s) => (
             <div key={s.id} className="row">
-              <div className="grow">{hhmm(s.startAt)} ~ {hhmm(s.endAt)}</div>
-              <span className="muted">{duration(s.endAt - s.startAt)}</span>
+              <div className="grow">{hhmm(s.startAt)} 출근 ~ {s.open ? '근무 중' : `${hhmm(s.endAt)} 퇴근`}{s.auto && <span className="tag" title="퇴근을 누르지 않아, 마지막으로 근무지에서 확인된 시각으로 닫았습니다">저절로 닫음</span>}</div>
+              <span className="muted">{s.open ? '' : s.endAt > s.startAt ? duration(s.endAt - s.startAt) : '0분'}</span>
               <button className="btn ghost" title="잘못 잰 구간을 지웁니다" onClick={() => run(window.dure.worktime.removeSession(s.id))}>지우기</button>
             </div>
           ))}

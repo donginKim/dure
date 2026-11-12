@@ -353,6 +353,11 @@ export interface Settings {
   workTimeEnabled: boolean;
   /** 근무지의 와이파이 이름. 이 이름의 와이파이에 붙어 있는 동안을 근무시간으로 센다 */
   workWifi: string;
+  /**
+   * 세는 방식. half: 출퇴근 기록. 근무지의 와이파이에 붙으면 출근으로 적고 (30분 단위로 올림), 퇴근은 사용자가 누른다 (30분 단위로 올림).
+   * minute: 붙어 있던 시간을 분 단위로 그대로 센다 (끊기면 멈춘다)
+   */
+  workTimeUnit: 'minute' | 'half';
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -740,7 +745,8 @@ export interface Brief { id: string; projectId: string; fromPeerId: string; from
 
 // ---- 근무시간: 근무지의 와이파이에 붙어 있는 동안을 잰다 ----
 /** 근무지에 붙어 있던 한 구간 (끊겼다 다시 붙으면 새 구간) */
-export interface WorkSession { id: string; day: string; startAt: number; endAt: number }
+/** open: 출근만 하고 아직 퇴근하지 않았다 (endAt 은 마지막으로 근무지에서 확인된 시각). auto: 퇴근을 누르지 않아 두레가 닫았다 */
+export interface WorkSession { id: string; day: string; startAt: number; endAt: number; open: boolean; auto: boolean }
 export interface WorkDay { day: string; /** 그날 근무지에 붙어 있던 시간의 합 (ms) */ totalMs: number; firstAt: number; lastAt: number; sessions: WorkSession[] }
 export interface WorkStatus {
   enabled: boolean;
@@ -756,4 +762,9 @@ export interface WorkStatus {
   networks: number;
   /** 오늘 지금까지 (ms) 와 지금 구간이 시작된 시각 */
   todayMs: number; since: number | null;
+  /** 출퇴근 기록 방식에서: 출근한 채로 있는 구간 (퇴근을 누를 수 있다) */
+  openSession: WorkSession | null;
+  /** 오늘 출근했다가 퇴근했다 (지금은 출근한 상태가 아니다) */
+  clockedOut: boolean;
+  unit: 'minute' | 'half';
 }

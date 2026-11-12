@@ -3,3 +3,5 @@ allowBuilds:
   better-sqlite3: true
   node-pty: true
   esbuild: true
+  # Windows 설치 파일을 만들 때만 쓰는 것이라 빌드하지 않는다
+  electron-winstaller: false

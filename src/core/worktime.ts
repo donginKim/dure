@@ -158,7 +158,7 @@ export class WorkTimeService extends EventEmitter {
       enabled: s.workTimeEnabled, atWork: this.atWork, ssid: this.last.ssid, ssidHidden: this.last.hidden,
       remembered: this.remembered(this.last.gateway), networks: (this.d.db.prepare('SELECT count(*) AS n FROM work_networks').get() as { n: number }).n,
       todayMs: today.totalMs, since: openRow ? openRow.start_at : s.workTimeUnit === 'minute' && this.atWork && last ? last.startAt : null,
-      openSession: openRow ? toSession(openRow) : null, unit: s.workTimeUnit,
+      openSession: openRow ? toSession(openRow) : null, clockedOut: !openRow && today.sessions.length > 0, unit: s.workTimeUnit,
     };
   }
 

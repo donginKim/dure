@@ -764,5 +764,7 @@ export interface WorkStatus {
   todayMs: number; since: number | null;
   /** 출퇴근 기록 방식에서: 출근한 채로 있는 구간 (퇴근을 누를 수 있다) */
   openSession: WorkSession | null;
+  /** 오늘 출근했다가 퇴근했다 (지금은 출근한 상태가 아니다) */
+  clockedOut: boolean;
   unit: 'minute' | 'half';
 }

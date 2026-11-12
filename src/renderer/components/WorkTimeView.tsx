@@ -44,7 +44,7 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
                 {status.unit === 'half' ? (
                   status.openSession
                     ? <><b>근무 중</b> · {hhmm(status.openSession.startAt)} 출근 · <b>오늘 {status.todayMs > 0 ? duration(status.todayMs) : '0분'}</b></>
-                    : status.todayMs > 0 ? <>퇴근했습니다 · <b>오늘 {duration(status.todayMs)}</b></> : <>아직 출근 전입니다{status.atWork ? '' : ' (근무지의 와이파이에 붙으면 출근으로 적습니다)'}</>
+                    : status.clockedOut ? <>퇴근했습니다 · <b>오늘 {status.todayMs > 0 ? duration(status.todayMs) : '0분'}</b></> : <>아직 출근 전입니다{status.atWork ? '' : ' (근무지의 와이파이에 붙으면 출근으로 적습니다)'}</>
                 ) : (
                   status.atWork ? <><b>근무 중</b>{status.since ? ` · ${hhmm(status.since)} 부터` : ''} · 오늘 {duration(status.todayMs)}</> : <>근무지의 네트워크가 아닙니다{status.todayMs > 0 ? ` · 오늘 ${duration(status.todayMs)}` : ''}</>
                 )}
@@ -52,7 +52,7 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
               </span>
               {status.unit === 'half' && (status.openSession
                 ? <button className="btn primary" title="지금 시각을 30분 단위로 올려 퇴근으로 적습니다" onClick={() => run(window.dure.worktime.clockOut())}>퇴근</button>
-                : <button className="btn" title="지금 시각을 30분 단위로 올려 출근으로 적습니다 (와이파이에 붙으면 저절로 적히지만, 직접 누를 수도 있습니다)" onClick={() => run(window.dure.worktime.clockIn())}>{status.todayMs > 0 ? '다시 출근' : '출근'}</button>)}
+                : <button className="btn" title="지금 시각을 30분 단위로 올려 출근으로 적습니다 (와이파이에 붙으면 저절로 적히지만, 직접 누를 수도 있습니다)" onClick={() => run(window.dure.worktime.clockIn())}>{status.clockedOut ? '다시 출근' : '출근'}</button>)}
               {!status.atWork && !status.remembered && <button className="btn" title="와이파이 이름을 읽을 수 없을 때: 지금 붙어 있는 네트워크(공유기)를 근무지로 기억합니다" onClick={() => run(window.dure.worktime.rememberCurrent())}>지금 네트워크를 근무지로 기억</button>}
               <button className="btn ghost" onClick={onOpenSettings}>설정</button>
             </>

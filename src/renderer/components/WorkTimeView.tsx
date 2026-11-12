@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WorkDay, WorkStatus } from '@shared/types';
-import { breakLabel, dayKey, duration, hhmm, monthGrid, monthTotal, parseBreak } from '../worktimeView';
+import { atTime, breakLabel, canLeave, leftToLeave, dayKey, duration, hhmm, monthGrid, monthTotal, parseBreak } from '../worktimeView';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -48,6 +48,9 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
                 ) : (
                   status.atWork ? <><b>근무 중</b>{status.since ? ` · ${hhmm(status.since)} 부터` : ''} · 오늘 {duration(status.todayMs)}</> : <>근무지의 네트워크가 아닙니다{status.todayMs > 0 ? ` · 오늘 ${duration(status.todayMs)}` : ''}</>
                 )}
+                {canLeave(status)
+                  ? <b className="work-leave" title={`오늘 ${duration(status.targetMs)}(휴게 시간을 뺀 것)을 채웠습니다`}>퇴근 가능!</b>
+                  : (status.openSession || (status.unit === 'minute' && status.atWork)) && leftToLeave(status) >= 60_000 && <span className="muted"> · 퇴근까지 {duration(leftToLeave(status))}</span>}
                 <span className="muted"> · {status.ssid ? `지금 와이파이: ${status.ssid}` : status.atWork ? '근무지의 네트워크입니다' : status.ssidHidden ? 'macOS 가 와이파이 이름을 알려 주지 않습니다' : '와이파이에 붙어 있지 않습니다'}</span>
               </span>
               {status.unit === 'half' && (status.openSession
@@ -86,14 +89,20 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
         <div className="section-head"><h2>{picked} {detail && <span className="plan-hint">근무 {detail.totalMs > 0 ? duration(detail.totalMs) : '0분'}{detail.breakMin > 0 && ` (출근해 있던 ${duration(detail.grossMs)} 에서 휴게 ${breakLabel(detail.breakMin)} 을 뺌)`}</span>}</h2></div>
         <div className="rows">
           {!detail?.sessions.length && <div className="rows-empty">이 날의 출퇴근 기록이 없습니다.</div>}
-          {detail?.sessions.map((s) => (
-            <div key={s.id} className="row">
-              <div className="grow">{hhmm(s.startAt)} 출근 ~ {s.open ? '근무 중' : `${hhmm(s.endAt)} 퇴근`}{s.auto && <span className="tag" title="퇴근을 누르지 않아, 마지막으로 근무지에서 확인된 시각으로 닫았습니다">저절로 닫음</span>}</div>
-              <span className="muted">{s.open ? '' : s.endAt > s.startAt ? duration(s.endAt - s.startAt) : '0분'}</span>
-              <button className="btn ghost" title="잘못 잰 구간을 지웁니다" onClick={() => run(window.dure.worktime.removeSession(s.id))}>지우기</button>
+          {detail?.sessions.map((x) => (
+            <div key={`${x.id}:${x.startAt}:${x.endAt}:${x.open}`} className="row">
+              <div className="grow work-edit">
+                <TimeField label="출근" value={hhmm(x.startAt)} onCommit={(t) => { const at = atTime(picked, t); if (at !== null) run(window.dure.worktime.editSession(x.id, { startAt: at })); }} />
+                <span className="muted">~</span>
+                <TimeField label="퇴근" value={x.open ? '' : hhmm(x.endAt)} placeholder="근무 중" onCommit={(t) => { const at = atTime(picked, t); if (at !== null) run(window.dure.worktime.editSession(x.id, { endAt: at })); }} />
+                {x.auto && <span className="tag" title="퇴근을 누르지 않아, 마지막으로 근무지에서 확인된 시각으로 닫았습니다">저절로 닫음</span>}
+              </div>
+              <span className="muted">{x.open ? '근무 중' : x.endAt > x.startAt ? duration(x.endAt - x.startAt) : '0분'}</span>
+              <button className="btn ghost" title="이 기록을 지웁니다" onClick={() => run(window.dure.worktime.removeSession(x.id))}>지우기</button>
             </div>
           ))}
         </div>
+        <AddSession key={picked} day={picked} onAdd={(a, b) => run(window.dure.worktime.addSession(a, b))} />
         <BreakEditor key={`${picked}:${detail?.breakMin ?? 0}`} day={picked} minutes={detail?.breakMin ?? 0} onSave={(m) => run(window.dure.worktime.setBreak(picked, m))} />
       </div>
     </div>
@@ -114,6 +123,38 @@ function BreakEditor({ day, minutes, onSave }: { day: string; minutes: number; o
       <input type="text" className={`work-break-input${bad ? ' bad' : ''}`} value={text} placeholder="분 (예: 60, 1:30)" title={`${day} 의 휴게 시간. 분으로 적거나 1:30, 1시간 30분처럼 적습니다`} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !bad && !e.nativeEvent.isComposing) onSave(parsed!); }} />
       <button className="btn" disabled={bad || parsed === minutes} onClick={() => onSave(parsed!)}>적기</button>
       {minutes > 0 && <button className="btn ghost" onClick={() => onSave(0)}>지우기</button>}
+    </div>
+  );
+}
+
+/** 시각을 고치는 칸. 고친 뒤 Enter 를 누르거나 칸을 벗어나면 적는다. */
+function TimeField({ label, value, placeholder, onCommit }: { label: string; value: string; placeholder?: string; onCommit: (time: string) => void }) {
+  const [text, setText] = useState(value);
+  const commit = (): void => { if (text && text !== value) onCommit(text); };
+  return (
+    <label className="work-time" title={`${label} 시각을 고칩니다. 고친 뒤 Enter 를 누르세요`}>
+      <span className="muted">{label}</span>
+      <input type="time" step={1800} value={text} placeholder={placeholder} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }} />
+      {!text && placeholder && <span className="muted">{placeholder}</span>}
+    </label>
+  );
+}
+
+/** 기록을 직접 더한다 (두레를 켜 두지 않은 날, 빠진 구간). */
+function AddSession({ day, onAdd }: { day: string; onAdd: (startAt: number, endAt: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState('09:00');
+  const [to, setTo] = useState('18:00');
+  const a = atTime(day, from); const b = atTime(day, to);
+  const bad = a === null || b === null || b < a;
+  if (!open) return <button className="btn ghost work-add" onClick={() => setOpen(true)}>+ 이 날의 기록 직접 더하기</button>;
+  return (
+    <div className="work-break">
+      <div className="grow"><b>기록 더하기</b> <span className="muted">{day} 의 출근과 퇴근 시각을 적습니다</span></div>
+      <label className="work-time"><span className="muted">출근</span><input type="time" step={1800} value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+      <label className="work-time"><span className="muted">퇴근</span><input type="time" step={1800} value={to} onChange={(e) => setTo(e.target.value)} /></label>
+      <button className="btn primary" disabled={bad} onClick={() => { onAdd(a!, b!); setOpen(false); }}>더하기</button>
+      <button className="btn ghost" onClick={() => setOpen(false)}>취소</button>
     </div>
   );
 }

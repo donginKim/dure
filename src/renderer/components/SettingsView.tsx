@@ -110,7 +110,7 @@ export function SettingsView() {
   const row = (key: Key): { changed: boolean; error?: string; onReset: () => void } => ({
     changed: s[key] !== defaults[key], error: errors[key], onReset: () => save(key, defaults[key]),
   });
-  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize' | 'peerPort') => (v: string): void => {
+  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize' | 'peerPort' | 'workGraceMin' | 'workDayHours') => (v: string): void => {
     const n = Number(v.trim());
     if (!v.trim() || Number.isNaN(n)) { setErrors((e) => ({ ...e, [key]: '숫자를 쓰세요.' })); return; }
     save(key, n);
@@ -259,6 +259,12 @@ export function SettingsView() {
               <option value="half">출퇴근 기록 (30분 단위, 퇴근은 단추로)</option>
               <option value="minute">붙어 있던 시간 그대로 (분 단위)</option>
             </select>
+          </Row>
+          <Row label="하루 근무시간" help="휴게 시간을 뺀 근무시간이 이만큼 되면 근무시간 화면과 오른쪽 아래 표시에 &quot;퇴근 가능!&quot; 이 보입니다. 0 이면 보이지 않습니다." {...row('workDayHours')}>
+            <TextInput numeric value={String(s.workDayHours)} onCommit={number('workDayHours')} /><span className="set-unit">시간</span>
+          </Row>
+          <Row label="출근 여유" help="정각이나 30분을 막 지나서 확인되면 그 정각·30분에 출근한 것으로 적습니다. 두레가 와이파이를 알아보는 데 조금 걸리기 때문입니다 (예: 5분이면 08:03 에 확인돼도 08:00 출근, 08:06 이면 08:30 출근). 0 이면 조금만 지나도 다음 30분으로 올립니다." {...row('workGraceMin')}>
+            <TextInput numeric value={String(s.workGraceMin)} onCommit={number('workGraceMin')} /><span className="set-unit">분</span>
           </Row>
           <Row label="근무지의 와이파이 이름" help='이 이름의 와이파이에 붙으면 그때부터 셉니다 (대소문자는 가리지 않습니다). macOS 가 와이파이 이름을 알려 주지 않으면 이름으로는 알아볼 수 없습니다: 그때는 "근무시간" 화면에서 "지금 네트워크를 근무지로 기억" 을 누르세요.' {...row('workWifi')}>
             <TextInput value={s.workWifi} placeholder="와이파이 이름" onCommit={(v) => save('workWifi', v)} />

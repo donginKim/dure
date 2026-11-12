@@ -1,4 +1,4 @@
-import { breakLabel, duration, hhmm, monthGrid, monthTotal, parseBreak, workBadge } from '../../src/renderer/worktimeView';
+import { atTime, breakLabel, canLeave, duration, hhmm, monthGrid, monthTotal, leftToLeave, parseBreak, workBadge } from '../../src/renderer/worktimeView';
 
 test('걸린 시간과 시각을 읽기 쉽게 적는다', () => {
   expect(duration(20_000)).toBe('1분 미만');
@@ -49,4 +49,25 @@ test('창 구석의 근무 표시: 근무 중일 때만, 오늘 몇 시간째인
   // 붙어 있던 시간 그대로 세는 방식에서는 근무지에 붙어 있을 때
   expect(workBadge({ ...base, unit: 'minute', openSession: null, atWork: true, todayMs: 45 * 60_000 })).toBe('근무 중 · 45분');
   expect(workBadge({ ...base, unit: 'minute', openSession: null, atWork: false })).toBeNull();
+});
+
+test('날짜와 시각을 그날 그 시각으로 바꾼다', () => {
+  expect(atTime('2026-11-13', '08:00')).toBe(new Date(2026, 10, 13, 8, 0).getTime());
+  expect(atTime('2026-11-13', '8:30')).toBe(new Date(2026, 10, 13, 8, 30).getTime());
+  expect(atTime('2026-11-13', '25:00')).toBeNull();
+  expect(atTime('2026-11-13', '')).toBeNull();
+  expect(atTime('어제', '08:00')).toBeNull();
+});
+
+test('휴게 시간을 뺀 근무시간을 채우면 퇴근할 수 있다고 알린다', () => {
+  const open = { id: 's', day: 'd', startAt: 0, endAt: 0, open: true, auto: false };
+  const base = { enabled: true, unit: 'half' as const, openSession: open, atWork: true, todayMs: 7.5 * 3_600_000, targetMs: 8 * 3_600_000 };
+  expect(canLeave(base)).toBe(false);
+  expect(leftToLeave(base)).toBe(30 * 60_000);
+  expect(canLeave({ ...base, todayMs: 8 * 3_600_000 })).toBe(true);
+  expect(leftToLeave({ ...base, todayMs: 9 * 3_600_000 })).toBe(0);
+  // 퇴근했거나, 근무시간을 정해 두지 않았으면 알리지 않는다
+  expect(canLeave({ ...base, todayMs: 9 * 3_600_000, openSession: null })).toBe(false);
+  expect(canLeave({ ...base, todayMs: 9 * 3_600_000, targetMs: 0 })).toBe(false);
+  expect(leftToLeave({ todayMs: 0, targetMs: 0 })).toBe(0);
 });

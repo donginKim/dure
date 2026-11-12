@@ -7,7 +7,7 @@ import type { Settings, WorkDay, WorkSession, WorkStatus } from '@shared/types';
 export interface NetworkProbe { ssid: string | null; hidden: boolean; gateway: string | null }
 interface Row { id: string; day: string; start_at: number; end_at: number; open: number; auto: number }
 
-const POLL_MS = 60_000;
+const POLL_MS = 20_000;
 /** 이만큼 넘게 끊겼다 다시 붙으면 새 구간으로 센다 (잠깐 끊긴 것은 이어 붙인다) */
 const GAP_MS = 5 * 60_000;
 /** 출퇴근 시각을 맞추는 단위 */
@@ -115,7 +115,10 @@ export class WorkTimeService extends EventEmitter {
 
   /** 출근을 적는다 (30분 단위로 올린 시각으로). */
   private begin(now: number): void {
-    const start = ceilHalf(now);
+    // 정각·30분을 막 지났으면 (여유 안이면) 그 시각에 출근한 것으로 적는다: 두레가 와이파이를 알아보는 데 조금 걸린다.
+    const floor = ceilHalf(now) - (ceilHalf(now) === now ? 0 : SLOT_MS);
+    const grace = Math.max(0, Math.min(29, Number(this.d.settings().workGraceMin) || 0)) * 60_000;
+    const start = now - floor <= grace ? floor : ceilHalf(now);
     // 끝에는 마지막으로 확인된 시각을 적어 둔다 (퇴근을 누르지 않았을 때 그 시각으로 닫는다).
     this.d.db.prepare('INSERT INTO work_sessions (id, day, start_at, end_at, open, auto) VALUES (?, ?, ?, ?, 1, 0)').run(crypto.randomUUID(), dayOf(now), start, Math.max(now, start));
   }
@@ -158,6 +161,7 @@ export class WorkTimeService extends EventEmitter {
       enabled: s.workTimeEnabled, atWork: this.atWork, ssid: this.last.ssid, ssidHidden: this.last.hidden,
       remembered: this.remembered(this.last.gateway), networks: (this.d.db.prepare('SELECT count(*) AS n FROM work_networks').get() as { n: number }).n,
       todayMs: today.totalMs, since: openRow ? openRow.start_at : s.workTimeUnit === 'minute' && this.atWork && last ? last.startAt : null,
+      targetMs: Math.max(0, Math.min(24, Number(s.workDayHours) || 0)) * 3_600_000,
       openSession: openRow ? toSession(openRow) : null, clockedOut: !openRow && today.sessions.length > 0, unit: s.workTimeUnit,
     };
   }
@@ -205,6 +209,36 @@ export class WorkTimeService extends EventEmitter {
     else this.d.db.prepare('INSERT INTO work_breaks (day, minutes) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET minutes = excluded.minutes').run(day, m);
     this.emit('changed');
     return this.day(day);
+  }
+
+  /**
+   * 구간의 출근·퇴근 시각을 직접 고친다 (두레가 늦게 알아봤거나 퇴근을 늦게 눌렀을 때).
+   * 아직 퇴근하지 않은 구간에 퇴근 시각을 적으면 그 시각에 퇴근한 것으로 닫는다.
+   */
+  editSession(id: string, patch: { startAt?: number; endAt?: number }): WorkSession {
+    const r = this.d.db.prepare('SELECT * FROM work_sessions WHERE id = ?').get(String(id)) as Row | undefined;
+    if (!r) throw new Error('그런 기록이 없습니다.');
+    const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+    const start = ok(patch.startAt) ? Math.floor(patch.startAt) : r.start_at;
+    const closing = ok(patch.endAt);
+    const end = closing ? Math.floor(patch.endAt!) : r.open === 1 ? Math.max(r.end_at, start) : r.end_at;
+    if (dayOf(start) !== r.day) throw new Error('출근 시각은 그날 안이어야 합니다.');
+    if ((closing || r.open === 0) && end < start) throw new Error('퇴근 시각이 출근 시각보다 앞설 수 없습니다.');
+    if (end - start > 24 * 3_600_000) throw new Error('한 구간은 24시간을 넘을 수 없습니다.');
+    this.d.db.prepare('UPDATE work_sessions SET start_at = ?, end_at = ?, open = ?, auto = 0 WHERE id = ?').run(start, end, closing ? 0 : r.open, r.id);
+    this.emit('changed');
+    return toSession(this.d.db.prepare('SELECT * FROM work_sessions WHERE id = ?').get(r.id) as Row);
+  }
+
+  /** 기록을 직접 더한다 (두레를 켜 두지 않은 날 등). */
+  addSession(startAt: number, endAt: number): WorkSession {
+    if (![startAt, endAt].every((v) => typeof v === 'number' && Number.isFinite(v))) throw new Error('시각이 올바르지 않습니다.');
+    if (endAt < startAt) throw new Error('퇴근 시각이 출근 시각보다 앞설 수 없습니다.');
+    if (endAt - startAt > 24 * 3_600_000) throw new Error('한 구간은 24시간을 넘을 수 없습니다.');
+    const id = crypto.randomUUID();
+    this.d.db.prepare('INSERT INTO work_sessions (id, day, start_at, end_at, open, auto) VALUES (?, ?, ?, ?, 0, 0)').run(id, dayOf(startAt), Math.floor(startAt), Math.floor(endAt));
+    this.emit('changed');
+    return toSession(this.d.db.prepare('SELECT * FROM work_sessions WHERE id = ?').get(id) as Row);
   }
 
   /** 구간 하나를 지운다 (잘못 잰 것을 고칠 때). */

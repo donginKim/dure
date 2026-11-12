@@ -136,6 +136,8 @@ const api: DureApi = {
     rememberCurrent: () => call('worktime.rememberCurrent'),
     forgetNetworks: () => call('worktime.forgetNetworks'),
     removeSession: (id) => call('worktime.removeSession', id),
+    editSession: (id, patch) => call('worktime.editSession', id, patch),
+    addSession: (startAt, endAt) => call('worktime.addSession', startAt, endAt),
     setBreak: (day, minutes) => call('worktime.setBreak', day, minutes),
   },
   pr: {

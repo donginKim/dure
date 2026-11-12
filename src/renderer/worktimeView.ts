@@ -57,3 +57,21 @@ export function workBadge(s: Pick<WorkStatus, 'enabled' | 'unit' | 'openSession'
   if (!working) return null;
   return `근무 중 · ${s.todayMs >= 60_000 ? duration(s.todayMs) : '0분'}`;
 }
+
+/** 근무 중이고 오늘 채울 근무시간(휴게 시간을 뺀 것)을 다 채웠는가: "퇴근 가능!" 을 보일 때 */
+export function canLeave(s: Pick<WorkStatus, 'enabled' | 'unit' | 'openSession' | 'atWork' | 'todayMs' | 'targetMs'>): boolean {
+  return workBadge(s) !== null && s.targetMs > 0 && s.todayMs >= s.targetMs;
+}
+
+/** 퇴근할 수 있을 때까지 남은 시간 (ms). 정해 둔 근무시간이 없거나 이미 채웠으면 0 */
+export function leftToLeave(s: Pick<WorkStatus, 'todayMs' | 'targetMs'>): number {
+  return s.targetMs > 0 ? Math.max(0, s.targetMs - s.todayMs) : 0;
+}
+
+/** 날짜("2026-11-13")와 시각("08:00")을 그날 그 시각으로 (이 PC 의 시간대). 알 수 없으면 null */
+export function atTime(day: string, time: string): number | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  const t = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
+  if (!d || !t || Number(t[1]) > 23 || Number(t[2]) > 59) return null;
+  return new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Number(t[1]), Number(t[2])).getTime();
+}

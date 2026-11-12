@@ -31,9 +31,10 @@ export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
         })).max(5).optional().describe('맞는 저장소가 등록돼 있지 않을 때 새로 만들 저장소. 승인하면 두레가 만든다 (README 와 첫 커밋, 브랜치 main)'),
         workspaces: z.array(z.object({
           name: z.string().describe('워크스페이스 이름 (예: "로그인 화면")'),
-          repo: z.string().describe('등록된 저장소의 이름, 또는 new_repos 에 넣은 새 저장소의 이름'),
+          repo: z.string().optional().describe('등록된 저장소의 이름, 또는 new_repos 에 넣은 새 저장소의 이름. owner 를 준 워크스페이스에는 적지 않는다'),
           base_branch: z.string().optional().describe('기준 브랜치. 비우면 그 저장소의 현재 브랜치'),
           role: z.string().describe('이 워크스페이스가 맡을 일 (한두 줄)'),
+          owner: z.string().optional().describe('이 일을 맡을 다른 사람의 이름 (project_overview 의 people). 주면 그 사람에게 나눠 준다: 그 사람이 자기 두레에서 수락해야 만들어지고, 저장소는 그 사람이 고른다 (repo 는 비워라). 비우면 내 사용자의 PC 에 만든다'),
           todos: z.array(TODO).max(40).describe('이 워크스페이스에 만들 TODO. 그 에이전트가 순서대로 할 수 있는 크기로 나눠라'),
         })).max(20),
         project_todos: z.array(TODO).max(40).optional().describe('어느 워크스페이스에도 속하지 않는 일. 사용자가 결정할 것은 assignee 를 user 로'),

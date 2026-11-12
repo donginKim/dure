@@ -1,5 +1,6 @@
 import type { DeliveryInfo } from '@shared/ipc';
 import { USER_RECIPIENT } from '@shared/messages';
+import { remoteName } from './peersView';
 import type { DeliveryState, Message, ProjectFlow, Thread, Workspace } from '@shared/types';
 
 export const GONE = '지워진 워크스페이스';
@@ -7,6 +8,9 @@ export const GONE = '지워진 워크스페이스';
 export function workspaceName(id: string, workspaces: Workspace[]): string {
   // 에이전트가 사용자에게 남긴 말
   if (id === USER_RECIPIENT) return '나';
+  // 다른 사람의 두레에 있는 워크스페이스
+  const remote = remoteName(id);
+  if (remote) return remote;
   return workspaces.find((w) => w.id === id)?.name ?? GONE;
 }
 

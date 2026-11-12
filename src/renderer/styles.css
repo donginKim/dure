@@ -661,3 +661,37 @@ input[type='password']:focus { border-color: var(--accent); }
 .browser-url { flex: 1; min-width: 0; font: 12.5px ui-monospace, 'SF Mono', Menlo, monospace; }
 .browser-view { border: 0; background: #fff; display: flex; }
 .browser-slot { flex: 1; min-height: 0; background: #fff; }
+
+/* 다른 사람과 연결 */
+.side-people { margin-bottom: 0; border-bottom: 0; }
+.pair-code { font: 600 30px/1.2 ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: 4px; color: var(--accent); }
+.people-manual { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.people-manual input { flex: 1; min-width: 0; max-width: 420px; }
+.row.bad { color: var(--danger); }
+.lead { color: var(--muted); line-height: 1.6; max-width: 760px; margin: -6px 0 22px; }
+.share-row { align-items: flex-start; }
+.share-pick { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; }
+.share-pick .check { margin: 2px 0; }
+select.share-on { border-color: #6b5a2a; color: var(--accent); }
+.held-artifact { font-size: 12.5px; }
+.held-artifact summary { cursor: pointer; color: var(--muted); }
+
+/* 배정: 받은 일, 나눠 준 일 */
+.assign { padding: 10px 16px 0; display: flex; flex-direction: column; gap: 10px; max-height: 55%; overflow-y: auto; flex-shrink: 0; }
+.assign .permit .plan-ws { margin-bottom: 0; background: var(--bg); }
+.assign-summary .plan-summary { margin-top: 6px; max-height: 240px; overflow-y: auto; }
+.assign-share { display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.assign-repo { min-width: 200px; }
+.assign-repo.bad { border-color: var(--danger, #c25b5b); }
+.assign-head { width: 100%; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; }
+.assign-row + .assign-row { border-top: 1px solid var(--line); }
+.assign-detail { padding: 4px 14px 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.assign-ws { font-size: 12.5px; line-height: 1.6; }
+.assign-todo { color: var(--muted); padding-left: 4px; display: flex; gap: 6px; }
+.assign-todo.done { text-decoration: line-through; opacity: 0.7; }
+.assign-todo.doing { color: var(--text); }
+.assign-mark { width: 12px; flex-shrink: 0; text-align: center; }
+.tag.assign-accepted { color: var(--ok, #6fbf73); }
+.tag.assign-declined { color: var(--danger, #c25b5b); }
+
+.held-answer { width: 100%; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }

@@ -162,6 +162,85 @@ const MIGRATIONS: string[] = [
     UNIQUE (project_id, name)
   );
   `,
+  `
+  -- 다른 사람의 두레와 연결
+  CREATE TABLE peer_identity (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+  CREATE TABLE peers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    pub TEXT NOT NULL,
+    address TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL DEFAULT 'review',
+    direct INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE shares (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    owner_peer TEXT NOT NULL,
+    project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE share_members (
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    peer_id TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'member',
+    -- 이 프로젝트에서 그 사람의 열쇠와 주소 (연 사람이 나눠 준 것). 비어 있으면 내가 직접 연결한 열쇠를 쓴다
+    pub TEXT,
+    address TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (share_id, peer_id)
+  );
+  CREATE TABLE workspace_sharing (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    audience TEXT NOT NULL,
+    peers TEXT NOT NULL DEFAULT '[]'
+  );
+  CREATE TABLE remote_workspaces (
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    peer_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    listed INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (share_id, peer_id, workspace_id)
+  );
+  -- 이미 받은 내용의 id (같은 것을 다시 보내오면 버린다. 껐다 켜도 남는다)
+  CREATE TABLE peer_replay (id TEXT PRIMARY KEY, at INTEGER NOT NULL);
+  CREATE TABLE peer_inbox (
+    id TEXT PRIMARY KEY,
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    from_workspace TEXT NOT NULL,
+    -- 비어 있으면 워크스페이스가 아니라 나(사용자)에게 온 질문이다
+    to_workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    thread TEXT NOT NULL,
+    artifacts TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- 배정: 계획안의 일을 함께하는 사람에게 나눠 주기
+  CREATE TABLE assignments_out (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    peer_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'sent',
+    progress TEXT NOT NULL DEFAULT '[]',
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE assignments_in (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',
+    workspaces TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

@@ -13,6 +13,9 @@ export const DEFAULT_SETTINGS: Settings = {
   repoRoot: '',
   agentBrowser: 'ask',
   agentBrowserHosts: '',
+  peersEnabled: false,
+  peerName: '',
+  peerPort: 47800,
   claudePath: '',
   claudeModel: '',
   claudeEffort: '',
@@ -128,6 +131,14 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
     }
     return t;
   },
+  peersEnabled: bool('다른 사람과 연결'),
+  peerName: (v) => {
+    // eslint-disable-next-line no-control-regex
+    const t = String(v ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim();
+    if (t.length > 40 || /[@"]/.test(t)) throw new Error('내 이름: 40자까지이고 @ 와 " 는 쓸 수 없습니다.');
+    return t;
+  },
+  peerPort: int('연결 포트', 1024, 65535),
   claudePath: path('Claude Code 실행 파일'),
   claudeModel: model,
   claudeEffort: oneOf('effort', '', 'low', 'medium', 'high', 'xhigh', 'max'),

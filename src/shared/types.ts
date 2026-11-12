@@ -317,6 +317,12 @@ export interface Settings {
   agentBrowser: 'ask' | 'local' | 'off';
   /** 에이전트에게 허용할 바깥 주소 (호스트를 쉼표나 공백으로 나눈다). 로컬 주소는 적지 않아도 된다 */
   agentBrowserHosts: string;
+  /** 다른 사람의 두레와 연결하는가. 켜면 같은 네트워크에서 듣는다 (기본은 꺼짐) */
+  peersEnabled: boolean;
+  /** 다른 사람에게 보이는 내 이름. 빈 값이면 이 PC 의 사용자 이름 */
+  peerName: string;
+  /** 다른 두레의 연결을 받는 포트 */
+  peerPort: number;
   /** Claude Code 실행 파일의 절대 경로. 빈 값이면 PATH 에서 찾는다 */
   claudePath: string;
   /** Claude Code 의 모델. 빈 값이면 Claude Code 의 기본 */
@@ -423,6 +429,11 @@ export interface ProposalItem {
   todos: PlanTodo[];
   /** 이미 있는 워크스페이스다: 새로 만들지 않고 TODO 만 더한다 */
   existing: boolean;
+  /**
+   * 맡을 사람. 빈 값이면 나 (내 PC 에 만든다). 함께하는 사람의 id 이면 그 사람에게 배정으로 보낸다:
+   * 그 사람이 수락해야 그 사람의 PC 에 만들어진다. 이때 저장소와 기준 브랜치는 그 사람이 고른다.
+   */
+  owner?: string;
 }
 
 /**
@@ -455,6 +466,8 @@ export interface PlanDecision {
 
 /** 계획안을 승인해 만든 것 */
 export interface PlanResult {
+  /** 다른 사람에게 보낸 배정의 수 */
+  assigned: number;
   /** 새로 만들어 등록한 저장소 */
   repos: Repo[];
   created: Workspace[];
@@ -479,6 +492,8 @@ export interface CoordinatorInfo {
   proposal: Proposal | null;
   /** 새 저장소가 만들어질 폴더 (그 아래에 저장소 이름의 폴더가 생긴다) */
   newRepoDir: string;
+  /** 함께하는 사람들 (일을 나눠 줄 수 있는 사람). 함께하는 프로젝트가 아니면 비어 있다 */
+  people: { peerId: string; name: string; online: boolean }[];
 }
 
 // ---- DB 조회 (5단계) ----
@@ -525,4 +540,99 @@ export interface BrowserRequest {
   /** 허용의 단위: 프로토콜, 호스트, 포트 (예: http://localhost:3000) */
   origin: string;
   url: string; createdAt: number;
+}
+
+// ---- 다른 사람의 두레와 연결 ----
+/** 그 사람의 에이전트가 보낸 메시지를 받는 방식. review: 내가 보고 넘겨준다. direct: 바로 내 에이전트에게 전달한다 */
+export type PeerMode = 'review' | 'direct';
+/** 연결된 사람 (다른 PC 의 두레) */
+export interface Peer {
+  id: string; name: string;
+  /** 열쇠의 짧은 지문 */
+  fingerprint: string;
+  address: string; mode: PeerMode;
+  /** 내가 직접 연결했는가. 아니면 함께하는 프로젝트의 참여자로 알게 된 사람이다 */
+  direct: boolean;
+  /** 같은 네트워크에서 지금 보이는가 */
+  online: boolean;
+  createdAt: number;
+}
+/** 연결 요청. in: 받은 것(내가 수락한다), out: 보낸 것(상대의 수락을 기다린다) */
+export interface PeerRequest {
+  id: string; peerId: string; name: string; address: string; fingerprint: string;
+  /** 두 화면에 같아야 하는 확인 코드 */
+  code: string;
+  direction: 'in' | 'out';
+  /** 내가 코드를 확인하고 연결을 눌렀다 */
+  confirmed: boolean;
+  /** 상대가 코드를 확인하고 연결을 눌렀다. 둘 다 눌러야 연결된다 */
+  peerConfirmed: boolean;
+  /** 이미 연결된 사람인데 열쇠가 달라졌다 (두레를 다시 깔았거나, 누가 그 사람인 척한다) */
+  keyChanged: boolean;
+  createdAt: number;
+}
+/** 같은 네트워크에서 보이는 두레 */
+export interface FoundPeer { peerId: string; name: string; address: string; known: boolean }
+export interface PeerStatus {
+  enabled: boolean; id: string; name: string; fingerprint: string;
+  /** 듣고 있는 포트. 꺼져 있거나 열지 못했으면 null */
+  port: number | null;
+  /** 켰는데 열지 못한 이유 */
+  error?: string;
+}
+export interface ShareMember { peerId: string; name: string; me: boolean; owner: boolean; online: boolean }
+/** 함께하는 프로젝트. 내 프로젝트 하나에 이어 붙어 있다 */
+export interface Share {
+  id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[];
+  /** 초대했지만 아직 참여하지 않은 사람 (내가 연 프로젝트에서만) */
+  invited: { peerId: string; name: string }[];
+}
+export interface ShareInvite { id: string; shareId: string; name: string; fromPeerId: string; fromName: string; createdAt: number }
+/** 워크스페이스를 누구에게 보일지. none: 아무에게도. all: 참여자 전체. selected: 고른 사람만 */
+export type SharingAudience = 'none' | 'all' | 'selected';
+export interface WorkspaceSharing { workspaceId: string; audience: SharingAudience; peers: string[] }
+/** 다른 사람이 나에게 공개한 워크스페이스 */
+export interface RemoteWorkspace {
+  /** 메시지의 보낸 쪽·받는 쪽에 들어가는 id */
+  ref: string;
+  shareId: string; projectId: string; peerId: string; peerName: string; name: string;
+  /** 에이전트와 화면에 보이는 이름: 워크스페이스@사람 */
+  label: string;
+}
+/** 다른 사람의 에이전트가 보낸 메시지 중, 내가 보고 넘겨주기를 기다리는 것 */
+export interface HeldMessage {
+  /** toWorkspaceId 가 비어 있으면 워크스페이스가 아니라 나에게 온 질문이다 (toPerson) */
+  id: string; projectId: string; fromRef: string; fromLabel: string; toWorkspaceId: string; toPerson: boolean;
+  body: string; artifacts: { kind: string; title: string; body: string }[]; createdAt: number;
+}
+
+// ---- 배정: 계획안의 일을 함께하는 사람에게 나눠 주기 ----
+/** 배정 하나에 든 워크스페이스 (받는 사람의 PC 에 만들어질 것) */
+export interface AssignItem { name: string; role: string; todos: PlanTodo[] }
+/** 나눠 받은 일의 진행. 나눠 준 사람에게 보인다 (읽기 전용) */
+export interface AssignProgress { workspaceId: string; name: string; status: string; summary: string; todos: { title: string; status: string; assignee: string }[] }
+/** 내가 나눠 준 일 */
+export interface AssignmentOut {
+  id: string; projectId: string; peerId: string; peerName: string;
+  /** sent: 상대의 수락을 기다린다. accepted: 상대가 받아 만들었다. declined: 거절했다 */
+  state: 'sent' | 'accepted' | 'declined';
+  items: AssignItem[]; progress: AssignProgress[];
+  /** 거절한 이유 등 */
+  note: string; createdAt: number; updatedAt: number;
+}
+/** 내가 받은 배정 */
+export interface AssignmentIn {
+  id: string; projectId: string; fromPeerId: string; fromName: string;
+  /** 기획서 정리 (마크다운) */
+  summary: string;
+  items: AssignItem[]; state: 'pending' | 'accepted' | 'declined'; createdAt: number;
+}
+/** 받은 배정을 수락할 때, 워크스페이스마다 어디에 만들지 */
+export interface AssignChoice {
+  /** 내 프로젝트에 등록된 저장소. 빈 값이면 newRepo 를 만든다 */
+  repoId: string;
+  /** 새로 만들 저장소의 이름 (repoId 가 없을 때) */
+  newRepo?: string;
+  /** 워크스페이스의 이름을 바꾸고 싶을 때 */
+  name?: string;
 }

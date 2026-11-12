@@ -54,10 +54,11 @@ export class DeliveryService {
     const parts: string[] = [];
     if (todoLines.length > 0) parts.push(pendingMessage(todoLines));
     for (const m of messages) {
+      const remote = m.from.kind === 'workspace' ? this.d.messages.remote(m.from.workspaceId) : undefined;
       const fromName = m.from.kind === 'user' ? '사용자' : m.from.kind === 'system' ? '두레'
-        : (this.d.workspaces.get(m.from.workspaceId)?.name ?? '지워진 워크스페이스');
+        : remote ? `${remote.name}@${remote.owner}` : (this.d.workspaces.get(m.from.workspaceId)?.name ?? '지워진 워크스페이스');
       const artifacts = m.artifactIds.map((id) => this.d.messages.artifact(id)).filter((a) => a !== undefined);
-      parts.push(formatDelivery(m, { fromName, artifacts }));
+      parts.push(formatDelivery(m, { fromName, artifacts, remoteOwner: remote?.owner }));
     }
     const messageIds = messages.map((m) => m.id);
     this.d.messages.markDelivered(messageIds);

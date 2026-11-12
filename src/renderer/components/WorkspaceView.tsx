@@ -8,6 +8,7 @@ import { BrowserRequests } from './BrowserRequests';
 import { ChatPane } from './ChatPane';
 import { DiffPane } from './DiffPane';
 import { DbRequests } from './DbRequests';
+import { PeerInbox } from './PeerInbox';
 import { CommitDialog } from './CommitDialog';
 import { ConfirmDialog } from './dialogs';
 import { TerminalPane } from './TerminalPane';
@@ -212,6 +213,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
       </div>
       <DbRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <BrowserRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
+      <PeerInbox projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <div className="ws-body">
       {mode === 'chat' && (
         <div className="ws-terms">

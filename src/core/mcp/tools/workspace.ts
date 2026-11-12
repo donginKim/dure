@@ -70,6 +70,8 @@ export const workspaceTools: ToolBundle = (server, ctx, deps) => {
               name: r.name, path: r.path, workspaceCount: workspaces.filter((w) => w.repoId === r.id).length,
               ...(coordinator ? { currentBranch: current[i], branches: (branches[i] ?? []).slice(0, 50) } : {}),
             })),
+            // 조율 에이전트가 예전 대화의 기억대로 "저장소를 등록할 수 없다" 고 되묻지 않게, 볼 때마다 방법을 알려 준다.
+            ...(coordinator ? { howToAddRepos: '저장소 등록은 plan_propose 로 한다 (사용자에게 등록을 부탁하지 마라, 등록된 저장소가 없어도 계획안을 올려라). 사용자의 PC 에 이미 있는 git 저장소 폴더는 add_repos 에 절대 경로를, 새로 만들 저장소는 new_repos 에 이름을 넣고, 워크스페이스의 repo 에 그 이름을 적는다. 사용자가 승인하면 두레가 등록한다.' } : {}),
             // 조율 에이전트: 일을 나눠 줄 수 있는 사람 (plan_propose 의 owner 에 name 을 쓴다).
             ...(coordinator && people.length ? { people: people.map((p) => ({ name: p.name, online: p.online })) } : {}),
             // 함께하는 사람들. 공개한 워크스페이스가 없어도 message_send 의 to 에 "@이름" 을 넣어 그 사람에게 직접 물을 수 있다.

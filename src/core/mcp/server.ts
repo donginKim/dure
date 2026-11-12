@@ -8,6 +8,7 @@ import type { AssignmentService } from '../assignments';
 import type { BrowserService } from '../browserService';
 import type { CoordinatorService } from '../coordinator';
 import type { DbService } from '../dbService';
+import type { SlackService } from '../slackService';
 import type { PeerService } from '../peers/peerService';
 import type { Git } from '../git';
 import type { CommitDraftStore } from '../commitDrafts';
@@ -33,6 +34,7 @@ export interface McpDeps {
   cleanup: CleanupService;
   coordinator: CoordinatorService;
   dbs: DbService;
+  slack: SlackService;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;

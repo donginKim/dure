@@ -6,6 +6,7 @@ import { STATUS_LABEL } from '../tree';
 import { AssignPanel } from './AssignPanel';
 import { ChatPane } from './ChatPane';
 import { DbRequests } from './DbRequests';
+import { SlackRequests } from './SlackRequests';
 import type { ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
 import { PeerInbox } from './PeerInbox';
@@ -289,6 +290,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
       </div>
       {error && <div className="error" style={{ margin: '8px 16px 0' }}>{error}</div>}
       {!readOnly && <DbRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
+      {!readOnly && <SlackRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
       {!(proposal && reviewing) && <AssignPanel projectId={project.id} repos={repos} readOnly={readOnly} />}
       {!readOnly && !(proposal && reviewing) && <PeerInbox projectId={project.id} workspaces={everyone} only="person" />}
       {proposal && reviewing

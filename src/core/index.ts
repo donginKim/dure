@@ -11,6 +11,8 @@ import { coordinatorTools } from './mcp/tools/coordinator';
 import { browserTools } from './mcp/tools/browser';
 import { BrowserService, noBrowser, type BrowserDriver } from './browserService';
 import { dbTools } from './mcp/tools/db';
+import { slackTools } from './mcp/tools/slack';
+import { SlackService } from './slackService';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
 import { cleanupTools } from './mcp/tools/cleanup';
@@ -49,6 +51,7 @@ export interface Core {
   cleanup: CleanupService;
   coordinator: CoordinatorService;
   dbs: DbService;
+  slack: SlackService;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;
@@ -92,6 +95,8 @@ export interface CoreOptions {
   secrets?: SecretBox;
   /** 시험용: DB 실행기를 가짜로 바꾸고, 승인을 기다리는 시간을 줄인다 */
   dbRunner?: ConstructorParameters<typeof DbService>[0]['runner'];
+  /** 시험에서 가짜 슬랙으로 바꾼다 */
+  slackFetch?: ConstructorParameters<typeof SlackService>[0]['fetch'];
   dbWaitMs?: number;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
   repoRoot?: string;
@@ -134,6 +139,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     // 조율 서비스는 워크스페이스 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get coordinator() { return coordinator; },
     get dbs() { return dbs; },
+    get slack() { return slack; },
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -168,7 +174,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -193,6 +199,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
+  const slack: SlackService = new SlackService({ db, workspaces, messages, secrets: o.secrets ?? noSecrets, fetch: o.slackFetch, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  service.on('changed', (id: string) => { if (!workspaces.get(id)) slack.dropWorkspace(id); });
   const browser = new BrowserService({ driver: o.browser ?? noBrowser, workspaces, messages, waitMs: o.browserWaitMs, settings: () => settings.get(), isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   service.on('changed', (id: string) => { if (!workspaces.get(id)) browser.dropWorkspace(id); });
   const noTransport: PeerTransport = {
@@ -244,7 +252,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

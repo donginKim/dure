@@ -49,6 +49,8 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  // 일을 받지 않는 사람에게도 기획서 정리를 보낼지 (함께하는 사람이 있을 때만 묻는다)
+  const [shareSummary, setShareSummary] = useState(true);
   const [reason, setReason] = useState('');
 
   // 저장소마다 고를 수 있는 브랜치를 받아 둔다.
@@ -78,7 +80,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
   const decision = fromDraft(plan);
   const approve = async (): Promise<void> => {
     setBusy(true); setError('');
-    try { await window.dure.coordinator.approve(proposal.id, tidyPlan(decision)); } catch (e) { setError(describeError((e as Error).message)); } finally { setBusy(false); }
+    try { await window.dure.coordinator.approve(proposal.id, { ...tidyPlan(decision), shareSummary: people.length > 0 && shareSummary }); } catch (e) { setError(describeError((e as Error).message)); } finally { setBusy(false); }
   };
   const reject = async (): Promise<void> => {
     setBusy(true); setError('');
@@ -213,6 +215,12 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
       <div className="plan-foot">
         <div className="plan-col plan-actions">
           {error && <div className="error" style={{ flexBasis: '100%' }}>{error}</div>}
+          {people.length > 0 && proposal.summary && !rejecting && (
+            <label className="assign-share" style={{ flexBasis: '100%' }} title="일을 맡기지 않은 사람도 무엇을 만드는지 알 수 있습니다">
+              <input type="checkbox" checked={shareSummary} onChange={(e) => setShareSummary(e.target.checked)} />
+              함께하는 사람 모두에게 기획서 정리를 보냅니다 (일을 맡기지 않은 사람 포함: {people.map((p) => p.name).join(', ')}). 받는 사람이 읽고 자료로 받거나 버립니다
+            </label>
+          )}
           {rejecting ? (
             <>
               <input type="text" autoFocus className="plan-reason" value={reason} placeholder="거절하는 이유 (조율 에이전트에게 전해집니다. 비워도 됩니다)" onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void reject(); }} />

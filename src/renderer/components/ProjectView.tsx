@@ -3,6 +3,7 @@ import type { Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
 import { groupTodos } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
 import { CleanupList, CompleteDialog } from './CleanupPanel';
+import { UsagePanel } from './UsagePanel';
 import { CoordinatorPane } from './CoordinatorPane';
 import { DbPanel } from './DbPanel';
 import { SharePanel } from './SharePanel';
@@ -212,6 +213,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       </div>
 
       <CleanupList project={project} readOnly={done} />
+      <UsagePanel projectId={project.id} />
 
       <div className="section project-end">
         {!done && (

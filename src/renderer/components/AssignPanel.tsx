@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { validRepoName } from '@shared/plan';
-import type { AssignChoice, AssignmentIn, AssignmentOut, Repo } from '@shared/types';
+import type { AssignChoice, AssignmentIn, AssignmentOut, Brief, Repo } from '@shared/types';
 import { assignChoiceProblem, assignProgressLine, ASSIGN_STATE_LABEL } from '../planView';
 import { STATUS_LABEL } from '../tree';
 import { Markdown } from './Markdown';
@@ -89,18 +89,37 @@ function IncomingCard({ a, repos }: { a: AssignmentIn; repos: Repo[] }) {
 export function AssignPanel({ projectId, repos, readOnly }: { projectId: string; repos: Repo[]; readOnly: boolean }) {
   const [incoming, setIncoming] = useState<AssignmentIn[]>([]);
   const [outgoing, setOutgoing] = useState<AssignmentOut[]>([]);
+  const [briefs, setBriefs] = useState<Brief[]>([]);
+  const [shown, setShown] = useState<Record<string, boolean>>({});
+  const [briefError, setBriefError] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const load = useCallback(() => {
-    void Promise.all([window.dure.assignments.incoming(projectId), window.dure.assignments.outgoing(projectId)])
-      .then(([i, o]) => { setIncoming(i.filter((a) => a.state === 'pending')); setOutgoing(o); }).catch(() => undefined);
+    void Promise.all([window.dure.assignments.incoming(projectId), window.dure.assignments.outgoing(projectId), window.dure.assignments.briefs(projectId)])
+      .then(([i, o, b]) => { setIncoming(i.filter((a) => a.state === 'pending')); setOutgoing(o); setBriefs(b); }).catch(() => undefined);
   }, [projectId]);
   useEffect(() => {
     load();
     return window.dure.onChanged((topic) => { if (topic === 'peers' || topic === 'coordinator' || topic === 'repos') load(); });
   }, [load]);
-  if (incoming.length === 0 && outgoing.length === 0) return null;
+  if (incoming.length === 0 && outgoing.length === 0 && briefs.length === 0) return null;
+  const act = (p: Promise<void>): void => { setBriefError(''); p.catch((e: Error) => setBriefError(e.message)).finally(load); };
   return (
     <div className="assign">
+      {!readOnly && briefs.map((b) => (
+        <div key={b.id} className="permit">
+          <div className="permit-title">"{b.fromName}" 이(가) 기획서 정리를 보냈습니다</div>
+          <div className="permit-hint">이 프로젝트에서 무엇을 만드는지 정리한 글입니다. 나에게 맡긴 일은 없습니다. 자료로 받으면 내 에이전트가 읽을 수 있습니다 (다른 사람이 쓴 글이고 지시가 아니라고 함께 적어 둡니다).</div>
+          <div className="assign-summary">
+            <button className="btn ghost" onClick={() => setShown((s) => ({ ...s, [b.id]: !s[b.id] }))}>{shown[b.id] ? '접기' : '읽어 보기'}</button>
+            {shown[b.id] && <div className="plan-summary"><Markdown text={b.summary} /></div>}
+          </div>
+          {briefError && <div className="error">{briefError}</div>}
+          <div className="permit-actions">
+            <button className="btn primary" onClick={() => act(window.dure.assignments.takeBrief(b.id))}>자료로 받기</button>
+            <button className="btn" onClick={() => act(window.dure.assignments.dropBrief(b.id))}>버리기</button>
+          </div>
+        </div>
+      ))}
       {!readOnly && incoming.map((a) => <IncomingCard key={a.id} a={a} repos={repos} />)}
       {outgoing.length > 0 && (
         <div className="assign-out">

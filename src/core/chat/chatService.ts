@@ -4,7 +4,7 @@ import { resolve, sep } from 'node:path';
 import type { ChatItem, ChatPermission, ChatSnapshot } from '@shared/types';
 import type { WorkspaceStore } from '../stores';
 import { Timeline } from './timeline';
-import { formatChatRelay, parseLine, stepInput, stepSummary, type Piece } from './transcript';
+import { formatChatRelay, parseLine, stepInput, stepSummary, usageOf, type Piece, type UsageLine } from './transcript';
 
 export interface ChatDeps {
   workspaces: WorkspaceStore;
@@ -17,6 +17,8 @@ export interface ChatDeps {
   pollMs?: number;
   /** 기록에서 "사용자가 중단함" 을 읽었다. 중단과 승인 거부 때는 hook 이 오지 않아 상태를 여기서 되돌려야 한다 (실험 12c, 15e) */
   onInterrupted?(workspaceId: string): void;
+  /** 기록에서 모델이 답한 줄을 읽었다: 그 답에 쓴 토큰 수 */
+  onUsage?(workspaceId: string, usage: UsageLine): void;
 }
 
 interface State {
@@ -258,7 +260,10 @@ export class ChatService extends EventEmitter {
         if (lastNewline < 0) { s.carry = Buffer.from(data); continue; }
         s.carry = Buffer.from(data.subarray(lastNewline + 1));
         for (const line of data.subarray(0, lastNewline).toString('utf8').split('\n')) {
-          if (line) pieces.push(...parseLine(line));
+          if (!line) continue;
+          pieces.push(...parseLine(line));
+          // 사용량은 화면과 따로 적어 둔다 (적다가 문제가 나도 대화 보기는 계속된다).
+          if (this.d.onUsage) { try { const u = usageOf(line); if (u) this.d.onUsage(workspaceId, u); } catch { /* 사용량만 빠진다 */ } }
         }
       }
       s.error = false;

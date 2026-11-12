@@ -6,7 +6,7 @@ function sources(o: Partial<AttentionSources> = {}): AttentionSources {
     projects: () => [{ id: 'p1', name: '로그인 개편' }, { id: 'p2', name: '끝난 것' }],
     isClosed: (id) => id === 'p2',
     workspaces: () => [{ id: 'c1', name: '조율', role: 'coordinator', status: 'idle' }, { id: 'w1', name: '화면', status: 'working' }],
-    plan: () => null, db: () => [], slack: () => [], browser: () => [], held: () => [], assignments: () => [], pairs: () => [], invites: () => [],
+    plan: () => null, db: () => [], slack: () => [], browser: () => [], held: () => [], assignments: () => [], briefs: () => [], pairs: () => [], invites: () => [],
     ...o,
   };
 }

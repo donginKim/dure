@@ -15,6 +15,7 @@ export interface AttentionSources {
   browser(projectId: string): { id: string; workspaceId: string; origin: string }[];
   held(projectId: string): { id: string; toWorkspaceId: string; toPerson: boolean; fromLabel: string; body: string }[];
   assignments(projectId: string): { id: string; fromName: string; state: string; items: unknown[] }[];
+  briefs(projectId: string): { id: string; fromName: string }[];
   pairs(): { id: string; name: string; direction: string; confirmed: boolean }[];
   invites(): { id: string; name: string; fromName: string }[];
 }
@@ -49,6 +50,7 @@ export class AttentionService extends EventEmitter {
       for (const r of safe(() => this.s.slack(p.id))) add('slack', r.id, r.workspaceId, `${name(r.workspaceId)}가 슬랙을 읽으려 합니다`, r.what);
       for (const r of safe(() => this.s.browser(p.id))) add('browser', r.id, r.workspaceId, `${name(r.workspaceId)}가 브라우저로 주소를 열려 합니다`, r.origin);
       for (const h of safe(() => this.s.held(p.id))) add('held', h.id, h.toPerson ? null : h.toWorkspaceId, h.toPerson ? `"${h.fromLabel}" 이(가) 나에게 물었습니다` : `"${h.fromLabel}" 의 메시지가 넘겨주기를 기다립니다`, h.body);
+      for (const b of safe(() => this.s.briefs(p.id))) add('brief', b.id, null, `"${b.fromName}" 이(가) 기획서 정리를 보냈습니다`, '읽고 자료로 받거나 버리세요');
       for (const a of safe(() => this.s.assignments(p.id))) if (a.state === 'pending') add('assign', a.id, null, `"${a.fromName}" 이(가) 일을 나눠 주었습니다`, `워크스페이스 ${a.items.length}개`);
     }
     for (const r of safe(() => this.s.pairs())) if (r.direction === 'in' && !r.confirmed) out.push({ id: `pair:${r.id}`, kind: 'pair', projectId: null, projectName: '', workspaceId: null, title: oneLine(`"${r.name}" 이(가) 연결을 요청합니다`, 160), detail: '숫자가 같은지 확인하고 연결하세요' });

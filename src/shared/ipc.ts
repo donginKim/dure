@@ -1,4 +1,8 @@
 import type {
+  Brief,
+  PrInfo,
+  Checkpoint, CheckpointPreview,
+  UsageSummary,
   AttentionItem,
   Note, NoteSummary,
   UpdateStatus,
@@ -8,7 +12,7 @@ import type {
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -173,6 +177,24 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** PR 만들기 */
+  pr: {
+    info(workspaceId: string): Promise<PrInfo>;
+    /** GitHub 에 PR 을 만들고 그 주소를 돌려준다 */
+    create(workspaceId: string, input: { title: string; body: string }): Promise<string>;
+    /** PR 을 만드는 웹 화면(또는 만들어진 PR)을 브라우저로 연다 */
+    open(workspaceId: string, url?: string): Promise<void>;
+  };
+  /** 되돌리기 지점: 워크스페이스의 작업 폴더를 그때의 모습으로 되돌린다 */
+  checkpoints: {
+    list(workspaceId: string): Promise<Checkpoint[]>;
+    create(workspaceId: string, label?: string): Promise<Checkpoint>;
+    preview(id: string): Promise<CheckpointPreview>;
+    /** 되돌린다. 되돌리기 직전의 모습을 적어 둔 지점을 돌려준다 */
+    restore(id: string): Promise<Checkpoint>;
+  };
+  /** 사용량: 프로젝트의 에이전트들이 쓴 토큰. days 가 있으면 최근 그 날수만 */
+  usage: { summary(projectId: string, days?: number): Promise<UsageSummary> };
   /** 확인할 것: 에이전트나 다른 사람이 나를 기다리는 것 */
   attention: {
     list(): Promise<AttentionItem[]>;
@@ -216,6 +238,11 @@ export interface DureApi {
     /** 수락한다: 내 프로젝트에 워크스페이스와 TODO 가 만들어진다 */
     accept(id: string, choices: AssignChoice[], share: boolean): Promise<Workspace[]>;
     decline(id: string, reason?: string): Promise<void>;
+    /** 프로젝트를 연 사람이 보내 준 기획서 정리 */
+    briefs(projectId: string): Promise<Brief[]>;
+    /** 자료로 받는다 (에이전트가 읽을 수 있다) */
+    takeBrief(id: string): Promise<void>;
+    dropBrief(id: string): Promise<void>;
   };
   /** 다른 사람의 두레와의 연결 */
   peers: {
@@ -268,6 +295,9 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'pr.info', 'pr.create', 'pr.open',
+  'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
+  'usage.summary',
   'attention.list',
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',
@@ -286,7 +316,7 @@ export const IPC_CHANNELS = [
   'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
   'peers.share', 'peers.createShare', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
-  'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline',
+  'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief',
   'browser.register', 'browser.requests', 'browser.decide',
   'commit.state', 'commit.diff', 'commit.run', 'commit.push',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',

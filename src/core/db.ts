@@ -263,6 +263,55 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX notes_updated ON notes (updated_at DESC);
   `,
+  `
+  -- 사용량: 모델의 답 하나마다 쓴 토큰 수 (대화 기록에서 읽는다). 워크스페이스가 지워져도 남긴다
+  CREATE TABLE token_usage (
+    message_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    workspace_name TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    input INTEGER NOT NULL DEFAULT 0,
+    output INTEGER NOT NULL DEFAULT 0,
+    cache_write INTEGER NOT NULL DEFAULT 0,
+    cache_read INTEGER NOT NULL DEFAULT 0,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX token_usage_project ON token_usage (project_id, at);
+  `,
+  `
+  -- 되돌리기 지점: 워크스페이스의 작업 폴더를 그때의 모습으로 되돌릴 수 있게 적어 둔 것
+  CREATE TABLE checkpoints (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'auto',
+    commit_sha TEXT NOT NULL,
+    base_sha TEXT NOT NULL,
+    tree_sha TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX checkpoints_ws ON checkpoints (workspace_id, created_at);
+  `,
+  `
+  -- PR 초안: 에이전트가 적어 두면 사용자가 고쳐서 PR 을 만든다
+  CREATE TABLE pr_drafts (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- 받은 기획서 정리: 프로젝트를 연 사람이 함께하는 사람 모두에게 보낸 것. 사용자가 자료로 받거나 버린다
+  CREATE TABLE briefs_in (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

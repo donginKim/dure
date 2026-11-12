@@ -128,6 +128,18 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  pr: {
+    info: (workspaceId) => call('pr.info', workspaceId),
+    create: (workspaceId, input) => call('pr.create', workspaceId, input),
+    open: (workspaceId, url) => call('pr.open', workspaceId, url),
+  },
+  checkpoints: {
+    list: (workspaceId) => call('checkpoints.list', workspaceId),
+    create: (workspaceId, label) => call('checkpoints.create', workspaceId, label),
+    preview: (id) => call('checkpoints.preview', id),
+    restore: (id) => call('checkpoints.restore', id),
+  },
+  usage: { summary: (projectId, days) => call('usage.summary', projectId, days) },
   attention: {
     list: () => call('attention.list'),
     onOpen: (cb) => subscribe<[AttentionItem]>(IPC_EVENTS.attentionOpen, cb),
@@ -158,6 +170,9 @@ const api: DureApi = {
     incoming: (projectId) => call('assignments.incoming', projectId),
     accept: (id, choices, share) => call('assignments.accept', id, choices, share),
     decline: (id, reason) => call('assignments.decline', id, reason),
+    briefs: (projectId) => call('assignments.briefs', projectId),
+    takeBrief: (id) => call('assignments.takeBrief', id),
+    dropBrief: (id) => call('assignments.dropBrief', id),
   },
   peers: {
     status: () => call('peers.status'),

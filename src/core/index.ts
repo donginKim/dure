@@ -16,6 +16,9 @@ import { SlackService } from './slackService';
 import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
 import { AttentionService } from './attention';
+import { UsageStore } from './usage';
+import { CheckpointService } from './checkpoints';
+import { PrService } from './pr';
 import { noteTools } from './mcp/tools/notes';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
@@ -59,6 +62,9 @@ export interface Core {
   updates: UpdateService;
   notes: NoteStore;
   attention: AttentionService;
+  usage: UsageStore;
+  checkpoints: CheckpointService;
+  prs: PrService;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;
@@ -137,6 +143,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const messages = new MessageService(db);
   const git = createGit(o.baseEnv);
   const notes = new NoteStore(db);
+  const usage = new UsageStore(db, workspaces);
+  const checkpoints = new CheckpointService({ db, workspaces, git });
+  const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
   const cleanup = new CleanupService({ db, workspaces, git, dir: join(o.dataDir, 'cleanup') });
   messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
@@ -145,7 +154,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   let onStatus: (workspaceId: string) => void = () => undefined;
   let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
   const chat = new ChatService({ workspaces, // Claude Code 는 CLAUDE_CONFIG_DIR 가 있으면 그 폴더에 대화 기록을 둔다. 에이전트가 물려받는 환경과 같은 값을 쓴다.
-    allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id) });
+    allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id), onUsage: (id, u) => usage.record(id, u) });
   const mcp = await startMcpServer({
     workspaces, projects, repos, todos, messages, commitDrafts, cleanup, git,
     // 조율 서비스는 워크스페이스 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
@@ -155,6 +164,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     notes,
     notesForAgents: () => settings.get().notesForAgents,
     notesWriteForAgents: () => settings.get().notesWriteForAgents,
+    prs,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -209,7 +219,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   });
   const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos'), settings: () => settings.get(),
     // 계획안의 일을 함께하는 사람에게 나눠 준다. 아래에서 만들어지는 것들을 부를 때 읽는다.
-    assign: { people: (projectId) => peers.assignable(projectId), send: (projectId, peerId, a) => assignments.send(projectId, peerId, a), cancel: (id) => assignments.cancel(id) },
+    assign: { people: (projectId) => peers.assignable(projectId), send: (projectId, peerId, a) => assignments.send(projectId, peerId, a), cancel: (id) => assignments.cancel(id), brief: (projectId, summary, skip) => assignments.sendBrief(projectId, summary, skip) },
   });
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
@@ -269,7 +279,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const attention = new AttentionService({
     projects: () => projects.list(), isClosed: (id) => service.isProjectClosed(id), workspaces: (id) => workspaces.listAll(id),
     plan: (id) => coordinator.pending(id), db: (id) => dbs.pending(id), slack: (id) => slack.pending(id), browser: (id) => browser.pending(id),
-    held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
+    held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), briefs: (id) => assignments.briefs(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
   });
   for (const src of [service, coordinator, dbs, slack, browser, peers, assignments]) src.on('changed', () => attention.poke());
   attention.poke();
@@ -278,7 +288,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

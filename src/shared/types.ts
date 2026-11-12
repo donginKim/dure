@@ -473,6 +473,8 @@ export interface PlanDecision {
   addRepos?: PlanFolder[];
   items: ProposalItem[];
   projectTodos: PlanTodo[];
+  /** 일을 받지 않는 사람을 포함해, 함께하는 사람 모두에게 기획서 정리를 보낸다 */
+  shareSummary?: boolean;
 }
 
 /** 계획안을 승인해 만든 것 */
@@ -688,7 +690,7 @@ export interface NoteSummary { id: string; title: string; preview: string; updat
  * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
  * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
  */
-export type AttentionKind = 'agent' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'pair' | 'invite';
+export type AttentionKind = 'agent' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
 export interface AttentionItem {
   /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
   id: string; kind: AttentionKind;
@@ -696,3 +698,38 @@ export interface AttentionItem {
   workspaceId: string | null;
   title: string; detail: string;
 }
+
+// ---- 사용량: 에이전트가 쓴 토큰 ----
+export interface TokenCount {
+  /** 새로 읽은 입력, 출력, 캐시에 쓴 것, 캐시에서 읽은 것 (토큰 수) */
+  input: number; output: number; cacheWrite: number; cacheRead: number;
+  /** 모델에 보낸 요청의 수 */
+  requests: number;
+}
+export interface UsageRow extends TokenCount { workspaceId: string; name: string; /** 지워진 워크스페이스 */ gone: boolean }
+export interface UsageSummary { total: TokenCount; workspaces: UsageRow[]; models: (TokenCount & { model: string })[]; /** 가장 먼저 적힌 기록의 시각 */ since: number | null }
+
+// ---- 되돌리기 지점 ----
+/** auto: 에이전트에게 시키기 직전에 저절로. manual: 사용자가 만듦. safety: 되돌리기 직전의 모습 (되돌린 것을 무를 때 쓴다) */
+export type CheckpointKind = 'auto' | 'manual' | 'safety';
+export interface Checkpoint { id: string; workspaceId: string; label: string; kind: CheckpointKind; createdAt: number }
+/** 그 지점으로 되돌리면 무엇이 바뀌는지 */
+export interface CheckpointPreview { files: string[]; moreFiles: number; commits: number }
+
+// ---- PR 만들기 ----
+export interface PrInfo {
+  /** 어느 서비스인지 알 수 있는 원격인가 (GitHub, Bitbucket, GitLab) */
+  host: 'github' | 'bitbucket' | 'gitlab' | null;
+  /** PR 을 만드는 웹 화면의 주소. 모르는 원격이면 null */
+  url: string | null;
+  /** 두레 안에서 바로 만들 수 있는가 (GitHub 이고 gh 가 깔려 있다) */
+  canCreate: boolean;
+  /** 이 브랜치가 원격에 올라가 있고 올리지 않은 커밋이 없는가 */
+  pushed: boolean;
+  base: string; head: string;
+  /** 에이전트가 적어 둔 초안, 없으면 커밋 제목들로 만든 것 */
+  title: string; body: string;
+}
+
+/** 프로젝트를 연 사람이 보내 준 기획서 정리 (일을 받지 않아도 온다). 사용자가 자료로 받거나 버린다 */
+export interface Brief { id: string; projectId: string; fromPeerId: string; fromName: string; summary: string; createdAt: number }

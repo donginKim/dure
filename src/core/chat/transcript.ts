@@ -220,3 +220,19 @@ export function stepInput(tool: string, input: unknown): string {
     }
   }
 }
+
+/** 기록 한 줄에 든 사용량 (모델이 답한 줄에만 있다). 같은 답이 여러 줄로 나뉘어 적히므로 messageId 로 하나만 센다. */
+export interface UsageLine { messageId: string; model: string; input: number; output: number; cacheWrite: number; cacheRead: number; at: number }
+export function usageOf(line: string): UsageLine | null {
+  // 사용량이 없는 줄은 풀어 보지 않는다.
+  if (!line.includes('"usage"')) return null;
+  let row: unknown;
+  try { row = JSON.parse(line); } catch { return null; }
+  if (!isObj(row) || row.type !== 'assistant' || !isObj(row.message) || !isObj(row.message.usage)) return null;
+  const u = row.message.usage;
+  const messageId = str(row.message.id);
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+  if (!messageId) return null;
+  const at = Date.parse(str(row.timestamp));
+  return { messageId, model: str(row.message.model).slice(0, 80), input: n(u.input_tokens), output: n(u.output_tokens), cacheWrite: n(u.cache_creation_input_tokens), cacheRead: n(u.cache_read_input_tokens), at: Number.isFinite(at) ? at : Date.now() };
+}

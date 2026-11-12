@@ -753,3 +753,28 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .attention-detail { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70ch; }
 .attention-inline { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .attention-inline .db-requests { padding: 0; }
+
+/* 사용량 */
+.usage .usage-num { width: 84px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+.usage-head { color: var(--muted); font-size: 11.5px; }
+.usage-total { font-weight: 600; }
+.usage-bar { height: 3px; background: var(--panel-2); border-radius: 2px; margin-top: 5px; max-width: 320px; }
+.usage-bar span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: none; border: 0; color: var(--muted); padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.seg button.on { background: var(--panel-2); color: var(--text); }
+
+/* 되돌리기 지점 (워크스페이스의 "변경" 보기 위) */
+.cp { padding: 8px 16px 0; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.cp-bar { display: flex; align-items: center; gap: 8px; }
+.cp-bar .spacer { flex: 1; }
+.cp-list { max-height: 260px; overflow-y: auto; }
+.cp-item + .cp-item { border-top: 1px solid var(--line); }
+.cp-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cp-confirm { padding: 4px 12px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.cp-files { white-space: pre; font: 11.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; color: var(--muted); max-height: 120px; overflow: auto; background: var(--bg); border-radius: 6px; padding: 6px 8px; }
+.tag.cp-safety { color: var(--warn); }
+
+/* 커밋 창의 PR 구역 */
+.commit-pr-form { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.commit-pr-form input, .commit-pr-form textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; outline: none; resize: vertical; }

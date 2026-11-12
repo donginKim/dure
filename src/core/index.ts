@@ -19,6 +19,7 @@ import { AttentionService } from './attention';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
+import { WorkTimeService, type NetworkProbe } from './worktime';
 import { noteTools } from './mcp/tools/notes';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
@@ -65,6 +66,7 @@ export interface Core {
   usage: UsageStore;
   checkpoints: CheckpointService;
   prs: PrService;
+  worktime: WorkTimeService;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;
@@ -110,6 +112,8 @@ export interface CoreOptions {
   dbRunner?: ConstructorParameters<typeof DbService>[0]['runner'];
   /** 지금 돌고 있는 앱 묶음의 경로 (…/Dure.app). 묶인 앱일 때만 준다: 소스에서 설치한 앱의 업데이트에 쓴다 */
   runningApp?: string | null;
+  /** 지금 붙어 있는 네트워크를 알아보는 쪽 (근무시간). 주지 않으면 macOS 의 명령으로 알아본다. null 이면 저절로 재지 않는다 (시험) */
+  networkProbe?: (() => Promise<NetworkProbe>) | null;
   /** false 면 업데이트 뒤 앱을 다시 켜지 않는다 (검증용) */
   updateReopen?: boolean;
   /** 시험에서 가짜 슬랙으로 바꾼다 */
@@ -146,6 +150,10 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const usage = new UsageStore(db, workspaces);
   const checkpoints = new CheckpointService({ db, workspaces, git });
   const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
+  const worktime = new WorkTimeService({ db, settings: () => settings.get(), probe: o.networkProbe ?? undefined });
+  // 시험에서는 저절로 재지 않는다 (가짜 네트워크를 줄 때만).
+  if (o.networkProbe !== null) worktime.start();
+  settings.on('changed', () => { void worktime.tick(); });
   const cleanup = new CleanupService({ db, workspaces, git, dir: join(o.dataDir, 'cleanup') });
   messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
@@ -288,7 +296,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {
@@ -405,6 +413,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       messages.off('released', onReleased);
       service.detach();
       updates.dispose();
+      worktime.dispose();
       attention.dispose();
       chat.dispose();
       await engine.stopAll();

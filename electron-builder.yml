@@ -31,6 +31,9 @@ mac:
     NSLocalNetworkUsageDescription: 같은 네트워크에 있는 다른 사람의 두레를 찾고 연결합니다. 설정에서 "다른 사람과 연결" 을 켰을 때만 씁니다.
     NSBonjourServices:
       - _dure._tcp
+    # 근무시간: 근무지의 와이파이 이름을 읽으려면 macOS 의 위치 권한이 있어야 한다 (사용자가 요청했을 때만 묻는다)
+    NSLocationUsageDescription: 근무지의 와이파이 이름을 알아보는 데 씁니다 (근무시간 재기). 위치 자체는 쓰지 않습니다.
+    NSLocationWhenInUseUsageDescription: 근무지의 와이파이 이름을 알아보는 데 씁니다 (근무시간 재기). 위치 자체는 쓰지 않습니다.
     LSMinimumSystemVersion: "12.0"
 dmg:
   title: Dure ${version}

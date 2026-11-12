@@ -312,6 +312,18 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- 근무시간: 근무지의 네트워크에 붙어 있던 구간. day 는 이 PC 의 시간대로 본 날짜
+  CREATE TABLE work_sessions (
+    id TEXT PRIMARY KEY,
+    day TEXT NOT NULL,
+    start_at INTEGER NOT NULL,
+    end_at INTEGER NOT NULL
+  );
+  CREATE INDEX work_sessions_day ON work_sessions (day, start_at);
+  -- 근무지로 기억해 둔 네트워크 (공유기의 MAC 주소로 알아본다)
+  CREATE TABLE work_networks (gateway TEXT PRIMARY KEY, label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

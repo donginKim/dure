@@ -249,6 +249,18 @@ export function SettingsView() {
       </div>
 
       <div className="section">
+        <div className="section-head"><h2>근무시간</h2></div>
+        <div className="set-box">
+          <Row label="근무시간 재기" help='켜면 근무지의 와이파이에 붙어 있는 동안을 근무시간으로 재서 "근무시간" 달력에 적습니다. 두레가 켜져 있을 때만 잽니다. 기록은 이 PC 에만 남습니다.' {...row('workTimeEnabled')}>
+            <Toggle on={s.workTimeEnabled} onChange={(v) => save('workTimeEnabled', v)} label="근무시간 재기" />
+          </Row>
+          <Row label="근무지의 와이파이 이름" help='이 이름의 와이파이에 붙으면 그때부터 셉니다 (대소문자는 가리지 않습니다). macOS 가 와이파이 이름을 알려 주지 않으면 이름으로는 알아볼 수 없습니다: 그때는 "근무시간" 화면에서 "지금 네트워크를 근무지로 기억" 을 누르세요.' {...row('workWifi')}>
+            <TextInput value={s.workWifi} placeholder="와이파이 이름" onCommit={(v) => save('workWifi', v)} />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
         <div className="section-head"><h2>메모</h2></div>
         <div className="set-box">
           <Row label="에이전트가 메모 읽기" help="켜면 에이전트가 내 메모장에서 메모를 찾아 읽을 수 있습니다 (읽기만 하고 고치지 못합니다). 모든 프로젝트의 에이전트가 모든 메모를 읽을 수 있으니, 비밀번호 같은 것을 메모에 적어 두었다면 켜지 마세요." {...row('notesForAgents')}>

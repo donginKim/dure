@@ -349,6 +349,10 @@ export interface Settings {
   notesWriteForAgents: boolean;
   /** 에이전트나 다른 사람이 나를 기다릴 때 macOS 알림을 띄운다 */
   notifications: boolean;
+  /** 근무시간을 잰다 */
+  workTimeEnabled: boolean;
+  /** 근무지의 와이파이 이름. 이 이름의 와이파이에 붙어 있는 동안을 근무시간으로 센다 */
+  workWifi: string;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -733,3 +737,23 @@ export interface PrInfo {
 
 /** 프로젝트를 연 사람이 보내 준 기획서 정리 (일을 받지 않아도 온다). 사용자가 자료로 받거나 버린다 */
 export interface Brief { id: string; projectId: string; fromPeerId: string; fromName: string; summary: string; createdAt: number }
+
+// ---- 근무시간: 근무지의 와이파이에 붙어 있는 동안을 잰다 ----
+/** 근무지에 붙어 있던 한 구간 (끊겼다 다시 붙으면 새 구간) */
+export interface WorkSession { id: string; day: string; startAt: number; endAt: number }
+export interface WorkDay { day: string; /** 그날 근무지에 붙어 있던 시간의 합 (ms) */ totalMs: number; firstAt: number; lastAt: number; sessions: WorkSession[] }
+export interface WorkStatus {
+  enabled: boolean;
+  /** 지금 근무지의 네트워크에 붙어 있는가 */
+  atWork: boolean;
+  /** 지금 붙어 있는 와이파이의 이름. macOS 가 알려 주지 않으면 null */
+  ssid: string | null;
+  /** macOS 가 와이파이 이름을 가렸다 (위치 권한이 없다). 이때는 "이 네트워크를 근무지로 기억" 으로 알아본다 */
+  ssidHidden: boolean;
+  /** 지금 붙어 있는 네트워크를 근무지로 기억해 두었는가 */
+  remembered: boolean;
+  /** 기억해 둔 네트워크의 수 */
+  networks: number;
+  /** 오늘 지금까지 (ms) 와 지금 구간이 시작된 시각 */
+  todayMs: number; since: number | null;
+}

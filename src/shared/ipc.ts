@@ -1,4 +1,5 @@
 import type {
+  WorkDay, WorkStatus,
   Brief,
   PrInfo,
   Checkpoint, CheckpointPreview,
@@ -12,7 +13,7 @@ import type {
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -177,6 +178,16 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** 근무시간: 근무지의 와이파이에 붙어 있는 동안을 잰다 */
+  worktime: {
+    status(): Promise<WorkStatus>;
+    /** 그 달의 기록 (month 는 1~12) */
+    month(year: number, month: number): Promise<WorkDay[]>;
+    /** 지금 붙어 있는 네트워크를 근무지로 기억한다 */
+    rememberCurrent(): Promise<WorkStatus>;
+    forgetNetworks(): Promise<void>;
+    removeSession(id: string): Promise<void>;
+  };
   /** PR 만들기 */
   pr: {
     info(workspaceId: string): Promise<PrInfo>;
@@ -295,6 +306,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'worktime.status', 'worktime.month', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession',
   'pr.info', 'pr.create', 'pr.open',
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',

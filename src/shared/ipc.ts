@@ -1,4 +1,5 @@
 import type {
+  Checkpoint, CheckpointPreview,
   UsageSummary,
   AttentionItem,
   Note, NoteSummary,
@@ -9,7 +10,7 @@ import type {
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -174,6 +175,14 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** 되돌리기 지점: 워크스페이스의 작업 폴더를 그때의 모습으로 되돌린다 */
+  checkpoints: {
+    list(workspaceId: string): Promise<Checkpoint[]>;
+    create(workspaceId: string, label?: string): Promise<Checkpoint>;
+    preview(id: string): Promise<CheckpointPreview>;
+    /** 되돌린다. 되돌리기 직전의 모습을 적어 둔 지점을 돌려준다 */
+    restore(id: string): Promise<Checkpoint>;
+  };
   /** 사용량: 프로젝트의 에이전트들이 쓴 토큰. days 가 있으면 최근 그 날수만 */
   usage: { summary(projectId: string, days?: number): Promise<UsageSummary> };
   /** 확인할 것: 에이전트나 다른 사람이 나를 기다리는 것 */
@@ -271,6 +280,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',
   'attention.list',
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',

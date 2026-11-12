@@ -1,5 +1,8 @@
 import { execFile } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { ChangedFile, CommitResult } from '@shared/types';
 
 export class GitError extends Error {
@@ -34,6 +37,13 @@ export interface Git {
   push(o: { path: string; branch: string }): Promise<string>;
   /** 병합, cherry-pick, revert 가 진행 중인가 */
   merging(path: string): Promise<boolean>;
+  /**
+   * 작업 폴더의 지금 모습을 트리로 적는다 (커밋하지 않은 것과 추적 안 된 파일 포함, 무시하는 파일 제외).
+   * 작업 폴더와 스테이징 상태는 건드리지 않는다 (따로 만든 임시 인덱스를 쓴다). 트리의 id 를 돌려준다.
+   */
+  snapshotTree(path: string): Promise<string>;
+  /** 트리로 커밋 객체를 만든다 (브랜치에 붙이지 않는다). 사용자의 git 설정과 상관없이 만들어진다 */
+  commitTree(path: string, tree: string, parent: string, message: string): Promise<string>;
   /** 저장소의 공용 .git 폴더의 실제 경로 (worktree 들이 함께 쓰는 곳) */
   commonDir(path: string): Promise<string>;
   addWorktree(o: { repoPath: string; worktreePath: string; branch: string; baseBranch: string }): Promise<void>;
@@ -176,6 +186,22 @@ export function createGit(env?: Record<string, string>): Git {
       return raw(['-C', path, '--literal-pathspecs', 'diff', 'HEAD', '--no-color', '--no-ext-diff', '--no-textconv', '--', file]);
     },
 
+    async snapshotTree(path) {
+      const index = join(tmpdir(), `dure-index-${randomUUID()}`);
+      const env = { GIT_INDEX_FILE: index };
+      try {
+        await runBoth(['-C', path, 'read-tree', 'HEAD'], { extraEnv: env });
+        await runBoth(['-C', path, 'add', '-A', '--', '.'], { extraEnv: env, timeoutMs: 120_000 });
+        return (await runBoth(['-C', path, 'write-tree'], { extraEnv: env })).trim();
+      } finally {
+        rmSync(index, { force: true });
+        rmSync(`${index}.lock`, { force: true });
+      }
+    },
+    async commitTree(path, tree, parent, message) {
+      const who = { GIT_AUTHOR_NAME: 'dure', GIT_AUTHOR_EMAIL: 'dure@localhost', GIT_COMMITTER_NAME: 'dure', GIT_COMMITTER_EMAIL: 'dure@localhost' };
+      return (await runBoth(['-C', path, '-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', parent, '-m', message], { extraEnv: who })).trim();
+    },
     async commonDir(path) {
       const dir = (await raw(['-C', path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
       try { return realpathSync(dir); } catch { return dir; }

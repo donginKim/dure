@@ -128,6 +128,12 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  checkpoints: {
+    list: (workspaceId) => call('checkpoints.list', workspaceId),
+    create: (workspaceId, label) => call('checkpoints.create', workspaceId, label),
+    preview: (id) => call('checkpoints.preview', id),
+    restore: (id) => call('checkpoints.restore', id),
+  },
   usage: { summary: (projectId, days) => call('usage.summary', projectId, days) },
   attention: {
     list: () => call('attention.list'),

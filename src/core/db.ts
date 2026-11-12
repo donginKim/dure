@@ -279,6 +279,20 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX token_usage_project ON token_usage (project_id, at);
   `,
+  `
+  -- 되돌리기 지점: 워크스페이스의 작업 폴더를 그때의 모습으로 되돌릴 수 있게 적어 둔 것
+  CREATE TABLE checkpoints (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    label TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'auto',
+    commit_sha TEXT NOT NULL,
+    base_sha TEXT NOT NULL,
+    tree_sha TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX checkpoints_ws ON checkpoints (workspace_id, created_at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

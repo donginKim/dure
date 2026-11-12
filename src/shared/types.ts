@@ -706,3 +706,10 @@ export interface TokenCount {
 }
 export interface UsageRow extends TokenCount { workspaceId: string; name: string; /** 지워진 워크스페이스 */ gone: boolean }
 export interface UsageSummary { total: TokenCount; workspaces: UsageRow[]; models: (TokenCount & { model: string })[]; /** 가장 먼저 적힌 기록의 시각 */ since: number | null }
+
+// ---- 되돌리기 지점 ----
+/** auto: 에이전트에게 시키기 직전에 저절로. manual: 사용자가 만듦. safety: 되돌리기 직전의 모습 (되돌린 것을 무를 때 쓴다) */
+export type CheckpointKind = 'auto' | 'manual' | 'safety';
+export interface Checkpoint { id: string; workspaceId: string; label: string; kind: CheckpointKind; createdAt: number }
+/** 그 지점으로 되돌리면 무엇이 바뀌는지 */
+export interface CheckpointPreview { files: string[]; moreFiles: number; commits: number }

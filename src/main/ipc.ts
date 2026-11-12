@@ -55,6 +55,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'checkpoints.list': (workspaceId: string) => core.checkpoints.list(String(workspaceId)),
+    'checkpoints.create': (workspaceId: string, label?: string) => core.checkpoints.create(String(workspaceId), String(label ?? '') || '직접 만든 지점', 'manual'),
+    'checkpoints.preview': (id: string) => core.checkpoints.preview(String(id)),
+    'checkpoints.restore': (id: string) => core.checkpoints.restore(String(id)),
     'usage.summary': (projectId: string, days?: number) => core.usage.summary(String(projectId), Number(days) > 0 ? Date.now() - Number(days) * 86_400_000 : 0),
     'attention.list': () => core.attention.list(),
     'notes.list': (query?: string) => core.notes.list(String(query ?? '')),
@@ -223,7 +227,12 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     },
     'chat.get': (workspaceId: string) => core.chatView(workspaceId),
     'chat.step': (workspaceId: string, stepId: string) => core.chat.step(workspaceId, stepId),
-    'chat.send': (workspaceId: string, text: string, images?: unknown) => core.service.sendUserInput(workspaceId, text, images),
+    'chat.send': async (workspaceId: string, text: string, images?: unknown) => {
+      // 에이전트에게 시키기 직전의 모습을 적어 둔다 (되돌리기 지점). 못 적어도 보내기는 한다.
+      const ws = core.workspaces.get(workspaceId);
+      if (ws && ws.role !== 'coordinator' && !String(text ?? '').trim().startsWith('/')) await core.checkpoints.create(workspaceId, String(text ?? ''), 'auto').catch(() => undefined);
+      return core.service.sendUserInput(workspaceId, text, images);
+    },
     'chat.answerPermission': (workspaceId: string, answer: 'allow' | 'deny' | 'always', requestId?: string) => core.service.answerPermission(workspaceId, answer, requestId),
     'chat.answerQuestion': (workspaceId: string, requestId: string, answers: Record<string, string>) => core.service.answerQuestion(workspaceId, requestId, answers),
     'chat.dismissQuestion': (workspaceId: string, requestId: string) => core.service.dismissQuestion(workspaceId, requestId),
@@ -261,6 +270,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onSlackChanged = (): void => changed('slack');
   const onUpdateChanged = (): void => changed('update');
   const onNotesChanged = (): void => changed('notes');
+  const onCheckpointsChanged = (): void => changed('checkpoints');
   // 확인할 것: Dock 아이콘에 수를 적고, 새로 생기면 알림을 띄운다 (두레를 보고 있을 때는 띄우지 않는다).
   const onAttentionChanged = (): void => {
     changed('attention');
@@ -308,6 +318,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.slack.on('changed', onSlackChanged);
   core.updates.on('changed', onUpdateChanged);
   core.notes.on('changed', onNotesChanged);
+  core.checkpoints.on('changed', onCheckpointsChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -331,6 +342,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.slack.off('changed', onSlackChanged);
     core.updates.off('changed', onUpdateChanged);
     core.notes.off('changed', onNotesChanged);
+    core.checkpoints.off('changed', onCheckpointsChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

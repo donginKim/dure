@@ -6,6 +6,7 @@ import { STATUS_LABEL, type Selection } from '../tree';
 import { BrowserPane } from './BrowserPane';
 import { BrowserRequests } from './BrowserRequests';
 import { ChatPane } from './ChatPane';
+import { Checkpoints } from './Checkpoints';
 import { DiffPane } from './DiffPane';
 import { DbRequests } from './DbRequests';
 import { SlackRequests } from './SlackRequests';
@@ -228,6 +229,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
           {error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}
         </div>
       )}
+      {mode === 'diff' && <Checkpoints workspace={workspace} />}
       {mode === 'diff' && <div className="ws-terms"><DiffPane workspace={workspace} /></div>}
       {mode === 'browser' && <div className="ws-terms"><BrowserPane workspace={workspace} /></div>}
       {mode === 'terminal' && (

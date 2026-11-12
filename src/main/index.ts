@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { createBrowserHost } from './browserDriver';
 import { join } from 'node:path';
 import { app, BrowserWindow, dialog, safeStorage } from 'electron';
 import { createCore, type Core } from '@core/index';
@@ -54,8 +55,10 @@ async function start(): Promise<void> {
     // 카메라, 마이크, 위치 같은 권한은 주지 않는다.
     contents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   });
+  const browserHost = createBrowserHost();
   try {
     core = await createCore({
+      browser: browserHost.driver,
       // 개발·검증용으로 다른 폴더를 쓸 수 있게 한다. 평소에는 설정하지 않는다.
       dataDir: process.env.DURE_DATA_DIR || app.getPath('userData'),
       worktreeRoot: process.env.DURE_WORKTREE_ROOT || join(homedir(), 'dure', 'worktrees'),
@@ -75,7 +78,7 @@ async function start(): Promise<void> {
     app.exit(1);
     return;
   }
-  unregisterIpc = registerIpc(core);
+  unregisterIpc = registerIpc(core, browserHost);
   createWindow();
 }
 

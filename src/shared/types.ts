@@ -310,6 +310,10 @@ export interface Settings {
   worktreeRoot: string;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 빈 값이면 기본 위치 */
   repoRoot: string;
+  /** 에이전트가 내장 브라우저를 쓰는가. local: 로컬 주소와 아래 허용 주소만. off: 쓰지 못한다 */
+  agentBrowser: 'local' | 'off';
+  /** 에이전트에게 허용할 바깥 주소 (호스트를 쉼표나 공백으로 나눈다). 로컬 주소는 적지 않아도 된다 */
+  agentBrowserHosts: string;
   /** Claude Code 실행 파일의 절대 경로. 빈 값이면 PATH 에서 찾는다 */
   claudePath: string;
   /** Claude Code 의 모델. 빈 값이면 Claude Code 의 기본 */

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BrowserHost } from './components/BrowserHost';
 import type { DeliveryInfo } from '@shared/ipc';
 import type { Artifact, Message, Project, ProjectFlow, Repo, Thread, Todo, Workspace } from '@shared/types';
 import type { ConversationData } from './components/ConversationPanel';
@@ -95,6 +96,7 @@ export function App() {
   return (
     <div className="app">
       <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} selection={current} onSelect={setSelection} onCreateProject={createProject} />
+      <BrowserHost workspaces={workspaces} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
         {node && (

@@ -155,6 +155,15 @@ export function SettingsView() {
             <TextInput wide value={s.repoRoot} placeholder="~/dure/repos" onCommit={(v) => save('repoRoot', v)} />
             <button className="btn" onClick={pick('repoRoot')}>고르기</button>
           </Row>
+          <Row label="에이전트의 브라우저 사용" help="에이전트가 두레의 내장 브라우저로 자기가 만든 화면을 열어 확인할 수 있습니다. 로컬 주소(localhost, 127.0.0.1)와 아래에 적은 주소만 됩니다. 에이전트가 본 페이지의 내용은 그 에이전트의 대화에 들어갑니다." {...row('agentBrowser')}>
+            <select value={s.agentBrowser} onChange={(e) => save('agentBrowser', e.target.value as 'local' | 'off')}>
+              <option value="local">로컬 주소와 허용한 주소만</option>
+              <option value="off">쓰지 못하게</option>
+            </select>
+          </Row>
+          <Row label="에이전트에게 허용할 바깥 주소" help="호스트 이름을 쉼표나 공백으로 나눠 적습니다 (예: staging.example.com). 하위 도메인도 함께 허용됩니다. 로그인된 사이트를 적으면 에이전트가 그 내용을 볼 수 있으니 필요한 것만 적으세요." {...row('agentBrowserHosts')}>
+            <TextInput wide value={s.agentBrowserHosts} placeholder="비워 두면 로컬 주소만" onCommit={(v) => save('agentBrowserHosts', v)} />
+          </Row>
         </div>
       </div>
 

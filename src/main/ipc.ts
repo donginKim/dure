@@ -19,7 +19,7 @@ function tagged(e: unknown): Error {
 }
 
 /** 코어를 IPC 로 화면에 내보낸다. 돌려주는 함수는 등록을 해제한다. */
-export function registerIpc(core: Core): () => void {
+export function registerIpc(core: Core, browser: { register(workspaceId: string, webContentsId: number): void }): () => void {
   const changed = (topic: ChangeTopic): void => broadcast(IPC_EVENTS.changed, topic);
 
   // 완료된 프로젝트는 기록만 본다.
@@ -152,6 +152,10 @@ export function registerIpc(core: Core): () => void {
       held: core.messages.heldCount(w.id),
       error: core.delivery.error(w.id),
     }])),
+    'browser.register': (workspaceId: string, webContentsId: number) => {
+      if (!core.workspaces.get(String(workspaceId))) throw new Error('워크스페이스가 없습니다.');
+      browser.register(String(workspaceId), Number(webContentsId));
+    },
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),

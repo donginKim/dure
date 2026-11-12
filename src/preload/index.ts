@@ -127,6 +127,10 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  browser: {
+    register: (workspaceId, webContentsId) => call('browser.register', workspaceId, webContentsId),
+    onOpen: (cb) => subscribe<[string, string]>(IPC_EVENTS.browserOpen, cb),
+  },
 };
 
 contextBridge.exposeInMainWorld('dure', api);

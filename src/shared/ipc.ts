@@ -1,6 +1,6 @@
 import type {
   AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
-  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing,
+  SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut,
 } from './types';
 
 export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers';
@@ -167,6 +167,16 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** 배정: 계획안의 일을 함께하는 사람에게 나눠 주기 */
+  assignments: {
+    /** 내가 나눠 준 일과 그 진행 */
+    outgoing(projectId: string): Promise<AssignmentOut[]>;
+    /** 내가 받은 배정. projectId 를 주지 않으면 전부 */
+    incoming(projectId?: string): Promise<AssignmentIn[]>;
+    /** 수락한다: 내 프로젝트에 워크스페이스와 TODO 가 만들어진다 */
+    accept(id: string, choices: AssignChoice[], share: boolean): Promise<Workspace[]>;
+    decline(id: string, reason?: string): Promise<void>;
+  };
   /** 다른 사람의 두레와의 연결 */
   peers: {
     status(): Promise<PeerStatus>;
@@ -229,6 +239,7 @@ export const IPC_CHANNELS = [
   'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
   'peers.share', 'peers.createShare', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.drop',
+  'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline',
   'browser.register', 'browser.requests', 'browser.decide',
   'commit.state', 'commit.diff', 'commit.run', 'commit.push',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',

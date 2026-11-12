@@ -34,7 +34,7 @@ function toProposal(r: Row): Proposal {
     id: r.id, projectId: r.project_id, status: r.status === 'approved' ? 'approved' : r.status === 'rejected' ? 'rejected' : 'pending',
     summary: typeof plan.summary === 'string' ? plan.summary : '',
     newRepos: Array.isArray(plan.newRepos) ? plan.newRepos as PlanRepo[] : [],
-    items: Array.isArray(plan.items) ? (plan.items as ProposalItem[]).map((i) => ({ ...i, todos: Array.isArray(i.todos) ? i.todos : [], existing: i.existing === true })) : [],
+    items: Array.isArray(plan.items) ? (plan.items as ProposalItem[]).map((i) => ({ ...i, todos: Array.isArray(i.todos) ? i.todos : [], existing: i.existing === true, owner: typeof i.owner === 'string' ? i.owner : '' })) : [],
     projectTodos: Array.isArray(plan.projectTodos) ? plan.projectTodos as PlanTodo[] : [],
     note: r.note, createdAt: r.created_at,
   };
@@ -71,6 +71,15 @@ export class CoordinatorService extends EventEmitter {
     service: WorkspaceService;
     /** 조율 에이전트의 폴더를 두는 곳 (두레 데이터 폴더 아래) */
     dir: string;
+    /**
+     * 일을 함께하는 사람에게 나눠 주는 쪽 (배정). 없으면 계획안의 모든 일을 내 PC 에 만든다.
+     * people: 나눠 줄 수 있는 사람. send: 보내고 그 배정의 id 를 돌려준다 (닿지 않으면 던진다). cancel: 보낸 것을 거둔다
+     */
+    assign?: {
+      people(projectId: string): { peerId: string; name: string }[];
+      send(projectId: string, peerId: string, a: { summary: string; items: { name: string; role: string; todos: PlanTodo[] }[] }): Promise<string>;
+      cancel(assignmentId: string): Promise<void>;
+    };
     /** 새 저장소를 만드는 상위 폴더의 기본값. 설정에 값이 있으면 그것을 쓴다. 그 아래 프로젝트 이름의 폴더에 만든다 */
     repoRoot: string;
     settings(): Settings;
@@ -179,6 +188,25 @@ export class CoordinatorService extends EventEmitter {
     return entry.repo;
   }
 
+  /** 빈 저장소 하나를 만들어 프로젝트에 등록한다 (받은 배정을 수락할 때, 맞는 저장소가 없으면 쓴다). */
+  async createEmptyRepo(projectId: string, name: string, description: string): Promise<Repo> {
+    const problems: string[] = [];
+    const [repo] = this.newRepos(projectId, [{ name, description }], problems);
+    if (problems.length || !repo) throw new Error(problems.join(' / ') || '새 저장소를 만들 수 없습니다.');
+    const made: { path: string; repo?: Repo }[] = [];
+    try {
+      return await this.createRepo(projectId, repo, made);
+    } catch (e) {
+      // 이 호출에서 만든 폴더만 치운다.
+      const root = this.repoRoot() + sep;
+      for (const m of made) { try { if (m.repo) this.d.repos.remove(m.repo.id); if (m.path.startsWith(root)) rmSync(m.path, { recursive: true, force: true }); } catch { /* 남은 것은 오류 글로 알 수 있다 */ } }
+      throw e instanceof Error ? e : new Error((e as { detail?: string })?.detail ?? String(e));
+    }
+  }
+
+  /** 저장소에서 지금 체크아웃된 브랜치. */
+  currentBranch(repoPath: string): Promise<string> { return this.d.git.currentBranch(repoPath); }
+
   private todos(raw: unknown, where: string, problems: string[]): PlanTodo[] {
     if (raw === undefined || raw === null) return [];
     if (!Array.isArray(raw)) { problems.push(`${where}: TODO 는 목록이어야 한다`); return []; }
@@ -203,6 +231,7 @@ export class CoordinatorService extends EventEmitter {
     const items: ProposalItem[] = [];
     const problems: string[] = [];
     const newRepos = this.newRepos(projectId, rawRepos, problems);
+    const people = this.d.assign?.people(projectId) ?? [];
     const list = Array.isArray(rawItems) ? rawItems : [];
     if (list.length > MAX_ITEMS) problems.push(`워크스페이스는 한 번에 ${MAX_ITEMS}개까지다`);
     const names = new Set<string>();
@@ -215,17 +244,25 @@ export class CoordinatorService extends EventEmitter {
       if (name === COORDINATOR_NAME) { problems.push(`"${COORDINATOR_NAME}" 은 조율 에이전트의 이름이라 쓸 수 없다`); continue; }
       const todos = this.todos(o.todos, `"${name}"`, problems);
       const role = oneLine(o.role, 500);
+      // 맡을 사람: 함께하는 사람의 이름이나 id. 그 사람에게 배정으로 보낸다 (그 사람의 저장소는 모른다: 저장소는 그 사람이 고른다).
+      const ownerKey = oneLine(o.owner, 80);
+      if (ownerKey) {
+        const who = people.filter((p) => p.peerId === ownerKey || p.name === ownerKey);
+        if (who.length !== 1) { problems.push(`"${name}": 맡을 사람 "${ownerKey}" 을(를) 찾을 수 없다. 함께하는 사람: ${people.map((p) => p.name).join(', ') || '없음 (사용자가 프로젝트를 함께 열고 사람을 초대해야 한다)'}`); continue; }
+        items.push({ name, repoId: '', baseBranch: '', role, todos, existing: false, owner: who[0]!.peerId });
+        continue;
+      }
       const same = workers.filter((w) => w.name === name);
       if (same.length > 0) {
         // 이미 있는 워크스페이스: 만들지 않고 TODO 만 더한다.
         if (same.length > 1) { problems.push(`"${name}": 이름이 같은 워크스페이스가 둘 이상이라 어느 것인지 정할 수 없다`); continue; }
-        items.push({ name, repoId: same[0]!.repoId, baseBranch: same[0]!.baseBranch, role: role || same[0]!.summary, todos, existing: true });
+        items.push({ name, repoId: same[0]!.repoId, baseBranch: same[0]!.baseBranch, role: role || same[0]!.summary, todos, existing: true, owner: '' });
         continue;
       }
       const repoKey = oneLine(o.repo ?? o.repoId, 300);
       // 새 저장소: 아직 없으므로 이름으로 가리킨다. 첫 커밋이 있는 main 에서 시작한다.
       const fresh = newRepos.find((r) => r.name === repoKey || newRepoId(r.name) === repoKey);
-      if (fresh) { items.push({ name, repoId: newRepoId(fresh.name), baseBranch: 'main', role, todos, existing: false }); continue; }
+      if (fresh) { items.push({ name, repoId: newRepoId(fresh.name), baseBranch: 'main', role, todos, existing: false, owner: '' }); continue; }
       if (isNewRepoId(repoKey)) { problems.push(`"${name}": 새 저장소 "${newRepoName(repoKey)}" 가 계획안에 없다`); continue; }
       const repo = repos.find((r) => r.id === repoKey) ?? repos.find((r) => r.name === repoKey) ?? repos.find((r) => r.path === repoKey);
       if (!repo) { problems.push(`"${name}": 등록된 저장소가 아니다 (${repoKey || '저장소 없음'}). 등록된 저장소: ${repos.map((r) => r.name).join(', ') || '없음'}. 맞는 저장소가 없으면 new_repos 에 새 저장소를 넣어라`); continue; }
@@ -235,7 +272,7 @@ export class CoordinatorService extends EventEmitter {
       if (!wanted) baseBranch = await this.d.git.currentBranch(repo.path).catch(() => branches[0] ?? '');
       else if (!branches.includes(wanted)) { problems.push(`"${name}": 저장소 ${repo.name} 에 브랜치 ${wanted} 가 없다. 있는 브랜치: ${branches.slice(0, 20).join(', ')}`); continue; }
       if (!baseBranch) { problems.push(`"${name}": 저장소 ${repo.name} 의 기준 브랜치를 정할 수 없다`); continue; }
-      items.push({ name, repoId: repo.id, baseBranch, role, todos, existing: false });
+      items.push({ name, repoId: repo.id, baseBranch, role, todos, existing: false, owner: '' });
     }
     return { newRepos, items, projectTodos: this.todos(rawProjectTodos, '프로젝트 TODO', problems), problems };
   }
@@ -244,6 +281,9 @@ export class CoordinatorService extends EventEmitter {
    * 조율 에이전트가 계획안을 올린다. 앞의 미결 계획안은 이것으로 바뀐다. 이때는 아무것도 만들지 않는다.
    * 문제가 있는 항목이 하나라도 있으면 올리지 않고 이유를 던진다 (에이전트가 고쳐서 다시 낸다).
    */
+  /** 함께하는 사람들 (일을 나눠 줄 수 있는 사람). */
+  people(projectId: string): { peerId: string; name: string }[] { return this.d.assign?.people(projectId) ?? []; }
+
   async propose(projectId: string, raw: { summary?: unknown; new_repos?: unknown; workspaces?: unknown; project_todos?: unknown; note?: unknown }): Promise<Proposal> {
     const project = this.d.projects.get(projectId);
     if (!project) throw new Error(`프로젝트가 없습니다: ${projectId}`);
@@ -289,9 +329,26 @@ export class CoordinatorService extends EventEmitter {
       const { newRepos, items, projectTodos, problems } = await this.clean(r.project_id, decision?.newRepos, decision?.items, decision?.projectTodos);
       if (problems.length) throw new Error(problems.join(' / '));
       if (newRepos.length === 0 && items.length === 0 && projectTodos.length === 0) throw new Error('만들 것이 없습니다. 거절하려면 "거절" 을 누르세요.');
+      const people = this.d.assign?.people(r.project_id) ?? [];
       const madeRepos: { path: string; repo?: Repo }[] = [];
       const created: Workspace[] = [];
       const todoIds: string[] = [];
+      // 남의 몫과 내 몫을 가른다. 남의 몫은 그 사람에게 배정으로 보낸다.
+      const all = items;
+      const mine = all.filter((it) => !it.owner);
+      const summary = toProposal(r).summary;
+      const sent: string[] = [];
+      const byOwner = new Map<string, ProposalItem[]>();
+      for (const it of all) if (it.owner) byOwner.set(it.owner, [...(byOwner.get(it.owner) ?? []), it]);
+      // 먼저 보낸다: 닿지 않는 사람이 있으면 아무것도 만들지 않는다 (일부만 나눠진 상태를 만들지 않는다).
+      try {
+        for (const [peerId, list] of byOwner) sent.push(await this.d.assign!.send(r.project_id, peerId, { summary, items: list.map((it) => ({ name: it.name, role: it.role, todos: it.todos })) }));
+      } catch (e) {
+        for (const id of sent) await this.d.assign!.cancel(id).catch(() => undefined);
+        throw new Error(`일을 나눠 주지 못해 아무것도 만들지 않았습니다: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      {
+        const items = mine;
       try {
         // 저장소가 먼저다: 워크스페이스는 그 저장소에서 만든다.
         for (const nr of newRepos) {
@@ -308,9 +365,11 @@ export class CoordinatorService extends EventEmitter {
           created.push(fresh);
           targets.set(it.name, fresh);
         }
-        for (const it of items) for (const t of it.todos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: targets.get(it.name)!.id, ...t }, 'agent').id);
+        for (const it of items) for (const t of it.todos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: targets.get(it.name)!.id, title: t.title, detail: t.detail, assignee: t.assignee }, 'agent').id);
         for (const t of projectTodos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: null, ...t }, 'agent').id);
       } catch (e) {
+        // 보낸 배정도 거둔다.
+        for (const id of sent) await this.d.assign!.cancel(id).catch(() => undefined);
         for (const id of todoIds) { try { this.d.todos.remove(id, { actor: 'user' }); } catch { /* 이미 없음 */ } }
         // 되돌리지 못한 것은 숨기지 않는다: 무엇이 남았는지 알려야 사용자가 치울 수 있다.
         const left: string[] = [];
@@ -328,8 +387,9 @@ export class CoordinatorService extends EventEmitter {
         const why = e instanceof Error ? e.message : (e as { detail?: string })?.detail ?? String(e);
         throw new Error(left.length ? `${why} (만들던 것을 되돌리지 못했습니다. 남은 것: ${left.join(', ')}. "현황" 에서 지운 뒤 다시 승인하세요)` : why);
       }
+      }
       this.d.db.prepare("UPDATE proposals SET status = 'approved', items = ? WHERE id = ? AND status = 'pending'")
-        .run(JSON.stringify({ summary: toProposal(r).summary, newRepos, items, projectTodos }), proposalId);
+        .run(JSON.stringify({ summary, newRepos, items: all, projectTodos }), proposalId);
       this.emit('changed', r.project_id);
       // 새 저장소를 조율 에이전트가 읽을 수 있게 다시 띄운다. 못 하면 알림에 적는다.
       const reloaded = madeRepos.length ? await this.reload(r.project_id).catch(() => 'busy' as const) : 'off';
@@ -337,12 +397,13 @@ export class CoordinatorService extends EventEmitter {
       this.tell(r.project_id, [
         '사용자가 계획안을 검토하고 승인했다. 두레가 아래를 만들었다. 사용자가 고쳤을 수 있으니 이 목록이 최종이다.',
         ...madeRepos.map((m) => `- 새 저장소 "${basename(m.path)}" (${m.path}): 만들어 프로젝트에 등록했다. README.md 와 첫 커밋만 있다.`),
-        ...items.map((it) => `- 워크스페이스 "${it.name}" (저장소 ${repoName(it.repoId)}${it.existing ? ', 이미 있던 것' : ', 새로 만듦'})${it.role ? `: ${it.role}` : ''}${it.todos.length ? `\n${it.todos.map((t) => `  - TODO${t.assignee === 'user' ? '(사용자 몫)' : ''}: ${t.title}`).join('\n')}` : ''}`),
+        ...mine.map((it) => `- 워크스페이스 "${it.name}" (저장소 ${repoName(it.repoId)}${it.existing ? ', 이미 있던 것' : ', 새로 만듦'})${it.role ? `: ${it.role}` : ''}${it.todos.length ? `\n${it.todos.map((t) => `  - TODO${t.assignee === 'user' ? '(사용자 몫)' : ''}: ${t.title}`).join('\n')}` : ''}`),
         ...(projectTodos.length ? ['- 프로젝트 TODO:', ...projectTodos.map((t) => `  - ${t.assignee === 'user' ? '(사용자 몫) ' : ''}${t.title}`)] : []),
         ...(reloaded === 'busy' ? ['새 저장소의 파일은 네가 다시 떠야 읽을 수 있다. 읽어야 하면 사용자에게 조율 에이전트를 껐다 켜 달라고 하라.'] : []),
-        'TODO 는 이미 적혀 있다. 다시 적지 마라. 이제 각 워크스페이스에 message_send 로 작업을 시작하라고 알려라 (할 일은 그 워크스페이스의 TODO 에 있다고 알려 주면 된다).',
+        ...[...byOwner].map(([peerId, list]) => `- ${people.find((p) => p.peerId === peerId)?.name ?? '다른 사람'} 에게 나눠 줬다 (아직 만들어지지 않았다. 그 사람이 자기 두레에서 수락해야 만들어진다. 수락하거나 거절하면 두레가 알려 준다): ${list.map((it) => `"${it.name}"`).join(', ')}`),
+        mine.length ? 'TODO 는 이미 적혀 있다. 다시 적지 마라. 이제 내 PC 의 각 워크스페이스에 message_send 로 작업을 시작하라고 알려라 (할 일은 그 워크스페이스의 TODO 에 있다고 알려 주면 된다).' : '내 PC 에 만든 워크스페이스는 없다. 나눠 준 사람들의 수락을 기다려라.',
       ].join('\n'));
-      return { repos: madeRepos.flatMap((m) => (m.repo ? [m.repo] : [])), created, todos: todoIds.length };
+      return { assigned: sent.length, repos: madeRepos.flatMap((m) => (m.repo ? [m.repo] : [])), created, todos: todoIds.length };
     } finally {
       this.deciding.delete(proposalId);
     }

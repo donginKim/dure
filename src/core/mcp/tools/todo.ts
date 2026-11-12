@@ -56,6 +56,12 @@ export const todoTools: ToolBundle = (server, ctx, deps) => {
             todos: all.filter((t) => t.workspaceId === w.id).map((t) => ({ title: t.title, status: t.status, assignee: t.assignee })),
           })),
         } : {}),
+        // 다른 사람에게 나눠 준 일과 그 진행 (그 사람의 두레에 있다. 읽기 전용).
+        ...(coordinator ? { assigned: deps.assignments.outgoing(ctx.project.id).map((a) => ({
+          person: a.peerName, state: a.state === 'sent' ? '수락을 기다리는 중' : a.state === 'accepted' ? '수락함' : `거절함${a.note ? `: ${a.note}` : ''}`,
+          workspaces: a.state === 'accepted' && a.progress.length ? a.progress.map((w) => ({ name: `${w.name}@${a.peerName}`, status: w.status, ...(w.summary ? { summary: w.summary } : {}), todos: w.todos }))
+            : a.items.map((it) => ({ name: it.name, todos: it.todos.map((t) => ({ title: t.title, status: a.state === 'accepted' ? '(진행을 아직 받지 못함)' : '(아직 만들어지지 않음)', assignee: t.assignee })) })),
+        })) } : {}),
         userChanges: todos.takePending(ctx.workspace.id),
       });
     },

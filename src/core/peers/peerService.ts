@@ -71,6 +71,7 @@ export class PeerService extends EventEmitter {
   private readonly rate = new Map<string, number[]>();
   private readonly keys = new Map<string, Buffer>();
   private publishTimer: NodeJS.Timeout | undefined;
+  private readonly handlers = new Map<string, (peer: { id: string; name: string }, payload: Record<string, unknown>, projectId: string) => unknown>();
 
   constructor(private readonly d: {
     db: Database.Database; projects: ProjectStore; workspaces: WorkspaceStore; messages: MessageService;
@@ -466,10 +467,38 @@ export class PeerService extends EventEmitter {
     return { workspaceId, audience, peers };
   }
 
+  /**
+   * 다른 기능이 함께하는 사람과 주고받을 것을 얹는다 (배정 등). 받은 것은 그 프로젝트의 참여자가 보낸 것일 때만 넘어온다.
+   * handler 가 돌려준 값이 상대에게 가는 응답이다 (없으면 { ok: true }).
+   */
+  on2(type: string, handler: (peer: { id: string; name: string }, payload: Record<string, unknown>, projectId: string) => unknown): void {
+    this.handlers.set(type, handler);
+  }
+
+  /** 함께하는 사람들 (나 빼고). */
+  people(projectId: string): { peerId: string; name: string; online: boolean }[] {
+    const s = this.shareOfProject(projectId);
+    return s ? this.memberIds(s.id).map((id) => ({ peerId: id, name: this.peerRow(id)?.name ?? '알 수 없는 사람', online: this.seen.has(id) })).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)) : [];
+  }
+
+  /** 함께하는 사람 한 명에게 보낸다. 닿지 않으면 던진다. */
+  async sendMember(projectId: string, peerId: string, payload: { type: string } & Record<string, unknown>): Promise<void> {
+    const s = this.shareOfProject(projectId);
+    if (!s || !this.memberIds(s.id).includes(peerId)) throw new Error('함께하는 사람이 아닙니다.');
+    await this.sendPeer(peerId, { ...payload, shareId: s.id });
+  }
+
+  /** 이 워크스페이스를 그 사람에게도 보이게 한다 (이미 보이면 그대로). */
+  allow(workspaceId: string, peerId: string): void {
+    if (this.visibleTo(workspaceId, peerId)) return;
+    const sh = this.sharing(workspaceId);
+    this.setSharing(workspaceId, 'selected', [...sh.peers, peerId]);
+  }
+
   /** 워크스페이스를 누구에게 보일지 정한다. 기본은 아무에게도 보이지 않는다. */
   setSharing(workspaceId: string, audience: SharingAudience, peers: string[] = []): WorkspaceSharing {
     const ws = this.d.workspaces.get(workspaceId);
-    if (!ws || ws.role === 'coordinator') throw new Error('공개할 수 있는 워크스페이스가 아닙니다.');
+    if (!ws) throw new Error('공개할 수 있는 워크스페이스가 아닙니다.');
     const s = this.shareOfProject(ws.projectId);
     if (!s) throw new Error('먼저 이 프로젝트를 함께하는 프로젝트로 열거나 초대를 받아야 합니다.');
     if (audience !== 'none' && audience !== 'all' && audience !== 'selected') throw new Error('공개 범위가 올바르지 않습니다.');
@@ -483,7 +512,7 @@ export class PeerService extends EventEmitter {
   }
 
   /** 이 워크스페이스가 그 사람에게 보이는가. */
-  private visibleTo(workspaceId: string, peerId: string): boolean {
+  visibleTo(workspaceId: string, peerId: string): boolean {
     const sh = this.sharing(workspaceId);
     return sh.audience === 'all' || (sh.audience === 'selected' && sh.peers.includes(peerId));
   }
@@ -499,7 +528,8 @@ export class PeerService extends EventEmitter {
   async publishNow(): Promise<void> {
     if (this.port === null) return;
     for (const s of this.d.db.prepare('SELECT * FROM shares').all() as ShareRow[]) {
-      const mine = this.d.workspaces.list(s.project_id);
+      // 조율 에이전트도 공개돼 있으면 목록에 들어간다 (일을 나눠 받은 사람의 에이전트가 보고할 곳이다).
+      const mine = this.d.workspaces.listAll(s.project_id);
       await Promise.all(this.memberIds(s.id).map((peerId) => this.sendPeer(peerId, {
         type: 'directory', shareId: s.id,
         workspaces: mine.filter((w) => this.visibleTo(w.id, peerId)).slice(0, MAX_DIRECTORY).map((w) => ({ id: w.id, name: cleanName(w.name, '워크스페이스') })),
@@ -784,8 +814,15 @@ export class PeerService extends EventEmitter {
       }
       case 'message':
         return this.onMessage(peer, p);
-      default:
-        return no('unknown type');
+      default: {
+        // 다른 기능이 얹은 것 (배정 등). 함께하는 프로젝트의 참여자가 보낸 것만 넘긴다.
+        const handler = this.handlers.get(p.type);
+        const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
+        if (!handler) return no('unknown type');
+        if (!s || !this.memberIds(s.id).includes(peer.id)) return no('함께하는 프로젝트의 참여자가 아니다');
+        if (this.d.isProjectClosed(s.project_id)) return no('그 프로젝트는 완료됐다');
+        return handler({ id: peer.id, name: peer.name }, p, s.project_id) ?? { ok: true };
+      }
     }
   }
 
@@ -798,7 +835,7 @@ export class PeerService extends EventEmitter {
     const from = (p.from && typeof p.from === 'object' ? p.from : {}) as Record<string, unknown>;
     const to = this.d.workspaces.get(String(p.to ?? ''));
     // 공개하지 않은 워크스페이스는 있는지 없는지도 알려 주지 않는다.
-    if (!isId(from.id) || !to || to.projectId !== s.project_id || to.role === 'coordinator' || !this.visibleTo(to.id, peer.id)) return no('그 워크스페이스에는 보낼 수 없다 (없거나 공개돼 있지 않다)');
+    if (!isId(from.id) || !to || to.projectId !== s.project_id || !this.visibleTo(to.id, peer.id)) return no('그 워크스페이스에는 보낼 수 없다 (없거나 공개돼 있지 않다)');
     const body = typeof p.body === 'string' ? p.body.trim() : '';
     if (!body || body.length > MAX_BODY) return no('메시지가 비었거나 너무 길다');
     const thread = isId(p.thread) ? p.thread : crypto.randomUUID();

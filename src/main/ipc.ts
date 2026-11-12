@@ -4,7 +4,7 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -47,7 +47,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       changed('projects');
     },
     'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
-    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId) }),
+    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId), people: core.peers.people(projectId) }),
     'coordinator.approve': (proposalId: string, decision: PlanDecision) => core.coordinator.approve(proposalId, decision),
     'coordinator.pickSpec': async () => {
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
@@ -152,6 +152,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       held: core.messages.heldCount(w.id),
       error: core.delivery.error(w.id),
     }])),
+    'assignments.outgoing': (projectId: string) => core.assignments.outgoing(String(projectId)),
+    'assignments.incoming': (projectId?: string) => core.assignments.incoming(projectId ? String(projectId) : undefined),
+    'assignments.accept': (id: string, choices: AssignChoice[], share: boolean) => core.assignments.accept(String(id), Array.isArray(choices) ? choices : [], { share: share !== false }),
+    'assignments.decline': (id: string, reason?: string) => core.assignments.decline(String(id), reason),
     'peers.status': () => core.peers.status(),
     'peers.found': () => core.peers.found(),
     'peers.list': () => core.peers.peers(),
@@ -253,6 +257,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.dbs.on('changed', onDbChanged);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
+  core.assignments.on('changed', onPeersChanged);
   core.coordinator.on('changed', onCoordinatorChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
@@ -270,6 +275,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.dbs.off('changed', onDbChanged);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);
+    core.assignments.off('changed', onPeersChanged);
     core.coordinator.off('changed', onCoordinatorChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);

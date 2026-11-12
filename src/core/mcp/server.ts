@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Project, Workspace } from '@shared/types';
 import type { CleanupService } from '../cleanup';
+import type { AssignmentService } from '../assignments';
 import type { BrowserService } from '../browserService';
 import type { CoordinatorService } from '../coordinator';
 import type { DbService } from '../dbService';
@@ -34,6 +35,7 @@ export interface McpDeps {
   dbs: DbService;
   browser: BrowserService;
   peers: PeerService;
+  assignments: AssignmentService;
   git: Git;
   /** 에이전트가 자기 워크스페이스의 요약과 표시 이름을 갱신한다. 반영된 것과 반영하지 않은 이유를 돌려준다 */
   describe(workspaceId: string, patch: { summary?: unknown; name?: unknown }): { summary?: string; name?: string; note?: string };

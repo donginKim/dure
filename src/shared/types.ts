@@ -429,6 +429,11 @@ export interface ProposalItem {
   todos: PlanTodo[];
   /** 이미 있는 워크스페이스다: 새로 만들지 않고 TODO 만 더한다 */
   existing: boolean;
+  /**
+   * 맡을 사람. 빈 값이면 나 (내 PC 에 만든다). 함께하는 사람의 id 이면 그 사람에게 배정으로 보낸다:
+   * 그 사람이 수락해야 그 사람의 PC 에 만들어진다. 이때 저장소와 기준 브랜치는 그 사람이 고른다.
+   */
+  owner?: string;
 }
 
 /**
@@ -461,6 +466,8 @@ export interface PlanDecision {
 
 /** 계획안을 승인해 만든 것 */
 export interface PlanResult {
+  /** 다른 사람에게 보낸 배정의 수 */
+  assigned: number;
   /** 새로 만들어 등록한 저장소 */
   repos: Repo[];
   created: Workspace[];
@@ -485,6 +492,8 @@ export interface CoordinatorInfo {
   proposal: Proposal | null;
   /** 새 저장소가 만들어질 폴더 (그 아래에 저장소 이름의 폴더가 생긴다) */
   newRepoDir: string;
+  /** 함께하는 사람들 (일을 나눠 줄 수 있는 사람). 함께하는 프로젝트가 아니면 비어 있다 */
+  people: { peerId: string; name: string; online: boolean }[];
 }
 
 // ---- DB 조회 (5단계) ----
@@ -586,4 +595,35 @@ export interface RemoteWorkspace {
 export interface HeldMessage {
   id: string; projectId: string; fromRef: string; fromLabel: string; toWorkspaceId: string;
   body: string; artifacts: { kind: string; title: string; body: string }[]; createdAt: number;
+}
+
+// ---- 배정: 계획안의 일을 함께하는 사람에게 나눠 주기 ----
+/** 배정 하나에 든 워크스페이스 (받는 사람의 PC 에 만들어질 것) */
+export interface AssignItem { name: string; role: string; todos: PlanTodo[] }
+/** 나눠 받은 일의 진행. 나눠 준 사람에게 보인다 (읽기 전용) */
+export interface AssignProgress { workspaceId: string; name: string; status: string; summary: string; todos: { title: string; status: string; assignee: string }[] }
+/** 내가 나눠 준 일 */
+export interface AssignmentOut {
+  id: string; projectId: string; peerId: string; peerName: string;
+  /** sent: 상대의 수락을 기다린다. accepted: 상대가 받아 만들었다. declined: 거절했다 */
+  state: 'sent' | 'accepted' | 'declined';
+  items: AssignItem[]; progress: AssignProgress[];
+  /** 거절한 이유 등 */
+  note: string; createdAt: number; updatedAt: number;
+}
+/** 내가 받은 배정 */
+export interface AssignmentIn {
+  id: string; projectId: string; fromPeerId: string; fromName: string;
+  /** 기획서 정리 (마크다운) */
+  summary: string;
+  items: AssignItem[]; state: 'pending' | 'accepted' | 'declined'; createdAt: number;
+}
+/** 받은 배정을 수락할 때, 워크스페이스마다 어디에 만들지 */
+export interface AssignChoice {
+  /** 내 프로젝트에 등록된 저장소. 빈 값이면 newRepo 를 만든다 */
+  repoId: string;
+  /** 새로 만들 저장소의 이름 (repoId 가 없을 때) */
+  newRepo?: string;
+  /** 워크스페이스의 이름을 바꾸고 싶을 때 */
+  name?: string;
 }

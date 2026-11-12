@@ -133,8 +133,8 @@ describe('계획안', () => {
     });
     expect(p).toMatchObject({ status: 'pending', summary: '# 로그인\n이메일 로그인을 만든다', note: '프론트와 백엔드로 나눴다' });
     expect(p.items).toEqual([
-      { name: '로그인 화면', repoId: front.id, baseBranch: 'develop', role: '로그인 폼과 화면 흐름', existing: false, todos: [{ title: '폼 만들기', detail: '이메일, 비밀번호', assignee: 'agent' }, todo('검증 붙이기')] },
-      { name: '로그인 API', repoId: back.id, baseBranch: 'main', role: '인증 API', existing: false, todos: [todo('POST /login')] },
+      { name: '로그인 화면', repoId: front.id, baseBranch: 'develop', role: '로그인 폼과 화면 흐름', existing: false, owner: '', todos: [{ title: '폼 만들기', detail: '이메일, 비밀번호', assignee: 'agent' }, todo('검증 붙이기')] },
+      { name: '로그인 API', repoId: back.id, baseBranch: 'main', role: '인증 API', existing: false, owner: '', todos: [todo('POST /login')] },
     ]);
     expect(p.projectTodos).toEqual([todo('세션 방식 정하기', 'user')]);
     expect(core.coordinator.pending(projectId)?.id).toBe(p.id);
@@ -162,7 +162,7 @@ describe('계획안', () => {
     const p = await core.coordinator.propose(projectId, { summary: '', workspaces: [W('프론트', 'nope', { todos: ['버튼 고치기'] })] });
     expect(p.items).toMatchObject([{ name: '프론트', repoId: front.id, existing: true, todos: [todo('버튼 고치기')] }]);
     const res = await core.coordinator.approve(p.id, { items: p.items, projectTodos: [] });
-    expect(res).toEqual({ repos: [], created: [], todos: 1 });
+    expect(res).toEqual({ assigned: 0, repos: [], created: [], todos: 1 });
     expect(core.workspaces.list(projectId).map((w) => w.id)).toEqual([ws.id]);
     expect(core.todos.listProject(projectId).map((t) => [t.title, t.workspaceId])).toEqual([['버튼 고치기', ws.id]]);
   });

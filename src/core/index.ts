@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
+import { AssignmentService } from './assignments';
 import { CoordinatorService } from './coordinator';
 import { coordinatorTools } from './mcp/tools/coordinator';
 import { browserTools } from './mcp/tools/browser';
@@ -50,6 +51,7 @@ export interface Core {
   dbs: DbService;
   browser: BrowserService;
   peers: PeerService;
+  assignments: AssignmentService;
   /** 프로젝트를 완료 처리하기 전에 보여줄 것: 워크스페이스의 상태와 정리 대기에 있는 것 */
   completionPlan(projectId: string): Promise<CompletionPlan>;
   /** 프로젝트를 완료 처리한다: 에이전트를 끄고, 고른 작업 폴더와 정리 대기 항목을 지우고, 프로젝트를 완료로 옮긴다. 기록은 남는다 */
@@ -134,6 +136,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     get dbs() { return dbs; },
     get browser() { return browser; },
     get peers() { return peers; },
+    get assignments() { return assignments; },
     describe: (workspaceId, patch) => service.describeByAgent(workspaceId, patch),
     // 전달 엔진은 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get delivery() { return delivery; },
@@ -183,7 +186,10 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       isProjectClosed: (projectId) => service.isProjectClosed(projectId),
     },
   });
-  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos'), settings: () => settings.get() });
+  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos'), settings: () => settings.get(),
+    // 계획안의 일을 함께하는 사람에게 나눠 준다. 아래에서 만들어지는 것들을 부를 때 읽는다.
+    assign: { people: (projectId) => peers.people(projectId), send: (projectId, peerId, a) => assignments.send(projectId, peerId, a), cancel: (id) => assignments.cancel(id) },
+  });
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
@@ -198,6 +204,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     db, projects, workspaces, messages, settings: () => settings.get(), secrets: o.secrets ?? noSecrets,
     transport: o.peerTransport ?? noTransport, discovery: o.peerDiscovery, isProjectClosed: (projectId) => service.isProjectClosed(projectId),
   });
+  const assignments = new AssignmentService({ db, peers, projects, repos, workspaces, todos, messages, service, coordinator: () => coordinator });
   // 워크스페이스의 이름이 바뀌거나 지워지면 공개한 목록을 다시 보낸다. 설정이 바뀌면 듣기를 켜거나 끈다.
   service.on('changed', () => peers.publishSoon());
   settings.on('changed', () => { void peers.apply(); });
@@ -237,7 +244,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, browser, peers, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {
@@ -355,6 +362,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       service.detach();
       chat.dispose();
       await engine.stopAll();
+      assignments.dispose();
       await peers.dispose();
       await pty.killAll();
       await mcp.close();

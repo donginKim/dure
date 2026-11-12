@@ -127,6 +127,12 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  assignments: {
+    outgoing: (projectId) => call('assignments.outgoing', projectId),
+    incoming: (projectId) => call('assignments.incoming', projectId),
+    accept: (id, choices, share) => call('assignments.accept', id, choices, share),
+    decline: (id, reason) => call('assignments.decline', id, reason),
+  },
   peers: {
     status: () => call('peers.status'),
     found: () => call('peers.found'),

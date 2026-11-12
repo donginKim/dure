@@ -53,6 +53,7 @@ export const workspaceTools: ToolBundle = (server, ctx, deps) => {
     async () => {
       const repos = deps.repos.list(ctx.project.id);
       const others = deps.peers.remoteWorkspaces(ctx.project.id);
+      const people = deps.peers.people(ctx.project.id);
       const workspaces = deps.workspaces.listAll(ctx.project.id);
       const repoName = (id: string): string => repos.find((r) => r.id === id)?.name ?? '';
       const coordinator = ctx.workspace.role === 'coordinator';
@@ -68,6 +69,8 @@ export const workspaceTools: ToolBundle = (server, ctx, deps) => {
               name: r.name, path: r.path, workspaceCount: workspaces.filter((w) => w.repoId === r.id).length,
               ...(coordinator ? { currentBranch: current[i], branches: (branches[i] ?? []).slice(0, 50) } : {}),
             })),
+            // 조율 에이전트: 일을 나눠 줄 수 있는 사람 (plan_propose 의 owner 에 name 을 쓴다).
+            ...(coordinator && people.length ? { people: people.map((p) => ({ name: p.name, online: p.online })) } : {}),
             // 다른 사람의 두레에 있는 워크스페이스 (함께하는 프로젝트에서 그 사람이 공개한 것). message_send 의 to 에 name 을 그대로 쓴다.
             ...(others.length ? { otherPeople: others.map((r) => ({ name: r.label, owner: r.peerName, note: '다른 사람의 에이전트다. 파일을 같이 쓰지 않는다: 필요한 내용은 메시지와 자료의 글로 주고받아라' })) } : {}),
             workspaces: workspaces.map((w) => (w.role === 'coordinator'

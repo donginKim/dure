@@ -212,6 +212,29 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- 배정: 계획안의 일을 함께하는 사람에게 나눠 주기
+  CREATE TABLE assignments_out (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    peer_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'sent',
+    progress TEXT NOT NULL DEFAULT '[]',
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE assignments_in (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',
+    workspaces TEXT NOT NULL DEFAULT '[]',
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

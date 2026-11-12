@@ -329,6 +329,10 @@ const MIGRATIONS: string[] = [
   ALTER TABLE work_sessions ADD COLUMN open INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE work_sessions ADD COLUMN auto INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- 그날의 휴게 시간 (분). 사용자가 달력에서 적는다. 근무시간에서 뺀다
+  CREATE TABLE work_breaks (day TEXT PRIMARY KEY, minutes INTEGER NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

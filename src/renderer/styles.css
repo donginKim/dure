@@ -793,3 +793,9 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .cal-day { font-size: 12px; color: var(--muted); }
 .cal-total { font-size: 13px; font-weight: 600; }
 .cal-range { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* 근무시간: 휴게 시간 */
+.cal-break { font-size: 11px; color: var(--warn); }
+.work-break { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
+.work-break-input { width: 130px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; outline: none; }
+.work-break-input.bad { border-color: var(--danger); }

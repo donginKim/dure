@@ -1,12 +1,12 @@
 import type { PlanDecision, ProposalItem } from '@shared/types';
-import { approveLabel, draftRepoId, fromDraft, planCounts, planProblem, specMessage, tidyPlan, toDraft } from '../../src/renderer/planView';
+import { approveLabel, assignChoiceProblem, assignProgressLine, draftRepoId, fromDraft, planCounts, planProblem, specMessage, tidyPlan, toDraft } from '../../src/renderer/planView';
 
 const item = (o: Partial<ProposalItem> = {}): ProposalItem => ({ name: '로그인 화면', repoId: 'r1', baseBranch: 'main', role: '', todos: [], existing: false, ...o });
 const todo = (title: string, assignee: 'agent' | 'user' = 'agent') => ({ title, detail: '', assignee });
 
 test('planCounts 와 approveLabel: 새로 만들 워크스페이스와 제목이 있는 TODO 만 센다', () => {
   const d: PlanDecision = { items: [item({ todos: [todo('폼'), todo(' ')] }), item({ name: '이미 있던 것', existing: true, todos: [todo('고치기')] })], projectTodos: [todo('결정', 'user')] };
-  expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 3 });
+  expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 3, handed: 0 });
   expect(approveLabel(d)).toBe('승인하고 워크스페이스 1개, TODO 3개 만들기');
   expect(approveLabel({ items: [], projectTodos: [todo('결정')] })).toBe('승인하고 TODO 1개 만들기');
   expect(approveLabel({ items: [], projectTodos: [] })).toBe('만들 것이 없습니다');
@@ -44,7 +44,7 @@ test('specMessage: 내용에 ``` 가 있어도 블록이 일찍 닫히지 않는
 
 test('새 저장소: 수에 들어가고, 이름을 확인하고, 없는 새 저장소를 가리키는 워크스페이스를 잡는다', () => {
   const d: PlanDecision = { newRepos: [{ name: 'web', description: ' 웹 ' }], items: [item({ repoId: 'new:web' })], projectTodos: [] };
-  expect(planCounts(d)).toEqual({ repos: 1, workspaces: 1, todos: 0 });
+  expect(planCounts(d)).toEqual({ repos: 1, workspaces: 1, todos: 0, handed: 0 });
   expect(approveLabel(d)).toBe('승인하고 저장소 1개, 워크스페이스 1개 만들기');
   expect(planProblem(d)).toBeNull();
   expect(tidyPlan(d).newRepos).toEqual([{ name: 'web', description: '웹' }]);
@@ -76,4 +76,35 @@ test('고치는 중인 계획: 새 저장소 이름을 치는 도중 다른 저�
 test('새 저장소 이름: 화면도 코어와 같은 규칙으로 본다', () => {
   for (const name of ['x.', '.git', '-x', 'a b', '']) expect(planProblem({ newRepos: [{ name, description: '' }], items: [], projectTodos: [] })).toContain('영문, 숫자');
   expect(planProblem({ newRepos: [{ name: ' web ', description: '' }], items: [], projectTodos: [] })).toBeNull();
+});
+
+describe('일 나눠 주기', () => {
+  const item2 = (o: Partial<ProposalItem> = {}): ProposalItem => ({ name: '화면', repoId: 'r1', baseBranch: 'main', role: '', todos: [{ title: '폼', detail: '', assignee: 'agent' }], existing: false, ...o });
+
+  test('나눠 주는 워크스페이스는 내 PC 에 만들 것으로 세지 않는다. 저장소가 비어 있어도 된다', () => {
+    const d = { newRepos: [], items: [item2(), item2({ name: '서버', repoId: '', baseBranch: '', owner: 'p1' })], projectTodos: [] };
+    expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 1, handed: 1 });
+    expect(planProblem(d)).toBeNull();
+    expect(approveLabel(d)).toBe('승인하고 워크스페이스 1개, TODO 1개 만들기, 1개 나눠 주기');
+    const only = { newRepos: [], items: [item2({ repoId: '', owner: 'p1' })], projectTodos: [] };
+    expect(planProblem(only)).toBeNull();
+    expect(approveLabel(only)).toBe('승인하고 워크스페이스 1개 나눠 주기');
+  });
+
+  test('나눠 준 일의 진행을 한 줄로', () => {
+    const base = { id: 'a', projectId: 'p', peerId: 'x', peerName: '개발', items: [], progress: [], note: '', createdAt: 0, updatedAt: 0 };
+    expect(assignProgressLine({ ...base, state: 'sent' })).toBe('그 사람이 수락해야 만들어집니다');
+    expect(assignProgressLine({ ...base, state: 'declined', note: '바쁨' })).toBe('거절: 바쁨');
+    expect(assignProgressLine({ ...base, state: 'accepted' })).toBe('진행 상황을 공개하지 않았습니다');
+    const todos = [{ title: 'a', status: 'done', assignee: 'agent' }, { title: 'b', status: 'doing', assignee: 'agent' }, { title: 'c', status: 'cancelled', assignee: 'agent' }];
+    expect(assignProgressLine({ ...base, state: 'accepted', progress: [{ workspaceId: 'w', name: '서버', status: 'working', summary: '', todos }] })).toBe('TODO 1/2 끝남');
+  });
+
+  test('받은 배정은 워크스페이스마다 저장소를 골라야 수락할 수 있다', () => {
+    const items = [{ name: '서버', role: '', todos: [] }, { name: '알림', role: '', todos: [] }];
+    expect(assignChoiceProblem(items, [{ repoId: 'r1' }, { repoId: '' }])).toContain('"알림"');
+    expect(assignChoiceProblem(items, [{ repoId: 'r1' }, { repoId: '', newRepo: '한글' }])).toContain('영문');
+    expect(assignChoiceProblem(items, [{ repoId: 'r1' }, { repoId: '', newRepo: 'api' }])).toBeNull();
+    expect(assignChoiceProblem(items, [{ repoId: 'r1', name: '알림' }, { repoId: 'r1' }])).toContain('겹칩니다');
+  });
 });

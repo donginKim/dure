@@ -31,7 +31,7 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
   return (
     <div className="page">
       <h1>근무시간</h1>
-      <p className="lead">근무지의 와이파이에 붙어 있는 동안을 근무시간으로 잽니다. 두레가 켜져 있을 때만 재고, 1분마다 확인합니다. 5분 넘게 끊겼다 다시 붙으면 새 구간으로 적습니다.</p>
+      <p className="lead">근무지의 와이파이에 붙어 있는 동안을 근무시간으로 잽니다. 두레가 켜져 있을 때만 잽니다. 세는 단위(1분마다, 또는 매 정각과 30분에 확인하는 30분 단위)는 설정에서 고릅니다.</p>
       {error && <div className="error" onClick={() => setError('')}>{error}</div>}
       {status && (
         <div className={`work-status${status.atWork ? ' on' : ''}`}>

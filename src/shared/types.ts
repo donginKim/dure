@@ -353,6 +353,8 @@ export interface Settings {
   workTimeEnabled: boolean;
   /** 근무지의 와이파이 이름. 이 이름의 와이파이에 붙어 있는 동안을 근무시간으로 센다 */
   workWifi: string;
+  /** 세는 단위. minute: 1분마다 확인해 붙어 있던 만큼. half: 매 정각과 30분에 확인해, 그때 붙어 있으면 그 30분을 센다 */
+  workTimeUnit: 'minute' | 'half';
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */

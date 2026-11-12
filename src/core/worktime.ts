@@ -10,6 +10,10 @@ interface Row { id: string; day: string; start_at: number; end_at: number }
 const POLL_MS = 60_000;
 /** 이만큼 넘게 끊겼다 다시 붙으면 새 구간으로 센다 (잠깐 끊긴 것은 이어 붙인다) */
 const GAP_MS = 5 * 60_000;
+/** 30분 단위로 셀 때의 한 칸 */
+export const SLOT_MS = 30 * 60_000;
+/** 정각·30분에서 이만큼 안에 한 확인을 그 칸의 확인으로 친다 (그때 두레가 꺼져 있었거나 잠들어 있었으면 그 칸은 세지 않는다) */
+const SLOT_GRACE_MS = 2 * 60_000;
 const two = (n: number): string => String(n).padStart(2, '0');
 /** 그 시각의 날짜 (이 PC 의 시간대) */
 export const dayOf = (at: number): string => { const d = new Date(at); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`; };
@@ -44,12 +48,15 @@ export async function probeNetwork(): Promise<NetworkProbe> {
 /**
  * 근무시간. 근무지의 네트워크에 붙어 있는 동안을 잰다: 설정한 이름의 와이파이이거나, 사용자가 "근무지로 기억" 한 네트워크(공유기)다.
  * 1분마다 확인해, 붙어 있으면 지금 구간의 끝을 늘린다. 5분 넘게 끊겼다 붙으면 새 구간이다. 두레가 켜져 있을 때만 잰다.
+ * 설정에서 30분 단위로 바꾸면, 매 정각과 30분에 확인해 그때 붙어 있으면 그 30분을 통째로 센다.
  * 이벤트: 'changed'
  */
 export class WorkTimeService extends EventEmitter {
   private timer: NodeJS.Timeout | undefined;
   private last: NetworkProbe = { ssid: null, hidden: false, gateway: null };
   private atWork = false;
+  /** 30분 단위: 이미 확인한 칸의 시작 시각 (같은 칸을 두 번 보지 않는다) */
+  private checkedSlot = -1;
 
   constructor(private readonly d: { db: Database.Database; settings(): Settings; probe?: () => Promise<NetworkProbe>; now?: () => number }) { super(); }
 
@@ -82,7 +89,22 @@ export class WorkTimeService extends EventEmitter {
     this.last = p;
     const at = this.matches(p);
     const now = this.now();
-    if (at) {
+    if (this.d.settings().workTimeUnit === 'half') {
+      // 30분 단위: 매 정각과 30분에 한 번 확인한다. 그때 붙어 있으면 그 30분(칸)을 통째로 센다.
+      // 칸은 이 PC 의 시각으로 맞춘다 (시간대가 30분 어긋난 곳에서도 정각·30분에 맞는다).
+      const d = new Date(now);
+      const slot = new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes() < 30 ? 0 : 30).getTime();
+      if (slot !== this.checkedSlot && now - slot <= SLOT_GRACE_MS) {
+        this.checkedSlot = slot;
+        if (at) {
+          const day = dayOf(slot);
+          // 바로 앞 칸에서 이어지면 한 구간으로 늘린다.
+          const open = this.d.db.prepare('SELECT * FROM work_sessions WHERE end_at = ? ORDER BY start_at DESC LIMIT 1').get(slot) as Row | undefined;
+          if (open && open.day === day) this.d.db.prepare('UPDATE work_sessions SET end_at = ? WHERE id = ?').run(slot + SLOT_MS, open.id);
+          else if (!this.d.db.prepare('SELECT 1 FROM work_sessions WHERE start_at <= ? AND end_at > ?').get(slot, slot)) this.d.db.prepare('INSERT INTO work_sessions (id, day, start_at, end_at) VALUES (?, ?, ?, ?)').run(crypto.randomUUID(), day, slot, slot + SLOT_MS);
+        }
+      }
+    } else if (at) {
       const day = dayOf(now);
       const open = this.d.db.prepare('SELECT * FROM work_sessions WHERE day = ? ORDER BY end_at DESC LIMIT 1').get(day) as Row | undefined;
       if (open && now - open.end_at <= GAP_MS && now >= open.end_at) this.d.db.prepare('UPDATE work_sessions SET end_at = ? WHERE id = ?').run(now, open.id);

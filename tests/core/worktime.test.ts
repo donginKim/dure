@@ -97,3 +97,47 @@ test('꺼 두면 세지 않는다. 이름을 비워 두면 어떤 와이파이�
   await t.pass(10);
   expect(t.svc.status()).toMatchObject({ enabled: false, atWork: false, todayMs: 2 * 60_000 });
 });
+
+test('30분 단위: 매 정각과 30분에 확인해, 그때 붙어 있으면 그 30분을 통째로 센다', async () => {
+  const t = setup();                       // 09:00
+  t.settings.update({ workTimeUnit: 'half' });
+  // 09:10 에 도착한다: 09:00 의 확인 때는 없었으니 그 칸은 세지 않는다
+  await t.svc.tick();
+  await t.pass(10);
+  t.at(OFFICE);
+  await t.pass(19);                        // 09:29
+  expect(t.svc.status().todayMs).toBe(0);
+  await t.pass(1);                         // 09:30 의 확인
+  expect(t.svc.status()).toMatchObject({ atWork: true, todayMs: 30 * 60_000 });
+  await t.pass(29);                        // 09:59: 같은 칸은 한 번만 센다
+  expect(t.svc.status().todayMs).toBe(30 * 60_000);
+  await t.pass(61);                        // 11:00 까지: 10:00, 10:30, 11:00 의 확인
+  let day = t.svc.month(2026, 11)[0]!;
+  // 이어진 칸은 한 구간이다: 09:30 ~ 11:30
+  expect(day.sessions.length).toBe(1);
+  expect(day.totalMs).toBe(4 * 30 * 60_000);
+  expect(new Date(day.firstAt).getMinutes()).toBe(30);
+  expect(new Date(day.lastAt).getMinutes()).toBe(30);
+  // 11:10 에 나간다: 11:00 에 있었으니 11:30 까지 센 것으로 남고, 그 뒤는 세지 않는다
+  t.at(HOME);
+  await t.pass(80);                        // 12:20
+  expect(t.svc.status()).toMatchObject({ atWork: false, todayMs: 4 * 30 * 60_000 });
+  // 다시 붙으면 새 구간
+  t.at(OFFICE);
+  await t.pass(10);                        // 12:30
+  day = t.svc.month(2026, 11)[0]!;
+  expect(day.sessions.length).toBe(2);
+  expect(day.totalMs).toBe(5 * 30 * 60_000);
+});
+
+test('30분 단위: 정각·30분에 두레가 확인하지 못했으면 (꺼져 있었거나 잠들어 있었으면) 그 칸은 세지 않는다', async () => {
+  const t = setup();
+  t.settings.update({ workTimeUnit: 'half' });
+  t.at(OFFICE);
+  t.jump(7 * 60_000);                      // 09:07 에 처음 확인한다 (정각에서 2분 넘게 지났다)
+  await t.svc.tick();
+  expect(t.svc.status()).toMatchObject({ atWork: true, todayMs: 0 });
+  t.jump(24 * 60_000);                     // 09:31: 30분에서 1분 지났다 → 그 칸의 확인으로 친다
+  await t.svc.tick();
+  expect(t.svc.status().todayMs).toBe(30 * 60_000);
+});

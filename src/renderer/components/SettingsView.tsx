@@ -254,6 +254,12 @@ export function SettingsView() {
           <Row label="근무시간 재기" help='켜면 근무지의 와이파이에 붙어 있는 동안을 근무시간으로 재서 "근무시간" 달력에 적습니다. 두레가 켜져 있을 때만 잽니다. 기록은 이 PC 에만 남습니다.' {...row('workTimeEnabled')}>
             <Toggle on={s.workTimeEnabled} onChange={(v) => save('workTimeEnabled', v)} label="근무시간 재기" />
           </Row>
+          <Row label="세는 단위" help='"1분마다" 는 붙어 있던 시간을 분 단위로 그대로 셉니다. "30분 단위" 는 매 정각과 30분에 확인해, 그때 근무지에 붙어 있으면 그 30분을 통째로 셉니다 (예: 09:10 에 도착하면 09:30 부터, 18:10 에 나가면 18:30 까지). 그 시각에 두레가 꺼져 있거나 Mac 이 잠들어 있으면 그 30분은 세지 않습니다.' {...row('workTimeUnit')}>
+            <select className="set-select" value={s.workTimeUnit} onChange={(e) => save('workTimeUnit', e.target.value as 'minute' | 'half')}>
+              <option value="minute">1분마다</option>
+              <option value="half">30분 단위 (정각과 30분에 확인)</option>
+            </select>
+          </Row>
           <Row label="근무지의 와이파이 이름" help='이 이름의 와이파이에 붙으면 그때부터 셉니다 (대소문자는 가리지 않습니다). macOS 가 와이파이 이름을 알려 주지 않으면 이름으로는 알아볼 수 없습니다: 그때는 "근무시간" 화면에서 "지금 네트워크를 근무지로 기억" 을 누르세요.' {...row('workWifi')}>
             <TextInput value={s.workWifi} placeholder="와이파이 이름" onCommit={(v) => save('workWifi', v)} />
           </Row>

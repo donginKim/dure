@@ -343,6 +343,8 @@ export interface Settings {
   autoStartOnMessage: boolean;
   /** 커밋·push 뒤에 에이전트에게 알린다 */
   notifyAgentOnCommit: boolean;
+  /** 에이전트가 메모를 찾아 읽을 수 있다 (읽기만) */
+  notesForAgents: boolean;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -671,3 +673,8 @@ export interface UpdateStatus {
   last: { ok: boolean; at: number } | null;
   logPath: string;
 }
+
+// ---- 메모 (프로젝트와 상관없이 하나) ----
+export interface Note { id: string; title: string; body: string; createdAt: number; updatedAt: number }
+/** 목록에 보이는 메모 한 줄. preview 는 찾은 낱말의 앞뒤 (찾지 않았으면 본문의 앞부분) */
+export interface NoteSummary { id: string; title: string; preview: string; updatedAt: number }

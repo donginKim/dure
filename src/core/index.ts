@@ -14,6 +14,8 @@ import { dbTools } from './mcp/tools/db';
 import { slackTools } from './mcp/tools/slack';
 import { SlackService } from './slackService';
 import { UpdateService } from './updateService';
+import { NoteStore } from './notes';
+import { noteTools } from './mcp/tools/notes';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
 import { cleanupTools } from './mcp/tools/cleanup';
@@ -54,6 +56,7 @@ export interface Core {
   dbs: DbService;
   slack: SlackService;
   updates: UpdateService;
+  notes: NoteStore;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;
@@ -131,6 +134,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const settings = new SettingsService(db);
   const messages = new MessageService(db);
   const git = createGit(o.baseEnv);
+  const notes = new NoteStore(db);
   const cleanup = new CleanupService({ db, workspaces, git, dir: join(o.dataDir, 'cleanup') });
   messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
@@ -146,6 +150,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     get coordinator() { return coordinator; },
     get dbs() { return dbs; },
     get slack() { return slack; },
+    notes,
+    notesForAgents: () => settings.get().notesForAgents,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -180,7 +186,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -260,7 +266,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

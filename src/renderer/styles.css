@@ -719,3 +719,26 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .update-sub { color: var(--muted); font-size: 11.5px; word-break: break-all; }
 .update-changes { margin: 0; padding-left: 16px; color: var(--muted); font-size: 11.5px; max-height: 140px; overflow-y: auto; }
 .update-actions { display: flex; gap: 6px; }
+
+/* 메모장: 어느 화면에서든 오른쪽에 뜬다 */
+.notes { position: fixed; top: var(--titlebar); right: 0; bottom: 0; width: min(460px, 92vw); z-index: 40; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35); display: flex; flex-direction: column; min-height: 0; }
+.notes-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; }
+.notes-title { font-size: 15px; font-weight: 700; padding-left: 2px; }
+.notes-saved { color: var(--muted); font-size: 11.5px; margin-right: 4px; }
+.notes-tools { display: flex; gap: 8px; padding: 0 12px 10px; }
+.notes-search { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; outline: none; }
+.notes-search:focus, .notes-name:focus { border-color: var(--accent); }
+.notes-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+.notes-empty { color: var(--muted); font-size: 12.5px; line-height: 1.6; padding: 16px 8px; }
+.notes-item { text-align: left; background: none; border: 0; border-radius: 8px; padding: 9px 10px; cursor: pointer; color: inherit; font: inherit; display: flex; flex-direction: column; gap: 3px; }
+.notes-item:hover { background: var(--panel-2); }
+.notes-item-head { display: flex; align-items: baseline; gap: 8px; }
+.notes-item-title { flex: 1; min-width: 0; font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notes-item-time { color: var(--muted); font-size: 11px; flex: none; }
+.notes-item-preview { color: var(--muted); font-size: 12px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.notes mark { background: rgba(217, 164, 65, 0.35); color: inherit; border-radius: 2px; }
+.notes-edit { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.notes-name { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-weight: 600; outline: none; }
+.notes-body { flex: 1; min-height: 0; resize: none; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 13px/1.65 inherit; outline: none; }
+.notes-body:focus { border-color: var(--accent); }
+.notes-head .spacer { flex: 1; }

@@ -1,4 +1,5 @@
 import type {
+  Note, NoteSummary,
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
@@ -6,7 +7,7 @@ import type {
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update';
+export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -171,6 +172,15 @@ export interface DureApi {
     get(id: string): Promise<Artifact | null>;
   };
   onChanged(cb: (topic: ChangeTopic) => void): () => void;
+  /** 메모장: 프로젝트와 상관없이 하나 */
+  notes: {
+    /** 고친 순서대로. query 가 있으면 그 낱말이 든 것만 */
+    list(query?: string): Promise<NoteSummary[]>;
+    get(id: string): Promise<Note | null>;
+    create(input?: { title?: string; body?: string }): Promise<Note>;
+    update(id: string, patch: { title?: string; body?: string }): Promise<Note>;
+    remove(id: string): Promise<void>;
+  };
   /** 업데이트: 소스에서 설치한 앱이 새 버전을 확인하고 받아서 다시 만든다 */
   update: {
     status(): Promise<UpdateStatus>;
@@ -251,6 +261,7 @@ export interface DureApi {
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',
   'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide',
   'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',

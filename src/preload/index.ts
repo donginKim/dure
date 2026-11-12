@@ -127,6 +127,13 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  notes: {
+    list: (query) => call('notes.list', query),
+    get: (id) => call('notes.get', id),
+    create: (input) => call('notes.create', input),
+    update: (id, patch) => call('notes.update', id, patch),
+    remove: (id) => call('notes.remove', id),
+  },
   update: {
     status: () => call('update.status'),
     check: () => call('update.check'),

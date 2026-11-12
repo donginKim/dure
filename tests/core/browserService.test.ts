@@ -50,7 +50,9 @@ beforeEach(async () => {
   calls = [];
   page = { url: '', title: '', lines: ['제목1: 할 일', '[1] 입력(text) "새 할 일"', '[2] 버튼 "추가"'], refs: 2, cut: false };
   elements = { 1: 'input', 2: 'button', 3: 'disabled' };
-  core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), browser: driver });
+  core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), browser: driver, browserWaitMs: 80 });
+  // 아래의 기본 시험들은 주소 허용을 묻지 않는 설정으로 한다. 묻는 흐름은 따로 시험한다.
+  core.settings.update({ agentBrowser: 'local' });
   projectId = core.projects.create('쇼핑몰').id;
   const repo = await core.addRepo(projectId, makeRepo('shop'));
   ws = await core.service.create({ projectId, repoId: repo.id, name: '프론트', baseBranch: 'main', agentKind: 'claude' });
@@ -154,4 +156,74 @@ test('화면의 페이지 보관소: 한 워크스페이스에 페이지 하나,
   store.ensure('w2', 'http://localhost:4000');
   store.keepOnly(new Set(['w2']));
   expect(store.all().map((e) => e.workspaceId)).toEqual(['w2']);
+});
+
+describe('처음 여는 주소의 허용 (기본 설정)', () => {
+  beforeEach(() => { core.settings.update({ agentBrowser: 'ask' }); core.settings.update({ autoStartOnMessage: false }); });
+
+  test('허용하기 전에는 열지 않는다. 허용하면 열리고, 같은 주소는 다시 묻지 않는다', async () => {
+    const asked = call(ws.id, 'browser_open', { url: 'http://localhost:3000/a' });
+    await new Promise((r) => setTimeout(r, 30));
+    const req = core.browser.pending(projectId);
+    expect(req).toMatchObject([{ workspaceId: ws.id, origin: 'http://localhost:3000', url: 'http://localhost:3000/a' }]);
+    expect(calls).toEqual([]);
+    core.browser.decide(req[0]!.id, true);
+    expect(await asked).toContain('주소: http://localhost:3000/a');
+    expect(core.browser.pending(projectId)).toEqual([]);
+    calls = [];
+    expect(await call(ws.id, 'browser_open', { url: 'http://localhost:3000/b' })).toContain('주소: http://localhost:3000/b');
+    expect(calls.length).toBe(2);
+  });
+
+  test('포트가 다르면 다른 주소다: 다시 묻는다. 거부하면 열지 않는다', async () => {
+    const first = call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    await new Promise((r) => setTimeout(r, 30));
+    core.browser.decide(core.browser.pending(projectId)[0]!.id, true);
+    await first;
+    calls = [];
+    const other = call(ws.id, 'browser_open', { url: 'http://localhost:8888' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(core.browser.pending(projectId)[0]!.origin).toBe('http://localhost:8888');
+    core.browser.decide(core.browser.pending(projectId)[0]!.id, false);
+    expect(await other).toContain('거부했다');
+    expect(calls).toEqual([]);
+  });
+
+  test('허용이 늦으면 기다리는 중으로 돌아가고, 결정되면 두레가 알린다. 같은 요청을 겹쳐 올리지 않는다', async () => {
+    expect(await call(ws.id, 'browser_open', { url: 'http://localhost:3000' })).toContain('아직 허용하지 않았다');
+    expect(await call(ws.id, 'browser_open', { url: 'http://localhost:3000/x' })).toContain('아직 허용하지 않았다');
+    expect(core.browser.pending(projectId).length).toBe(1);
+    core.browser.decide(core.browser.pending(projectId)[0]!.id, true);
+    expect(core.messages.undelivered(ws.id).map((m) => m.body).join('\n')).toContain('http://localhost:3000 을 여는 것을 허용했다');
+    expect(await call(ws.id, 'browser_open', { url: 'http://localhost:3000' })).toContain('주소: http://localhost:3000');
+  });
+
+  test('허용한 주소에서 허용하지 않은 주소로 넘어가 있으면 읽지도 조작하지도 않는다', async () => {
+    const first = call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    await new Promise((r) => setTimeout(r, 30));
+    core.browser.decide(core.browser.pending(projectId)[0]!.id, true);
+    await first;
+    page = { ...page, url: 'http://localhost:8888/tree', lines: ['Jupyter: 노트북 목록'] };
+    calls = [];
+    for (const [tool, args] of [['browser_snapshot', {}], ['browser_click', { ref: 2 }], ['browser_type', { ref: 1, text: 'x' }], ['browser_screenshot', {}], ['browser_console', {}]] as const) {
+      const text = await call(ws.id, tool, args);
+      expect(text).toContain('사용자가 허용하지 않은 주소다');
+      expect(text).not.toContain('Jupyter');
+      expect(text).not.toContain('AAAA');
+    }
+    expect(calls).toEqual([]);
+  });
+
+  test('허용은 프로젝트 단위다: 다른 프로젝트의 에이전트는 다시 물어야 한다', async () => {
+    const first = call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
+    await new Promise((r) => setTimeout(r, 30));
+    core.browser.decide(core.browser.pending(projectId)[0]!.id, true);
+    await first;
+    const p2 = core.projects.create('다른 것').id;
+    const repo2 = await core.addRepo(p2, makeRepo('other'));
+    const ws2 = await core.service.create({ projectId: p2, repoId: repo2.id, name: '다른', baseBranch: 'main', agentKind: 'claude' });
+    expect(await call(ws2.id, 'browser_open', { url: 'http://localhost:3000' })).toContain('아직 허용하지 않았다');
+    expect(core.browser.pending(p2).length).toBe(1);
+    expect(core.browser.pending(projectId)).toEqual([]);
+  });
 });

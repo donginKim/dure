@@ -78,6 +78,8 @@ export interface CoreOptions {
   worktreeRoot: string;
   /** 내장 브라우저의 페이지를 움직이는 쪽 (앱은 Electron 메인 프로세스). 없으면 에이전트는 브라우저를 쓸 수 없다 */
   browser?: BrowserDriver;
+  /** 시험용: 주소 허용을 기다리는 시간 */
+  browserWaitMs?: number;
   /** DB 비밀번호를 암호화해 보관하는 방법 (앱은 macOS 키체인). 없으면 비밀번호가 있는 연결을 저장할 수 없다 */
   secrets?: SecretBox;
   /** 시험용: DB 실행기를 가짜로 바꾸고, 승인을 기다리는 시간을 줄인다 */
@@ -178,7 +180,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
-  const browser = new BrowserService({ driver: o.browser ?? noBrowser, workspaces, settings: () => settings.get(), isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  const browser = new BrowserService({ driver: o.browser ?? noBrowser, workspaces, messages, waitMs: o.browserWaitMs, settings: () => settings.get(), isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  service.on('changed', (id: string) => { if (!workspaces.get(id)) browser.dropWorkspace(id); });
   service.attachDelivery(delivery);
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.

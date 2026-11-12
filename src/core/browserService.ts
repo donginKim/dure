@@ -1,4 +1,6 @@
-import type { Settings } from '@shared/types';
+import { EventEmitter } from 'node:events';
+import type { BrowserRequest, Settings } from '@shared/types';
+import type { MessageService } from './messages';
 import type { WorkspaceStore } from './stores';
 
 /**
@@ -176,8 +178,71 @@ export interface PageSnapshot { url: string; title: string; text: string; refs: 
  * 사용자는 같은 페이지를 화면에서 아무 주소로나 옮길 수 있으므로, 읽기와 조작을 할 때마다 지금 주소를 다시 확인한다:
  * 허용되지 않은 주소의 내용은 에이전트에게 주지 않는다.
  */
-export class BrowserService {
-  constructor(private readonly d: { driver: BrowserDriver; workspaces: WorkspaceStore; settings(): Settings; isProjectClosed(projectId: string): boolean }) {}
+export class BrowserService extends EventEmitter {
+  /** 사용자가 허용한 주소 (프로젝트마다). 두레를 다시 켜면 다시 묻는다 */
+  private readonly approved = new Set<string>();
+  private readonly requests = new Map<string, BrowserRequest & { waiter?: (allowed: boolean) => void; late: boolean }>();
+
+  constructor(private readonly d: {
+    driver: BrowserDriver; workspaces: WorkspaceStore; settings(): Settings; isProjectClosed(projectId: string): boolean;
+    /** 늦게 온 결정을 에이전트에게 알리는 데 쓴다 */
+    messages?: MessageService;
+    waitMs?: number;
+  }) {
+    super();
+  }
+
+  private key(projectId: string, origin: string): string { return `${projectId}\n${origin}`; }
+
+  /** 이 주소를 에이전트가 써도 된다고 사용자가 허용했는가 ("묻지 않기" 설정이면 언제나 그렇다). */
+  private permitted(projectId: string, url: string): boolean {
+    if (this.d.settings().agentBrowser !== 'ask') return true;
+    try { return this.approved.has(this.key(projectId, new URL(url).origin)); } catch { return false; }
+  }
+
+  /** 결정을 기다리는 요청. */
+  pending(projectId: string): BrowserRequest[] {
+    return [...this.requests.values()].filter((r) => r.projectId === projectId).map(({ id, projectId: p, workspaceId, origin, url, createdAt }) => ({ id, projectId: p, workspaceId, origin, url, createdAt }));
+  }
+
+  /** 사용자가 주소를 허용하거나 거부한다. 허용은 그 프로젝트의 모든 워크스페이스에 적용된다. */
+  decide(requestId: string, allow: boolean): void {
+    const r = this.requests.get(requestId);
+    if (!r) throw new Error('결정을 기다리는 요청이 아닙니다.');
+    this.requests.delete(requestId);
+    if (allow) this.approved.add(this.key(r.projectId, r.origin));
+    this.emit('changed', r.projectId);
+    if (r.waiter) { r.waiter(allow); return; }
+    // 도구 호출이 이미 돌아갔다: 알림으로 깨운다.
+    if (r.late) {
+      try {
+        this.d.messages?.send({ projectId: r.projectId, from: { kind: 'system' }, toWorkspaceId: r.workspaceId, title: '브라우저', body: allow ? `사용자가 ${r.origin} 을 여는 것을 허용했다. browser_open 을 다시 불러라.` : `사용자가 ${r.origin} 을 여는 것을 거부했다. 다시 요청하지 마라.` });
+      } catch { /* 알림 실패가 결정을 바꾸면 안 된다 */ }
+    }
+  }
+
+  /** 처음 여는 주소면 사용자의 허용을 받는다. 오래 걸리면 기다리는 중이라고 돌려보낸다. */
+  private async ask(workspaceId: string, projectId: string, url: string): Promise<void> {
+    if (this.permitted(projectId, url)) return;
+    const origin = new URL(url).origin;
+    const same = [...this.requests.values()].find((r) => r.workspaceId === workspaceId && r.origin === origin);
+    if (same) throw new Error(`사용자가 ${origin} 을 여는 것을 아직 허용하지 않았다. 허용되면 두레가 알려 준다. 그때 browser_open 을 다시 불러라.`);
+    if ([...this.requests.values()].filter((r) => r.workspaceId === workspaceId).length >= 3) throw new Error('허용을 기다리는 주소가 이미 3개다. 사용자의 결정을 기다려라.');
+    const req: BrowserRequest & { waiter?: (allowed: boolean) => void; late: boolean } = { id: crypto.randomUUID(), projectId, workspaceId, origin, url: url.slice(0, 500), createdAt: Date.now(), late: false };
+    this.requests.set(req.id, req);
+    this.emit('changed', projectId);
+    const allowed = await new Promise<boolean | null>((resolve) => {
+      const timer = setTimeout(() => { req.waiter = undefined; resolve(null); }, this.d.waitMs ?? 40_000);
+      req.waiter = (v) => { clearTimeout(timer); resolve(v); };
+    });
+    if (allowed === null) { req.late = true; throw new Error(`사용자가 ${origin} 을 여는 것을 아직 허용하지 않았다 (두레 화면에 요청이 떠 있다). 다른 일을 하거나 턴을 끝내라. 허용되면 두레가 알려 준다. 그때 browser_open 을 다시 불러라.`); }
+    if (!allowed) throw new Error(`사용자가 ${origin} 을 여는 것을 거부했다. 다시 요청하지 말고, 필요하면 사용자에게 이유를 물어라.`);
+  }
+
+  /** 워크스페이스가 지워지면 그 요청도 없앤다. */
+  dropWorkspace(workspaceId: string): void {
+    for (const r of [...this.requests.values()]) if (r.workspaceId === workspaceId) { this.requests.delete(r.id); r.waiter?.(false); this.emit('changed', r.projectId); }
+  }
 
   private hosts(): string[] { return parseHosts(this.d.settings().agentBrowserHosts); }
 
@@ -197,6 +262,9 @@ export class BrowserService {
     const info = await this.d.driver.info(workspaceId);
     if (!info.url || info.url === 'about:blank') throw new Error('열린 페이지가 없다. 먼저 browser_open 으로 주소를 열어라.');
     if (!allowedUrl(info.url, this.hosts())) throw this.refuse(info.url);
+    // 사용자가 허용하지 않은 주소로 넘어가 있으면 (링크를 눌러 다른 포트로 갔거나 사용자가 옮겼다) 읽지도 조작하지도 않는다.
+    const ws = this.d.workspaces.get(workspaceId);
+    if (ws && !this.permitted(ws.projectId, info.url)) throw new Error(`지금 페이지(${info.url.slice(0, 200)})는 사용자가 허용하지 않은 주소다. browser_open 으로 그 주소를 열면 사용자에게 허용을 묻는다.`);
     return info;
   }
 
@@ -204,6 +272,7 @@ export class BrowserService {
     this.check(workspaceId);
     const target = /^[a-z][a-z0-9+.-]*:\/\//i.test(url.trim()) ? url.trim() : `http://${url.trim()}`;
     if (!allowedUrl(target, this.hosts())) throw this.refuse(target);
+    await this.ask(workspaceId, this.d.workspaces.get(workspaceId)!.projectId, target);
     await this.d.driver.ensure(workspaceId, target);
     await this.d.driver.navigate(workspaceId, target);
     return this.snapshot(workspaceId);
@@ -216,6 +285,8 @@ export class BrowserService {
     if (!r) throw new Error('페이지를 읽지 못했다.');
     // 읽는 사이에 다른 곳으로 넘어갔을 수 있다.
     if (!allowedUrl(r.url, this.hosts())) throw this.refuse(r.url);
+    const owner = this.d.workspaces.get(workspaceId);
+    if (owner && !this.permitted(owner.projectId, r.url)) throw new Error(`지금 페이지(${r.url.slice(0, 200)})는 사용자가 허용하지 않은 주소다. browser_open 으로 그 주소를 열면 사용자에게 허용을 묻는다.`);
     const text = [...r.lines, ...(r.cut ? ['… (페이지가 길어 뒤를 잘랐다. 필요한 곳으로 이동하거나 스크롤한 뒤 다시 읽어라)'] : [])].join('\n');
     return { url: r.url, title: String(r.title ?? '').slice(0, 200), text: text || '(보이는 내용이 없다)', refs: r.refs };
   }

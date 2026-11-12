@@ -156,6 +156,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       if (!core.workspaces.get(String(workspaceId))) throw new Error('워크스페이스가 없습니다.');
       browser.register(String(workspaceId), Number(webContentsId));
     },
+    'browser.requests': (projectId: string) => core.browser.pending(projectId),
+    'browser.decide': (requestId: string, allow: boolean) => core.browser.decide(String(requestId), allow === true),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
@@ -206,6 +208,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onChatChanged = (): void => changed('chat');
   const onCleanupChanged = (): void => changed('cleanup');
   const onDbChanged = (): void => changed('db');
+  const onBrowserChanged = (): void => changed('browser');
   // 승인으로 새 저장소가 등록될 수 있다.
   const onCoordinatorChanged = (): void => { changed('coordinator'); changed('repos'); };
   // 설정이 바뀌면 전달 방식(메시지로 띄우기)도 바뀌므로 messages 도 함께 알린다.
@@ -223,6 +226,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.chat.on('changed', onChatChanged);
   core.cleanup.on('changed', onCleanupChanged);
   core.dbs.on('changed', onDbChanged);
+  core.browser.on('changed', onBrowserChanged);
   core.coordinator.on('changed', onCoordinatorChanged);
   core.settings.on('changed', onSettingsChanged);
   core.engine.on('changed', onChatChanged);
@@ -238,6 +242,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.chat.off('changed', onChatChanged);
     core.cleanup.off('changed', onCleanupChanged);
     core.dbs.off('changed', onDbChanged);
+    core.browser.off('changed', onBrowserChanged);
     core.coordinator.off('changed', onCoordinatorChanged);
     core.settings.off('changed', onSettingsChanged);
     core.engine.off('changed', onChatChanged);

@@ -155,9 +155,10 @@ export function SettingsView() {
             <TextInput wide value={s.repoRoot} placeholder="~/dure/repos" onCommit={(v) => save('repoRoot', v)} />
             <button className="btn" onClick={pick('repoRoot')}>고르기</button>
           </Row>
-          <Row label="에이전트의 브라우저 사용" help="에이전트가 두레의 내장 브라우저로 자기가 만든 화면을 열어 확인할 수 있습니다. 로컬 주소(localhost, 127.0.0.1)와 아래에 적은 주소만 됩니다. 에이전트가 본 페이지의 내용은 그 에이전트의 대화에 들어갑니다." {...row('agentBrowser')}>
-            <select value={s.agentBrowser} onChange={(e) => save('agentBrowser', e.target.value as 'local' | 'off')}>
-              <option value="local">로컬 주소와 허용한 주소만</option>
+          <Row label="에이전트의 브라우저 사용" help="에이전트가 두레의 내장 브라우저로 자기가 만든 화면을 열어 확인할 수 있습니다. 로컬 주소(localhost, 127.0.0.1)와 아래에 적은 주소만 됩니다. '묻기' 로 두면 처음 여는 주소(호스트와 포트)마다 허용을 받습니다: 이 PC 에 떠 있는 다른 프로그램의 화면을 에이전트가 건드리지 않게 합니다. 에이전트가 본 페이지의 내용은 그 에이전트의 대화에 들어갑니다." {...row('agentBrowser')}>
+            <select value={s.agentBrowser} onChange={(e) => save('agentBrowser', e.target.value as 'ask' | 'local' | 'off')}>
+              <option value="ask">처음 여는 주소마다 묻기</option>
+              <option value="local">묻지 않기 (로컬 주소와 허용한 주소)</option>
               <option value="off">쓰지 못하게</option>
             </select>
           </Row>

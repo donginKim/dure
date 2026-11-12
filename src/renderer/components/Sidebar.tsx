@@ -5,9 +5,11 @@ import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting }: {
+export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting }: {
   /** DB 조회 승인을 기다리는 워크스페이스 */
   dbWaiting?: Set<string>;
+  /** 브라우저 주소 허용을 기다리는 워크스페이스 */
+  browserWaiting?: Set<string>;
   tree: TreeNode[]; repos: Repo[]; todos: Todo[]; talk: Record<string, ConversationData>; selection: Selection; onSelect: (s: Selection) => void; onCreateProject: (name: string) => Promise<void>;
 }) {
   const [name, setName] = useState('');
@@ -70,6 +72,7 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
                     <div className="ws-name">{w.name}{progressOf(w.id) && <span className="ws-progress" title="TODO 진행도">{progressOf(w.id)}</span>}</div>
                     <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
                     {dbWaiting?.has(w.id) && <div className="ws-wait" title="에이전트가 DB 조회 승인을 기다립니다. 워크스페이스를 열어 허용하거나 거부하세요">DB 조회 승인 대기</div>}
+                    {browserWaiting?.has(w.id) && <div className="ws-wait" title="에이전트가 브라우저로 주소를 열어도 되는지 묻고 있습니다. 워크스페이스를 열어 허용하거나 거부하세요">브라우저 주소 허용 대기</div>}
                     {(() => {
                       const info = talk[project.id]?.delivery[w.id];
                       if (!info || (info.waiting === 0 && info.held === 0)) return null;

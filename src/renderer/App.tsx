@@ -168,7 +168,7 @@ export function App() {
         {current?.type === 'settings' && <SettingsView />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
       </main>
       {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
     </div>

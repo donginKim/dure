@@ -7,3 +7,9 @@ export const newRepoName = (id: string): string => id.slice(PREFIX.length);
 const REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
 /** 화면과 코어가 같은 규칙으로 본다. 끝의 점은 일부 파일 시스템에서 사라지므로 받지 않는다. */
 export const validRepoName = (name: string): boolean => REPO_NAME.test(name) && !name.endsWith('.');
+
+/** 계획안에서 "PC 에 이미 있지만 아직 이 프로젝트에 등록하지 않은 저장소 폴더" 를 가리키는 저장소 id. 승인하면 그 폴더를 등록한다. */
+const FOLDER = 'path:';
+export const folderRepoId = (path: string): string => `${FOLDER}${path}`;
+export const isFolderRepoId = (id: string): boolean => id.startsWith(FOLDER);
+export const folderRepoPath = (id: string): string => id.slice(FOLDER.length);

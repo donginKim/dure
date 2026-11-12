@@ -417,6 +417,8 @@ export interface PlanTodo {
 /** 계획안에 든 워크스페이스 하나와 그 TODO */
 /** 계획안의 새 저장소: 아직 없고, 승인하면 두레가 폴더를 만들고 git 저장소로 초기화해 프로젝트에 등록한다 */
 export interface PlanRepo { name: string; description: string }
+/** 계획안이 등록하자고 하는, PC 에 이미 있는 git 저장소 폴더. 승인하면 이 프로젝트의 저장소로 등록한다 (폴더는 건드리지 않는다) */
+export interface PlanFolder { path: string; name: string; /** origin 원격의 주소 (없으면 빈 글) */ remote: string }
 
 export interface ProposalItem {
   name: string;
@@ -448,6 +450,8 @@ export interface Proposal {
   summary: string;
   /** 승인하면 새로 만들 저장소 (맞는 저장소가 등록돼 있지 않을 때) */
   newRepos: PlanRepo[];
+  /** 승인하면 등록할, PC 에 이미 있는 저장소 폴더 */
+  addRepos: PlanFolder[];
   items: ProposalItem[];
   /** 프로젝트 전체의 TODO (어느 워크스페이스에도 속하지 않는 일, 사용자가 결정할 것) */
   projectTodos: PlanTodo[];
@@ -460,6 +464,7 @@ export interface Proposal {
 export interface PlanDecision {
   /** 새로 만들 저장소. items 의 repoId 가 `new:<이름>` 이면 이 목록의 저장소를 가리킨다 */
   newRepos?: PlanRepo[];
+  addRepos?: PlanFolder[];
   items: ProposalItem[];
   projectTodos: PlanTodo[];
 }

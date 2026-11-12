@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isNewRepoId } from '@shared/plan';
+import { folderRepoId, folderRepoPath, isFolderRepoId, isNewRepoId } from '@shared/plan';
 import type { CoordinatorInfo, PlanTodo, Project, Proposal, ProposalItem, Repo, Workspace } from '@shared/types';
 import { approveLabel, draftRepoId, fromDraft, planCounts, planProblem, specMessage, tidyPlan, toDraft, type PlanDraft } from '../planView';
 import { STATUS_LABEL } from '../tree';
@@ -51,7 +51,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
   const [reason, setReason] = useState('');
 
   // 저장소마다 고를 수 있는 브랜치를 받아 둔다.
-  const repoIds = [...new Set([...repos.map((r) => r.id), ...plan.items.map((i) => i.repoId)])].filter((id) => !isNewRepoId(id)).join(',');
+  const repoIds = [...new Set([...repos.map((r) => r.id), ...plan.items.map((i) => i.repoId)])].filter((id) => !isNewRepoId(id) && !isFolderRepoId(id)).join(',');
   useEffect(() => {
     let alive = true;
     for (const id of repoIds.split(',').filter(Boolean)) {
@@ -65,7 +65,9 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
   const addItem = (): void => {
     const repo = repos[0];
     const fresh = plan.newRepos[0];
+    const folder = plan.addRepos[0];
     if (repo) setPlan((d) => ({ ...d, items: [...d.items, { name: '', repoId: repo.id, baseBranch: current[repo.id] ?? '', role: '', todos: [], existing: false }] }));
+    else if (folder) setPlan((d) => ({ ...d, items: [...d.items, { name: '', repoId: folderRepoId(folder.path), baseBranch: '', role: '', todos: [], existing: false }] }));
     else if (fresh) setPlan((d) => ({ ...d, items: [...d.items, { name: '', repoId: draftRepoId(fresh.key), baseBranch: 'main', role: '', todos: [], existing: false }] }));
     // 저장소가 하나도 없어도, 함께하는 사람이 있으면 그 사람에게 나눠 줄 일을 더할 수 있다.
     else if (people[0]) setPlan((d) => ({ ...d, items: [...d.items, { name: '', repoId: '', baseBranch: '', role: '', todos: [], existing: false, owner: people[0]!.peerId }] }));
@@ -91,7 +93,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
     patchItem(i, { owner: '', repoId: repo ? repo.id : fresh ? draftRepoId(fresh.key) : '', baseBranch: repo ? current[repo.id] ?? '' : 'main' });
   };
   const personName = (id: string): string => people.find((p) => p.peerId === id)?.name ?? '함께하지 않는 사람';
-  const repoName = (id: string): string => (isNewRepoId(id) ? plan.newRepos.find((r) => draftRepoId(r.key) === id)?.name ?? '' : repos.find((r) => r.id === id)?.name ?? '(알 수 없는 저장소)');
+  const repoName = (id: string): string => (isFolderRepoId(id) ? plan.addRepos.find((f) => f.path === folderRepoPath(id))?.name ?? '' : isNewRepoId(id) ? plan.newRepos.find((r) => draftRepoId(r.key) === id)?.name ?? '' : repos.find((r) => r.id === id)?.name ?? '(알 수 없는 저장소)');
 
   return (
     <div className="plan">
@@ -110,6 +112,26 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
             <div className="plan-summary">{proposal.summary ? <Markdown text={proposal.summary} /> : <span className="muted">조율 에이전트가 정리를 적지 않았습니다.</span>}</div>
             {proposal.note && <div className="plan-note">{proposal.note}</div>}
           </div>
+
+          {plan.addRepos.length > 0 && (
+            <div className="plan-section">
+              <div className="plan-label">
+                등록할 저장소 <span className="count">{plan.addRepos.length}</span>
+                <span className="plan-hint">이 PC 에 이미 있는 폴더를 이 프로젝트의 저장소로 등록합니다. 폴더의 내용은 건드리지 않습니다</span>
+              </div>
+              {plan.addRepos.map((f) => (
+                <div key={f.path} className="plan-ws">
+                  <div className="plan-ws-line">
+                    <span className="plan-kind old">이미 있음</span>
+                    <span className="plan-ws-name">{f.name}</span>
+                    <button className="btn ghost" title="이 폴더는 등록하지 않습니다. 이 저장소를 쓰는 워크스페이스는 다른 저장소를 골라야 합니다" onClick={() => setPlan((d) => ({ ...d, addRepos: d.addRepos.filter((x) => x.path !== f.path) }))}>빼기</button>
+                  </div>
+                  <div className="plan-path">폴더: <code>{f.path}</code>{f.remote ? <> · 원격(origin): <code>{f.remote}</code></> : ' · 원격 없음'}</div>
+                  <div className="plan-path">등록하면 이 저장소에서 워크스페이스마다 새 브랜치와 작업 폴더가 만들어집니다. 원격에는 사용자가 push 를 누르기 전에는 아무것도 올라가지 않습니다.</div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="plan-section">
             <div className="plan-label">
@@ -154,7 +176,9 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
                   {it.existing ? <span className="muted">저장소 {repoName(it.repoId)}</span> : it.owner ? null : (
                     <>
                       <select value={it.repoId} title="저장소" onChange={(e) => patchItem(i, { repoId: e.target.value, baseBranch: isNewRepoId(e.target.value) ? 'main' : current[e.target.value] ?? '' })}>
-                        {!isNewRepoId(it.repoId) && !repos.some((r) => r.id === it.repoId) && <option value={it.repoId}>(저장소를 고르세요)</option>}
+                        {isFolderRepoId(it.repoId) && !plan.addRepos.some((f) => folderRepoId(f.path) === it.repoId) && <option value={it.repoId}>(저장소를 고르세요)</option>}
+                        {plan.addRepos.map((f) => <option key={f.path} value={folderRepoId(f.path)}>{f.name} (등록할 저장소)</option>)}
+                        {!isNewRepoId(it.repoId) && !isFolderRepoId(it.repoId) && !repos.some((r) => r.id === it.repoId) && <option value={it.repoId}>(저장소를 고르세요)</option>}
                         {isNewRepoId(it.repoId) && !plan.newRepos.some((r) => draftRepoId(r.key) === it.repoId) && <option value={it.repoId}>(저장소를 고르세요)</option>}
                         {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                         {plan.newRepos.map((r) => <option key={r.key} value={draftRepoId(r.key)}>{r.name || '(이름 없는 새 저장소)'} (새 저장소)</option>)}
@@ -176,7 +200,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
                 <TodoEditor todos={it.todos} agentLabel={`"${it.name || '이 워크스페이스'}" 에이전트`} onChange={(next) => patchItem(i, { todos: next })} />
               </div>
             ))}
-            <button className="btn" disabled={repos.length === 0 && plan.newRepos.length === 0 && people.length === 0} onClick={addItem}>+ 워크스페이스 더하기</button>
+            <button className="btn" disabled={repos.length === 0 && plan.newRepos.length === 0 && plan.addRepos.length === 0 && people.length === 0} onClick={addItem}>+ 워크스페이스 더하기</button>
           </div>
 
           <div className="plan-section">
@@ -196,7 +220,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
             </>
           ) : (
             <>
-              <span className="plan-count">{problem ?? `승인하면 ${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다${counts.handed ? `. 워크스페이스 ${counts.handed}개는 다른 사람에게 나눠 줍니다` : ''}`}</span>
+              <span className="plan-count">{problem ?? `승인하면 ${counts.added ? `저장소 ${counts.added}개가 등록되고, ` : ''}${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다${counts.handed ? `. 워크스페이스 ${counts.handed}개는 다른 사람에게 나눠 줍니다` : ''}`}</span>
               <button className="btn" disabled={busy} onClick={() => setRejecting(true)}>거절</button>
               <button className="btn primary" disabled={busy || problem !== null} onClick={() => void approve()}>{busy ? '만드는 중…' : approveLabel(decision)}</button>
             </>
@@ -279,7 +303,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
               : '기획서 파일을 넣거나 할 일을 쓰세요. 조율 에이전트가 분석해 계획안(정리, 워크스페이스, TODO)을 올립니다. 검토하고 승인해야 만들어집니다.'}
             banner={proposal ? (
               <div className="plan-banner">
-                <span><b>계획안이 승인을 기다립니다.</b> {proposal.newRepos.length > 0 && `새 저장소 ${proposal.newRepos.length}개, `}워크스페이스 {proposal.items.filter((i) => !i.existing).length}개{proposal.items.some((i) => i.owner) && ` (그중 ${proposal.items.filter((i) => i.owner).length}개는 다른 사람에게 나눠 줌)`}, TODO {proposal.items.reduce((n, i) => n + i.todos.length, 0) + proposal.projectTodos.length}개. 아직 만들어진 것은 없습니다.</span>
+                <span><b>계획안이 승인을 기다립니다.</b> {proposal.addRepos.length > 0 && `저장소 등록 ${proposal.addRepos.length}개, `}{proposal.newRepos.length > 0 && `새 저장소 ${proposal.newRepos.length}개, `}워크스페이스 {proposal.items.filter((i) => !i.existing).length}개{proposal.items.some((i) => i.owner) && ` (그중 ${proposal.items.filter((i) => i.owner).length}개는 다른 사람에게 나눠 줌)`}, TODO {proposal.items.reduce((n, i) => n + i.todos.length, 0) + proposal.projectTodos.length}개. 아직 만들어진 것은 없습니다.</span>
                 <button className="btn primary" onClick={() => setReviewing(true)}>검토하기</button>
               </div>
             ) : null}

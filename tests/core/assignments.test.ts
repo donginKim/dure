@@ -50,8 +50,9 @@ async function call(core: Core, workspaceId: string, name: string, args: unknown
 async function team(a: Node, ...others: Node[]): Promise<void> {
   const share = a.core.peers.createShare(a.projectId);
   for (const b of others) {
-    await a.core.peers.connect(`${b.host}:47800`);
+    const out = await a.core.peers.connect(`${b.host}:47800`);
     await b.core.peers.accept(b.core.peers.requests().find((r) => r.direction === 'in')!.id);
+    await a.core.peers.accept(out.id);
     await a.core.peers.invite(share.id, b.id);
     await b.core.peers.acceptInvite(b.core.peers.shareInvites()[0]!.id, b.projectId);
   }

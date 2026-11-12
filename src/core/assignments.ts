@@ -118,7 +118,7 @@ export class AssignmentService extends EventEmitter {
   private onAnswer(peer: { id: string; name: string }, p: Record<string, unknown>, state: 'accepted' | 'declined'): unknown {
     const r = isId(p.aid) ? this.d.db.prepare('SELECT * FROM assignments_out WHERE id = ?').get(p.aid) as OutRow | undefined : undefined;
     // 내가 그 사람에게 보낸 배정에 대한 답만 받는다.
-    if (!r || r.peer_id !== peer.id || r.state !== 'sent') return { ok: false, error: '그런 배정이 없다' };
+    if (!r || r.peer_id !== peer.id || r.state !== 'sent') return { ok: false, error: 'no_assignment' };
     const note = state === 'declined' ? oneLine(p.reason, 300) : '';
     this.d.db.prepare('UPDATE assignments_out SET state = ?, note = ?, updated_at = ? WHERE id = ?').run(state, note, Date.now(), r.id);
     const names = (Array.isArray(p.workspaces) ? p.workspaces : []).slice(0, MAX_ITEMS).map((w) => oneLine((w as Record<string, unknown>)?.name, 40).replace(/[@"]/g, '')).filter(Boolean);
@@ -133,7 +133,7 @@ export class AssignmentService extends EventEmitter {
 
   private onProgress(peer: { id: string; name: string }, p: Record<string, unknown>): unknown {
     const r = isId(p.aid) ? this.d.db.prepare('SELECT * FROM assignments_out WHERE id = ?').get(p.aid) as OutRow | undefined : undefined;
-    if (!r || r.peer_id !== peer.id || r.state !== 'accepted') return { ok: false, error: '그런 배정이 없다' };
+    if (!r || r.peer_id !== peer.id || r.state !== 'accepted') return { ok: false, error: 'no_assignment' };
     const progress: AssignProgress[] = (Array.isArray(p.workspaces) ? p.workspaces : []).slice(0, MAX_ITEMS)
       .map((w) => (w && typeof w === 'object' ? w : {}) as Record<string, unknown>)
       .filter((w) => isId(w.workspaceId))
@@ -152,10 +152,10 @@ export class AssignmentService extends EventEmitter {
   private onAssign(peer: { id: string; name: string }, p: Record<string, unknown>, projectId: string): unknown {
     const a = (p.assignment && typeof p.assignment === 'object' ? p.assignment : {}) as Record<string, unknown>;
     const body = cleanBody(a);
-    if (!isId(a.aid) || !body) return { ok: false, error: '배정의 내용이 올바르지 않다' };
+    if (!isId(a.aid) || !body) return { ok: false, error: 'bad_assignment' };
     if (this.d.db.prepare('SELECT 1 FROM assignments_in WHERE id = ?').get(a.aid)) return { ok: true };
     const waiting = (this.d.db.prepare("SELECT count(*) AS n FROM assignments_in WHERE from_peer = ? AND state = 'pending'").get(peer.id) as { n: number }).n;
-    if (waiting >= MAX_PENDING) return { ok: false, error: '받는 쪽에 아직 확인하지 않은 배정이 많다' };
+    if (waiting >= MAX_PENDING) return { ok: false, error: 'assign_busy' };
     this.d.db.prepare('INSERT INTO assignments_in (id, project_id, from_peer, payload, state, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(a.aid, projectId, peer.id, JSON.stringify(body), 'pending', Date.now());
     this.emit('changed');
     return { ok: true };

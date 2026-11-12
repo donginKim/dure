@@ -6,6 +6,8 @@ const REQUEST_MS = 8000;
 /** 한 주소가 1분에 보낼 수 있는 요청 수 */
 const RATE_PER_MIN = 240;
 const PATHS = new Set(['hello', 'pair', 'msg']);
+/** 한 주소가 동시에 열어 둘 수 있는 연결 수 (한 곳이 연결을 다 차지해 다른 사람이 못 들어오는 것을 막는다) */
+const CONNECTIONS_PER_HOST = 8;
 
 /**
  * 다른 두레와 HTTP 로 주고받는다. 같은 네트워크의 다른 PC 가 들어올 수 있게 모든 주소에서 듣는다.
@@ -16,6 +18,7 @@ const PATHS = new Set(['hello', 'pair', 'msg']);
 export function createHttpTransport(): PeerTransport {
   let server: Server | undefined;
   const hits = new Map<string, number[]>();
+  const open = new Map<string, number>();
 
   const read = (req: IncomingMessage): Promise<unknown> => new Promise((resolve, reject) => {
     let size = 0;
@@ -56,9 +59,17 @@ export function createHttpTransport(): PeerTransport {
           }
         })();
       });
-      s.requestTimeout = 15_000;
-      s.headersTimeout = 10_000;
-      s.maxConnections = 64;
+      s.on('connection', (socket) => {
+        const host = (socket.remoteAddress ?? '').replace(/^::ffff:/, '');
+        const n = open.get(host) ?? 0;
+        if (n >= CONNECTIONS_PER_HOST) { socket.destroy(); return; }
+        open.set(host, n + 1);
+        socket.once('close', () => { const left = (open.get(host) ?? 1) - 1; if (left <= 0) open.delete(host); else open.set(host, left); });
+      });
+      s.requestTimeout = 10_000;
+      s.headersTimeout = 5_000;
+      s.keepAliveTimeout = 2_000;
+      s.maxConnections = 256;
       await new Promise<void>((resolve, reject) => {
         s.once('error', (e: NodeJS.ErrnoException) => reject(new Error(e.code === 'EADDRINUSE' ? `포트 ${port} 를 다른 프로그램이 쓰고 있습니다. 설정에서 다른 포트를 고르세요.` : e.message)));
         s.listen(port, '0.0.0.0', () => resolve());
@@ -77,9 +88,19 @@ export function createHttpTransport(): PeerTransport {
       const res = await fetch(`http://${address}/dure/${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(REQUEST_MS), redirect: 'error',
       });
-      const text = await res.text();
-      if (text.length > MAX_BODY) throw new Error('too large');
-      return JSON.parse(text) as unknown;
+      // 다 받기 전에 크기를 본다: 상대가 끝없이 보내도 여기까지만 읽는다.
+      if (Number(res.headers.get('content-length') ?? 0) > MAX_BODY) { await res.body?.cancel().catch(() => undefined); throw new Error('too large'); }
+      const reader = res.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > MAX_BODY) { await reader.cancel().catch(() => undefined); throw new Error('too large'); }
+        chunks.push(value);
+      }
+      return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
     },
   };
 }

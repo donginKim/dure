@@ -563,6 +563,10 @@ export interface PeerRequest {
   /** 두 화면에 같아야 하는 확인 코드 */
   code: string;
   direction: 'in' | 'out';
+  /** 내가 코드를 확인하고 연결을 눌렀다 */
+  confirmed: boolean;
+  /** 상대가 코드를 확인하고 연결을 눌렀다. 둘 다 눌러야 연결된다 */
+  peerConfirmed: boolean;
   /** 이미 연결된 사람인데 열쇠가 달라졌다 (두레를 다시 깔았거나, 누가 그 사람인 척한다) */
   keyChanged: boolean;
   createdAt: number;
@@ -578,7 +582,11 @@ export interface PeerStatus {
 }
 export interface ShareMember { peerId: string; name: string; me: boolean; owner: boolean; online: boolean }
 /** 함께하는 프로젝트. 내 프로젝트 하나에 이어 붙어 있다 */
-export interface Share { id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[] }
+export interface Share {
+  id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[];
+  /** 초대했지만 아직 참여하지 않은 사람 (내가 연 프로젝트에서만) */
+  invited: { peerId: string; name: string }[];
+}
 export interface ShareInvite { id: string; shareId: string; name: string; fromPeerId: string; fromName: string; createdAt: number }
 /** 워크스페이스를 누구에게 보일지. none: 아무에게도. all: 참여자 전체. selected: 고른 사람만 */
 export type SharingAudience = 'none' | 'all' | 'selected';

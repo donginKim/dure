@@ -44,8 +44,6 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
   if (!status) return <div className="page"><h1>사람</h1></div>;
   const on = status.enabled && status.port !== null;
   const open = projects.filter((p) => p.status !== 'done' && !shared.has(p.id));
-  const incoming = requests.filter((r) => r.direction === 'in');
-  const outgoing = requests.filter((r) => r.direction === 'out');
 
   return (
     <div className="page">
@@ -58,33 +56,20 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
         <div className="rows"><div className={`row${status.error ? ' bad' : ''}`}><div className="grow">{statusLine(status)}</div></div></div>
       </div>
 
-      {incoming.length > 0 && (
+      {requests.length > 0 && (
         <div className="section">
-          <div className="section-head"><h2>받은 연결 요청 <span className="count">{incoming.length}</span></h2></div>
-          {incoming.map((r) => (
+          <div className="section-head"><h2>연결 요청 <span className="count">{requests.length}</span></h2></div>
+          {requests.map((r) => (
             <div key={r.id} className="permit">
-              <div className="permit-title">"{r.name}" 이(가) 연결을 요청합니다</div>
+              <div className="permit-title">{r.direction === 'in' ? `"${r.name}" 이(가) 연결을 요청합니다` : `"${r.name}" 에게 연결을 요청했습니다`}</div>
               <div className="pair-code" title="두 화면의 숫자가 같아야 합니다">{spokenCode(r.code)}</div>
-              <div className="permit-hint">상대에게 전화나 메신저로 물어 <b>상대 화면의 숫자와 같은지</b> 확인한 뒤 수락하세요. 다르면 다른 사람이 끼어든 것입니다. 주소 {r.address} · 열쇠 지문 {r.fingerprint}</div>
-              {r.keyChanged && <div className="db-warn">이미 연결했던 사람인데 열쇠가 달라졌습니다. 상대가 두레를 다시 깔았는지 확인하세요. 아니라면 수락하지 마세요.</div>}
+              <div className="permit-hint">상대에게 전화나 메신저로 물어 <b>상대 화면의 숫자와 같은지</b> 확인하세요. 다르면 다른 사람이 끼어든 것이니 누르지 마세요. 두 사람이 모두 눌러야 연결됩니다. 주소 {r.address} · 열쇠 지문 {r.fingerprint}</div>
+              {r.keyChanged && <div className="db-warn">이미 연결했던 사람인데 열쇠가 달라졌습니다. 상대가 두레를 다시 깔았는지 확인하세요. 아니라면 누르지 마세요. 연결하면 그 사람이 참여하던 프로젝트와 공개 범위는 처음부터 다시 정해야 합니다.</div>}
+              <div className="permit-hint">{r.confirmed ? '내가 확인했습니다. 상대가 누르기를 기다립니다.' : r.peerConfirmed ? '상대는 확인했습니다. 숫자가 같으면 누르세요.' : '아직 아무도 확인하지 않았습니다.'}</div>
               <div className="permit-actions">
-                <button className="btn primary" disabled={busy} onClick={() => run(window.dure.peers.accept(r.id))}>숫자가 같다 · 수락</button>
-                <button className="btn" disabled={busy} onClick={() => run(window.dure.peers.dismiss(r.id))}>거절</button>
+                {!r.confirmed && <button className="btn primary" disabled={busy} onClick={() => run(window.dure.peers.accept(r.id))}>숫자가 같다 · 연결</button>}
+                <button className="btn" disabled={busy} onClick={() => run(window.dure.peers.dismiss(r.id))}>{r.direction === 'in' ? '거절' : '요청 거두기'}</button>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {outgoing.length > 0 && (
-        <div className="section">
-          <div className="section-head"><h2>보낸 연결 요청</h2></div>
-          {outgoing.map((r) => (
-            <div key={r.id} className="permit">
-              <div className="permit-title">"{r.name}" 의 수락을 기다립니다</div>
-              <div className="pair-code">{spokenCode(r.code)}</div>
-              <div className="permit-hint">상대 화면에도 이 숫자가 떠야 합니다. 상대에게 숫자를 불러 주고, 같으면 수락해 달라고 하세요. 주소 {r.address}</div>
-              <div className="permit-actions"><button className="btn" onClick={() => run(window.dure.peers.dismiss(r.id))}>요청 거두기</button></div>
             </div>
           ))}
         </div>

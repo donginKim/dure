@@ -1,4 +1,4 @@
-import { fingerprint, generateKeys, open, pairingCode, seal, sharedKey, validPub } from '@core/peers/crypto';
+import { fingerprint, generateKeys, open, pairCommit, pairNonce, pairingCode, seal, sharedKey, validPub } from '@core/peers/crypto';
 
 test('두 사람이 각자 계산한 공유 열쇠는 같고, 그 열쇠로 감싼 것만 풀린다', () => {
   const a = generateKeys(); const b = generateKeys(); const c = generateKeys();
@@ -17,11 +17,19 @@ test('두 사람이 각자 계산한 공유 열쇠는 같고, 그 열쇠로 감�
   expect(seal(ab, 'x', '').box).not.toBe(seal(ab, 'x', '').box);
 });
 
-test('확인 코드는 두 사람에게 같고, 열쇠가 하나라도 다르면 달라진다', () => {
+test('확인 코드는 두 열쇠와 두 무작위 값에서 나오고, 하나라도 다르면 달라진다', () => {
   const a = generateKeys(); const b = generateKeys(); const m = generateKeys();
-  expect(pairingCode(a.pub, b.pub)).toBe(pairingCode(b.pub, a.pub));
-  expect(pairingCode(a.pub, b.pub)).toMatch(/^\d{6}$/);
-  expect(pairingCode(a.pub, m.pub)).not.toBe(pairingCode(a.pub, b.pub));
+  const na = pairNonce(); const nb = pairNonce();
+  expect(pairingCode(a.pub, na, b.pub, nb)).toBe(pairingCode(a.pub, na, b.pub, nb));
+  expect(pairingCode(a.pub, na, b.pub, nb)).toMatch(/^\d{6}$/);
+  expect(pairingCode(a.pub, na, m.pub, nb)).not.toBe(pairingCode(a.pub, na, b.pub, nb));
+  // 같은 열쇠여도 무작위 값이 다르면 코드가 다르다: 열쇠를 골라 코드를 맞출 수 없다
+  const codes = new Set(Array.from({ length: 50 }, () => pairingCode(a.pub, pairNonce(), b.pub, nb)));
+  expect(codes.size).toBeGreaterThan(40);
+  // 약속은 열쇠와 값을 둘 다 묶는다
+  expect(pairCommit(a.pub, na)).toBe(pairCommit(a.pub, na));
+  expect(pairCommit(a.pub, na)).not.toBe(pairCommit(m.pub, na));
+  expect(pairCommit(a.pub, na)).not.toBe(pairCommit(a.pub, nb));
   expect(fingerprint(a.pub)).toMatch(/^[0-9a-f]{8}$/);
 });
 

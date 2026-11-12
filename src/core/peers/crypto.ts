@@ -66,12 +66,20 @@ export function open(key: Buffer, sealed: Sealed, aad: string): string {
   return Buffer.concat([decipher.update(body.subarray(0, body.length - 16)), decipher.final()]).toString('utf8');
 }
 
+/** 연결할 때 한 번 쓰는 무작위 값. */
+export const pairNonce = (): string => randomBytes(16).toString('base64');
+
+/** 요청하는 쪽이 먼저 내는 약속: 자기 열쇠와 무작위 값을 정해 두었다는 표시 (값 자체는 아직 보이지 않는다). */
+export const pairCommit = (pub: string, nonce: string): string => createHash('sha256').update(['dure-commit-v1', pub, nonce].join('|')).digest('base64');
+
 /**
- * 연결할 때 두 사람이 말로 맞춰 보는 확인 코드 (6자리). 두 공개 열쇠에서 만든다:
- * 중간에서 누가 열쇠를 바꿔치면 두 화면의 코드가 달라진다.
+ * 연결할 때 두 사람이 말로 맞춰 보는 확인 코드 (6자리). 두 공개 열쇠와 두 무작위 값에서 만든다.
+ * 요청한 쪽은 약속을 먼저 내고, 상대의 무작위 값을 받은 뒤에야 자기 값을 보인다:
+ * 중간에 낀 사람은 상대의 값을 보기 전에 자기 것을 정해야 해서, 열쇠를 여러 개 만들어 보며 코드를 맞출 수 없다
+ * (한 번 시도할 때마다 맞을 확률이 백만분의 일이다).
  */
-export function pairingCode(pubA: string, pubB: string): string {
-  const h = createHash('sha256').update(['dure-pair-v1', ...[pubA, pubB].sort()].join('|')).digest();
+export function pairingCode(initPub: string, initNonce: string, respPub: string, respNonce: string): string {
+  const h = createHash('sha256').update(['dure-pair-v2', initPub, initNonce, respPub, respNonce].join('|')).digest();
   return String(h.readUInt32BE(0) % 1_000_000).padStart(6, '0');
 }
 

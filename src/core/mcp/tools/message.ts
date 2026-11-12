@@ -53,7 +53,8 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
         }
       }
       // 다른 사람의 두레에 있는 워크스페이스: "이름@사람". 사용자가 공개한 워크스페이스에서만 보낼 수 있다.
-      if (to.includes('@')) {
+      // 이름에 @ 가 든 내 워크스페이스가 있으면 그쪽이 먼저다.
+      if (to.includes('@') && !peers().some((w) => w.name === to.trim())) {
         try {
           const m = await deps.peers.sendRemote({ fromWorkspaceId: ctx.workspace.id, to, body, threadId: thread_id, artifactIds: artifact_ids });
           return ok({ messageId: m.id, threadId: m.threadId, delivery: '다른 사람의 두레로 보냈다. 그쪽 사용자가 보고 넘겨줘야 그 에이전트에게 갈 수 있다: 답이 바로 오지 않을 수 있으니 기다리지 말고 네 일을 계속하라.' });

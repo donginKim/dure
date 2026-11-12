@@ -185,6 +185,9 @@ const MIGRATIONS: string[] = [
     share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
     peer_id TEXT NOT NULL,
     state TEXT NOT NULL DEFAULT 'member',
+    -- 이 프로젝트에서 그 사람의 열쇠와 주소 (연 사람이 나눠 준 것). 비어 있으면 내가 직접 연결한 열쇠를 쓴다
+    pub TEXT,
+    address TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (share_id, peer_id)
   );
   CREATE TABLE workspace_sharing (
@@ -200,6 +203,8 @@ const MIGRATIONS: string[] = [
     listed INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (share_id, peer_id, workspace_id)
   );
+  -- 이미 받은 내용의 id (같은 것을 다시 보내오면 버린다. 껐다 켜도 남는다)
+  CREATE TABLE peer_replay (id TEXT PRIMARY KEY, at INTEGER NOT NULL);
   CREATE TABLE peer_inbox (
     id TEXT PRIMARY KEY,
     share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,

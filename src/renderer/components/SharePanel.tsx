@@ -69,7 +69,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
   }
 
   const others = share.members.filter((m) => !m.me);
-  const invitable = peers.filter((p) => p.direct && !share.members.some((m) => m.peerId === p.id));
+  const invitable = peers.filter((p) => p.direct && !share.members.some((m) => m.peerId === p.id) && !share.invited.some((m) => m.peerId === p.id));
   const setAudience = (w: Workspace, audience: SharingAudience, list: string[] = []): void => run(window.dure.peers.setSharing(w.id, audience, list));
 
   return (
@@ -88,6 +88,13 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
               <span className={`dot ${m.online ? 'idle' : 'stopped'}`} title={m.online ? '같은 네트워크에서 보입니다' : '지금은 보이지 않습니다 (꺼져 있으면 메시지가 가지 않습니다)'} />
               <div className="grow">{m.name}{m.me && <span className="tag">나</span>}{m.owner && <span className="tag">연 사람</span>}</div>
               {share.mine && !m.me && !readOnly && <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.peers.removeMember(share.id, m.peerId))}>빼기</button>}
+            </div>
+          ))}
+          {share.invited.map((m) => (
+            <div key={m.peerId} className="row">
+              <span className="dot stopped" />
+              <div className="grow">{m.name}<span className="tag">초대 중</span> <span className="plan-hint">아직 참여하지 않았습니다</span></div>
+              {!readOnly && <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.peers.removeMember(share.id, m.peerId))}>초대 거두기</button>}
             </div>
           ))}
         </div>

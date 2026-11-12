@@ -241,6 +241,17 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- 슬랙 읽기: 연결은 하나다 (사용자의 토큰). 토큰은 암호화해 둔다
+  CREATE TABLE slack_connection (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    secret TEXT NOT NULL,
+    team TEXT NOT NULL DEFAULT '',
+    user TEXT NOT NULL DEFAULT '',
+    access TEXT NOT NULL DEFAULT 'ask',
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

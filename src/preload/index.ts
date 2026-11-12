@@ -127,6 +127,14 @@ const api: DureApi = {
     get: (id) => call('artifacts.get', id),
   },
   onChanged: (cb) => subscribe<[ChangeTopic]>(IPC_EVENTS.changed, cb),
+  slack: {
+    status: () => call('slack.status'),
+    connect: (token) => call('slack.connect', token),
+    disconnect: () => call('slack.disconnect'),
+    setAccess: (access) => call('slack.setAccess', access),
+    requests: (projectId) => call('slack.requests', projectId),
+    decide: (requestId, allow, always) => call('slack.decide', requestId, allow, always),
+  },
   assignments: {
     outgoing: (projectId) => call('assignments.outgoing', projectId),
     incoming: (projectId) => call('assignments.incoming', projectId),

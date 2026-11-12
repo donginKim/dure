@@ -4,7 +4,7 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -55,6 +55,12 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'slack.status': () => core.slack.status(),
+    'slack.connect': (token: string) => core.slack.connect(String(token ?? '')),
+    'slack.disconnect': () => core.slack.disconnect(),
+    'slack.setAccess': (access: SlackAccess) => core.slack.setAccess(access),
+    'slack.requests': (projectId: string) => core.slack.pending(String(projectId)),
+    'slack.decide': (requestId: string, allow: boolean, always?: boolean) => core.slack.decide(String(requestId), allow === true, { always: always === true }),
     'db.list': (projectId: string) => core.dbs.list(projectId),
     'db.canStoreSecrets': () => safeStorage.isEncryptionAvailable(),
     'db.save': (input: DbConnectionInput) => core.dbs.save(input),
@@ -237,6 +243,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onChatChanged = (): void => changed('chat');
   const onCleanupChanged = (): void => changed('cleanup');
   const onDbChanged = (): void => changed('db');
+  const onSlackChanged = (): void => changed('slack');
   const onBrowserChanged = (): void => changed('browser');
   const onPeersChanged = (): void => changed('peers');
   // 승인으로 새 저장소가 등록될 수 있다.
@@ -256,6 +263,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.chat.on('changed', onChatChanged);
   core.cleanup.on('changed', onCleanupChanged);
   core.dbs.on('changed', onDbChanged);
+  core.slack.on('changed', onSlackChanged);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
   core.assignments.on('changed', onPeersChanged);
@@ -274,6 +282,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.chat.off('changed', onChatChanged);
     core.cleanup.off('changed', onCleanupChanged);
     core.dbs.off('changed', onDbChanged);
+    core.slack.off('changed', onSlackChanged);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);
     core.assignments.off('changed', onPeersChanged);

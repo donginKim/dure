@@ -8,6 +8,7 @@ import { BrowserRequests } from './BrowserRequests';
 import { ChatPane } from './ChatPane';
 import { DiffPane } from './DiffPane';
 import { DbRequests } from './DbRequests';
+import { SlackRequests } from './SlackRequests';
 import { PeerInbox } from './PeerInbox';
 import { CommitDialog } from './CommitDialog';
 import { ConfirmDialog } from './dialogs';
@@ -212,6 +213,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
         <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
       <DbRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
+      <SlackRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <BrowserRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <PeerInbox projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <div className="ws-body">

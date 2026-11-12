@@ -648,3 +648,10 @@ export const CHAT_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/
 /** 한 번에 보낼 수 있는 이미지의 수와 한 장의 크기 (바이트) */
 export const MAX_CHAT_IMAGES = 5;
 export const MAX_CHAT_IMAGE_BYTES = 5 * 1024 * 1024;
+
+// ---- 슬랙 읽기 ----
+/** 에이전트가 슬랙을 읽을 때: ask 물어보고 읽기, auto 바로 읽기, off 읽지 못함 */
+export type SlackAccess = 'ask' | 'auto' | 'off';
+export interface SlackStatus { connected: boolean; team: string; user: string; access: SlackAccess }
+/** 에이전트가 올린, 결정을 기다리는 슬랙 읽기 요청. 두레를 다시 켜면 사라진다 */
+export interface SlackRequest { id: string; projectId: string; workspaceId: string; /** 무엇을 읽으려는지 (사용자에게 보이는 글) */ what: string; createdAt: number }

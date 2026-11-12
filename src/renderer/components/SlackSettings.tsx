@@ -35,7 +35,7 @@ export function SlackSettings() {
                 <li><code>https://api.slack.com/apps</code> 에서 "Create New App → From scratch" 로 앱을 만듭니다 (이름은 아무것이나, 워크스페이스는 읽을 슬랙).</li>
                 <li>"OAuth &amp; Permissions" 의 <b>User Token Scopes</b> 에 아래 권한을 더합니다 (Bot Token Scopes 가 아닙니다).<div className="set-scopes">{SCOPES.map((s) => <code key={s}>{s}</code>)}</div></li>
                 <li>같은 화면 위의 "Install to Workspace" 를 누릅니다. 회사 슬랙이면 관리자의 승인을 기다려야 할 수 있습니다.</li>
-                <li>설치되면 보이는 <b>User OAuth Token</b> (<code>xoxp-</code> 로 시작) 을 복사해 아래에 넣습니다.</li>
+                <li>설치되면 보이는 <b>User OAuth Token</b> (<code>xoxp-</code> 로 시작) 을 복사해 오른쪽 칸에 넣고 "연결" 을 누릅니다.</li>
               </ol>
             )}
             {error && <div className="set-error">{error}</div>}

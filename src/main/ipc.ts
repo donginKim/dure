@@ -62,6 +62,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'worktime.rememberCurrent': () => core.worktime.rememberCurrent(),
     'worktime.forgetNetworks': () => core.worktime.forgetNetworks(),
     'worktime.removeSession': (id: string) => core.worktime.removeSession(String(id)),
+    'worktime.setBreak': (day: string, minutes: number) => core.worktime.setBreak(String(day), Number(minutes)),
     'pr.info': (workspaceId: string) => core.prs.info(String(workspaceId)),
     'pr.create': (workspaceId: string, input: { title: string; body: string }) => core.prs.create(String(workspaceId), { title: String(input?.title ?? ''), body: String(input?.body ?? '') }),
     'pr.open': async (workspaceId: string, url?: string) => {

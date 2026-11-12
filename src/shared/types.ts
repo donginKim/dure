@@ -747,7 +747,16 @@ export interface Brief { id: string; projectId: string; fromPeerId: string; from
 /** 근무지에 붙어 있던 한 구간 (끊겼다 다시 붙으면 새 구간) */
 /** open: 출근만 하고 아직 퇴근하지 않았다 (endAt 은 마지막으로 근무지에서 확인된 시각). auto: 퇴근을 누르지 않아 두레가 닫았다 */
 export interface WorkSession { id: string; day: string; startAt: number; endAt: number; open: boolean; auto: boolean }
-export interface WorkDay { day: string; /** 그날 근무지에 붙어 있던 시간의 합 (ms) */ totalMs: number; firstAt: number; lastAt: number; sessions: WorkSession[] }
+export interface WorkDay {
+  day: string;
+  /** 그날의 근무시간 (ms): 출근해 있던 시간에서 휴게 시간을 뺀 것 */
+  totalMs: number;
+  /** 휴게 시간을 빼기 전 (ms) */
+  grossMs: number;
+  /** 사용자가 적은 그날의 휴게 시간 (분) */
+  breakMin: number;
+  firstAt: number; lastAt: number; sessions: WorkSession[];
+}
 export interface WorkStatus {
   enabled: boolean;
   /** 지금 근무지의 네트워크에 붙어 있는가 */

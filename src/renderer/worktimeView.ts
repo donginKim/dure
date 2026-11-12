@@ -32,6 +32,19 @@ export function monthGrid(year: number, month: number, days: WorkDay[]): Cell[] 
   return cells;
 }
 
+/** 휴게 시간을 "1시간 30분" 꼴로 (분) */
+export const breakLabel = (min: number): string => duration(min * 60_000);
+/** 입력한 글을 분으로: "90", "1:30", "1시간 30분", "1.5시간" 을 받는다. 알 수 없으면 null */
+export function parseBreak(text: string): number | null {
+  const t = text.trim();
+  if (t === '') return 0;
+  let m: RegExpExecArray | null;
+  if ((m = /^(\d{1,2}):(\d{1,2})$/.exec(t))) return Number(m[1]) * 60 + Number(m[2]);
+  if ((m = /^(\d+(?:\.\d+)?)\s*시간(?:\s*(\d+)\s*분)?$/.exec(t))) return Math.round(Number(m[1]) * 60) + Number(m[2] ?? 0);
+  if ((m = /^(\d+)\s*분?$/.exec(t))) return Number(m[1]);
+  return null;
+}
+
 /** 그 달의 합: 근무한 날 수와 시간 */
 export function monthTotal(days: WorkDay[]): { days: number; ms: number } {
   return { days: days.filter((d) => d.totalMs > 0).length, ms: days.reduce((n, d) => n + d.totalMs, 0) };

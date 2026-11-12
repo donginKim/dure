@@ -164,4 +164,27 @@ describe('출퇴근 기록 (30분 단위로 올림, 퇴근은 단추로)', () =>
     // 새 날의 출근이 적혔다
     expect(t.svc.status().openSession).not.toBeNull();
   });
+
+  test('휴게 시간을 적으면 그날의 근무시간에서 뺀다', async () => {
+    const t = setup();
+    t.settings.update({ workTimeUnit: 'half' });
+    t.at(OFFICE);
+    await t.svc.tick();                              // 09:00 출근
+    await t.pass(9 * 60);                            // 18:00
+    t.svc.clockOut();
+    expect(t.svc.status().todayMs).toBe(9 * 3_600_000);
+    expect(t.svc.setBreak('2026-11-13', 60)).toMatchObject({ breakMin: 60, grossMs: 9 * 3_600_000, totalMs: 8 * 3_600_000 });
+    expect(t.svc.status().todayMs).toBe(8 * 3_600_000);
+    expect(t.svc.month(2026, 11)[0]).toMatchObject({ day: '2026-11-13', breakMin: 60, totalMs: 8 * 3_600_000 });
+    // 고쳐 적으면 바뀌고, 0 이면 지운다
+    expect(t.svc.setBreak('2026-11-13', 90).totalMs).toBe(7.5 * 3_600_000);
+    expect(t.svc.setBreak('2026-11-13', 0)).toMatchObject({ breakMin: 0, totalMs: 9 * 3_600_000 });
+    // 일한 시간보다 길어도 0 아래로 내려가지 않는다
+    expect(t.svc.setBreak('2026-11-13', 20 * 60).totalMs).toBe(0);
+    // 근무 기록이 없는 날에 적어도 달력에 보인다
+    t.svc.setBreak('2026-11-20', 30);
+    expect(t.svc.month(2026, 11).map((d) => [d.day, d.breakMin, d.totalMs])).toEqual([['2026-11-13', 1200, 0], ['2026-11-20', 30, 0]]);
+    expect(() => t.svc.setBreak('2026-11-13', -5)).toThrow('0분부터');
+    expect(() => t.svc.setBreak('어제', 30)).toThrow('날짜가 올바르지 않습니다');
+  });
 });

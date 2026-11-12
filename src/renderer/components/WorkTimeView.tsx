@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WorkDay, WorkStatus } from '@shared/types';
-import { dayKey, duration, hhmm, monthGrid, monthTotal } from '../worktimeView';
+import { breakLabel, dayKey, duration, hhmm, monthGrid, monthTotal, parseBreak } from '../worktimeView';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -76,16 +76,16 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
           {monthGrid(ym.y, ym.m, days).map((c) => (c.day === null ? <div key={c.key} className="cal-cell blank" /> : (
             <button key={c.key} className={`cal-cell${c.weekend ? ' weekend' : ''}${c.key === today ? ' today' : ''}${c.key === picked ? ' picked' : ''}${c.data ? ' has' : ''}`} onClick={() => setPicked(c.key)}>
               <span className="cal-day">{c.day}</span>
-              {c.data && <><span className="cal-total">{c.data.totalMs > 0 ? duration(c.data.totalMs) : '0분'}</span><span className="cal-range">{hhmm(c.data.firstAt)} ~ {c.data.sessions.some((x) => x.open) ? '근무 중' : hhmm(c.data.lastAt)}</span></>}
+              {c.data && <><span className="cal-total">{c.data.totalMs > 0 ? duration(c.data.totalMs) : '0분'}</span>{c.data.sessions.length > 0 && <span className="cal-range">{hhmm(c.data.firstAt)} ~ {c.data.sessions.some((x) => x.open) ? '근무 중' : hhmm(c.data.lastAt)}</span>}{c.data.breakMin > 0 && <span className="cal-break">휴게 {breakLabel(c.data.breakMin)}</span>}</>}
             </button>
           )))}
         </div>
       </div>
 
       <div className="section">
-        <div className="section-head"><h2>{picked} {detail && <span className="plan-hint">합계 {detail.totalMs > 0 ? duration(detail.totalMs) : '0분'}</span>}</h2></div>
+        <div className="section-head"><h2>{picked} {detail && <span className="plan-hint">근무 {detail.totalMs > 0 ? duration(detail.totalMs) : '0분'}{detail.breakMin > 0 && ` (출근해 있던 ${duration(detail.grossMs)} 에서 휴게 ${breakLabel(detail.breakMin)} 을 뺌)`}</span>}</h2></div>
         <div className="rows">
-          {!detail && <div className="rows-empty">이 날의 기록이 없습니다.</div>}
+          {!detail?.sessions.length && <div className="rows-empty">이 날의 출퇴근 기록이 없습니다.</div>}
           {detail?.sessions.map((s) => (
             <div key={s.id} className="row">
               <div className="grow">{hhmm(s.startAt)} 출근 ~ {s.open ? '근무 중' : `${hhmm(s.endAt)} 퇴근`}{s.auto && <span className="tag" title="퇴근을 누르지 않아, 마지막으로 근무지에서 확인된 시각으로 닫았습니다">저절로 닫음</span>}</div>
@@ -94,7 +94,26 @@ export function WorkTimeView({ onOpenSettings }: { onOpenSettings: () => void })
             </div>
           ))}
         </div>
+        <BreakEditor key={`${picked}:${detail?.breakMin ?? 0}`} day={picked} minutes={detail?.breakMin ?? 0} onSave={(m) => run(window.dure.worktime.setBreak(picked, m))} />
       </div>
+    </div>
+  );
+}
+
+/** 고른 날의 휴게 시간을 적는다. 근무시간에서 뺀다. */
+function BreakEditor({ day, minutes, onSave }: { day: string; minutes: number; onSave: (minutes: number) => void }) {
+  const [text, setText] = useState(minutes > 0 ? String(minutes) : '');
+  const parsed = parseBreak(text);
+  const bad = parsed === null || parsed > 24 * 60;
+  return (
+    <div className="work-break">
+      <div className="grow">
+        <b>휴게 시간</b> <span className="muted">{minutes > 0 ? `${breakLabel(minutes)} · 근무시간에서 뺍니다` : '적지 않았습니다. 점심처럼 쉰 시간을 적으면 그날의 근무시간에서 뺍니다'}</span>
+      </div>
+      <div className="seg">{[30, 60, 90].map((m) => <button key={m} className={minutes === m ? 'on' : ''} onClick={() => onSave(m)}>{breakLabel(m)}</button>)}</div>
+      <input type="text" className={`work-break-input${bad ? ' bad' : ''}`} value={text} placeholder="분 (예: 60, 1:30)" title={`${day} 의 휴게 시간. 분으로 적거나 1:30, 1시간 30분처럼 적습니다`} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !bad && !e.nativeEvent.isComposing) onSave(parsed!); }} />
+      <button className="btn" disabled={bad || parsed === minutes} onClick={() => onSave(parsed!)}>적기</button>
+      {minutes > 0 && <button className="btn ghost" onClick={() => onSave(0)}>지우기</button>}
     </div>
   );
 }

@@ -167,13 +167,17 @@ export class WorkTimeService extends EventEmitter {
     const sessions = (this.d.db.prepare('SELECT * FROM work_sessions WHERE day = ? ORDER BY start_at').all(day) as Row[]).map(toSession);
     // 아직 퇴근하지 않은 구간은 지금까지를 센다 (올려 적은 출근 시각이 아직 오지 않았으면 0).
     const span = (x: WorkSession): number => (x.open ? Math.max(0, now - x.startAt) : x.endAt - x.startAt);
-    return { day, sessions, totalMs: sessions.reduce((n, x) => n + span(x), 0), firstAt: sessions[0]?.startAt ?? 0, lastAt: sessions[sessions.length - 1]?.endAt ?? 0 };
+    const grossMs = sessions.reduce((n, x) => n + span(x), 0);
+    const breakMin = (this.d.db.prepare('SELECT minutes FROM work_breaks WHERE day = ?').get(day) as { minutes: number } | undefined)?.minutes ?? 0;
+    // 휴게 시간은 일한 시간에서 뺀다 (일한 시간보다 길어도 0 아래로 내려가지 않는다).
+    return { day, sessions, grossMs, breakMin, totalMs: Math.max(0, grossMs - breakMin * 60_000), firstAt: sessions[0]?.startAt ?? 0, lastAt: sessions[sessions.length - 1]?.endAt ?? 0 };
   }
 
   /** 그 달의 근무 기록 (기록이 있는 날만). month 는 1~12 */
   month(year: number, month: number): WorkDay[] {
     const prefix = `${Math.floor(year)}-${two(Math.min(12, Math.max(1, Math.floor(month))))}-`;
-    const days = (this.d.db.prepare('SELECT DISTINCT day FROM work_sessions WHERE day LIKE ? ORDER BY day').all(`${prefix}%`) as { day: string }[]).map((r) => r.day);
+    // 근무 기록이 있는 날과, 휴게 시간만 적어 둔 날
+    const days = (this.d.db.prepare('SELECT day FROM work_sessions WHERE day LIKE ? UNION SELECT day FROM work_breaks WHERE day LIKE ? ORDER BY day').all(`${prefix}%`, `${prefix}%`) as { day: string }[]).map((r) => r.day);
     return days.map((d) => this.day(d));
   }
 
@@ -190,6 +194,17 @@ export class WorkTimeService extends EventEmitter {
   forgetNetworks(): void {
     this.d.db.prepare('DELETE FROM work_networks').run();
     void this.tick();
+  }
+
+  /** 그날의 휴게 시간을 적는다 (분). 0 이면 지운다. 근무시간에서 뺀다. */
+  setBreak(day: string, minutes: number): WorkDay {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day))) throw new Error('날짜가 올바르지 않습니다.');
+    const m = Math.floor(Number(minutes));
+    if (!Number.isFinite(m) || m < 0 || m > 24 * 60) throw new Error('휴게 시간은 0분부터 24시간까지 적을 수 있습니다.');
+    if (m === 0) this.d.db.prepare('DELETE FROM work_breaks WHERE day = ?').run(day);
+    else this.d.db.prepare('INSERT INTO work_breaks (day, minutes) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET minutes = excluded.minutes').run(day, m);
+    this.emit('changed');
+    return this.day(day);
   }
 
   /** 구간 하나를 지운다 (잘못 잰 것을 고칠 때). */

@@ -1,4 +1,4 @@
-import { duration, hhmm, monthGrid, monthTotal } from '../../src/renderer/worktimeView';
+import { breakLabel, duration, hhmm, monthGrid, monthTotal, parseBreak } from '../../src/renderer/worktimeView';
 
 test('걸린 시간과 시각을 읽기 쉽게 적는다', () => {
   expect(duration(20_000)).toBe('1분 미만');
@@ -10,7 +10,7 @@ test('걸린 시간과 시각을 읽기 쉽게 적는다', () => {
 
 test('달력의 칸: 일요일부터, 주 단위로 채운다', () => {
   // 2026년 11월 1일은 일요일, 30일까지
-  const day = { day: '2026-11-13', totalMs: 3_600_000, firstAt: 1, lastAt: 2, sessions: [] };
+  const day = { day: '2026-11-13', totalMs: 3_600_000, grossMs: 3_600_000, breakMin: 0, firstAt: 1, lastAt: 2, sessions: [] };
   const cells = monthGrid(2026, 11, [day]);
   expect(cells.length).toBe(35);
   expect(cells[0]).toMatchObject({ day: 1, weekend: true });
@@ -23,4 +23,16 @@ test('달력의 칸: 일요일부터, 주 단위로 채운다', () => {
   expect(aug[6]).toMatchObject({ day: 1, weekend: true });
   expect(aug.length).toBe(42);
   expect(monthTotal([day, { ...day, day: 'x', totalMs: 0 }])).toEqual({ days: 1, ms: 3_600_000 });
+});
+
+test('휴게 시간을 여러 꼴로 적을 수 있다', () => {
+  expect(parseBreak('90')).toBe(90);
+  expect(parseBreak('60분')).toBe(60);
+  expect(parseBreak('1:30')).toBe(90);
+  expect(parseBreak('1시간')).toBe(60);
+  expect(parseBreak('1시간 30분')).toBe(90);
+  expect(parseBreak('1.5시간')).toBe(90);
+  expect(parseBreak('')).toBe(0);
+  expect(parseBreak('점심')).toBeNull();
+  expect(breakLabel(90)).toBe('1시간 30분');
 });

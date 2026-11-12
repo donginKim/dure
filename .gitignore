@@ -4,3 +4,5 @@ dist
 spikes/out
 .superpowers
 .worktrees
+dist-*
+release

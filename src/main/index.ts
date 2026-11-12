@@ -107,6 +107,9 @@ async function start(): Promise<void> {
         decrypt: (stored) => safeStorage.decryptString(Buffer.from(stored, 'base64')),
       },
       baseEnv: await resolveShellEnv(),
+      // 묶인 앱이면 그 묶음의 경로 (…/Dure.app/Contents/MacOS/Dure 에서 세 단계 위). 소스에서 설치한 앱의 업데이트에 쓴다.
+      runningApp: app.isPackaged ? join(process.execPath, '..', '..', '..') : null,
+      updateReopen: !process.env.DURE_UPDATE_NO_REOPEN,
     });
   } catch (e) {
     dialog.showErrorBox('두레를 시작하지 못했습니다', e instanceof Error ? e.message : String(e));

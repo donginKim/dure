@@ -45,6 +45,12 @@ rm -rf "$dest/Dure.app"
 ditto "$out/Dure.app" "$dest/Dure.app" || die "복사하지 못했습니다."
 xattr -dr com.apple.quarantine "$dest/Dure.app" 2>/dev/null || true
 
+# 어디서 만들어 어디에 넣었는지 적어 둔다: 두레가 이것을 보고 새 버전을 확인하고 업데이트한다.
+info="${DURE_INSTALL_INFO:-$HOME/Library/Application Support/dure/install.json}"
+mkdir -p "$(dirname "$info")"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ sourceDir: process.argv[2], app: process.argv[3], commit: process.argv[4], installedAt: Date.now() }) + "\n")' \
+  "$info" "$root" "$dest/Dure.app" "$(git -C "$root" rev-parse HEAD)" || printf '\n주의: 설치 정보를 적지 못했습니다. 앱 안의 업데이트는 쓸 수 없고, 이 스크립트를 다시 실행해 업데이트합니다.\n'
+
 shell="${SHELL:-/bin/zsh}"
 "$shell" -lic "command -v claude" >/dev/null 2>&1 || printf '\n주의: Claude Code (claude 명령) 가 없습니다. 설치하고 로그인해야 에이전트가 뜹니다: https://claude.com/claude-code\n'
 

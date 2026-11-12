@@ -11,6 +11,7 @@ import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
 import { AttentionView } from './components/AttentionView';
 import { WorkTimeView } from './components/WorkTimeView';
+import { WorkBadge } from './components/WorkBadge';
 import { attentionTarget } from './attentionView';
 import { NotesPanel } from './components/NotesPanel';
 import { Sidebar } from './components/Sidebar';
@@ -173,6 +174,7 @@ export function App() {
         {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} />}
       </main>
       {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
+      {!notesOpen && current?.type !== 'worktime' && <WorkBadge onOpen={() => setSelection({ type: 'worktime' })} />}
     </div>
   );
 }

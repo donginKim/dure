@@ -1,4 +1,4 @@
-import type { WorkDay } from '@shared/types';
+import type { WorkDay, WorkStatus } from '@shared/types';
 
 /** 걸린 시간을 "8시간 12분" 꼴로. 1분이 안 되면 "1분 미만". */
 export function duration(ms: number): string {
@@ -48,4 +48,12 @@ export function parseBreak(text: string): number | null {
 /** 그 달의 합: 근무한 날 수와 시간 */
 export function monthTotal(days: WorkDay[]): { days: number; ms: number } {
   return { days: days.filter((d) => d.totalMs > 0).length, ms: days.reduce((n, d) => n + d.totalMs, 0) };
+}
+
+/** 창 구석의 근무 표시에 적을 글. 근무 중이 아니면 null (표시하지 않는다). */
+export function workBadge(s: Pick<WorkStatus, 'enabled' | 'unit' | 'openSession' | 'atWork' | 'todayMs'>): string | null {
+  if (!s.enabled) return null;
+  const working = s.unit === 'half' ? s.openSession !== null : s.atWork;
+  if (!working) return null;
+  return `근무 중 · ${s.todayMs >= 60_000 ? duration(s.todayMs) : '0분'}`;
 }

@@ -1,10 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage } from 'electron';
 import { isTerminalReply } from '@core/agents/trustPrompt';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess } from '@shared/types';
+import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -55,6 +55,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'attention.list': () => core.attention.list(),
     'notes.list': (query?: string) => core.notes.list(String(query ?? '')),
     'notes.get': (id: string) => core.notes.get(String(id)) ?? null,
     'notes.create': (input?: { title?: string; body?: string }) => core.notes.create(input ?? {}),
@@ -259,6 +260,31 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onSlackChanged = (): void => changed('slack');
   const onUpdateChanged = (): void => changed('update');
   const onNotesChanged = (): void => changed('notes');
+  // 확인할 것: Dock 아이콘에 수를 적고, 새로 생기면 알림을 띄운다 (두레를 보고 있을 때는 띄우지 않는다).
+  const onAttentionChanged = (): void => {
+    changed('attention');
+    const n = core.attention.list().length;
+    app.dock?.setBadge(n > 0 ? String(n) : '');
+  };
+  const onAttentionAdded = (items: AttentionItem[]): void => {
+    if (!core.settings.get().notifications || !Notification.isSupported()) return;
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+    if (win?.isFocused()) return;
+    // 한꺼번에 여럿 생기면 하나로 묶는다.
+    const first = items[0]!;
+    const note = new Notification({
+      title: items.length > 1 ? `두레 · 확인할 것 ${items.length}건` : `두레${first.projectName ? ` · ${first.projectName}` : ''}`,
+      body: items.length > 1 ? items.slice(0, 3).map((i) => i.title).join('\n') : `${first.title}${first.detail ? `\n${first.detail}` : ''}`,
+    });
+    note.on('click', () => {
+      const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed());
+      if (!w) return;
+      if (w.isMinimized()) w.restore();
+      w.show(); w.focus();
+      w.webContents.send(IPC_EVENTS.attentionOpen, first);
+    });
+    note.show();
+  };
   const onBrowserChanged = (): void => changed('browser');
   const onPeersChanged = (): void => changed('peers');
   // 승인으로 새 저장소가 등록될 수 있다.
@@ -281,6 +307,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.slack.on('changed', onSlackChanged);
   core.updates.on('changed', onUpdateChanged);
   core.notes.on('changed', onNotesChanged);
+  core.attention.on('changed', onAttentionChanged);
+  core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
   core.assignments.on('changed', onPeersChanged);
@@ -302,6 +330,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.slack.off('changed', onSlackChanged);
     core.updates.off('changed', onUpdateChanged);
     core.notes.off('changed', onNotesChanged);
+    core.attention.off('changed', onAttentionChanged);
+    core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);
     core.assignments.off('changed', onPeersChanged);

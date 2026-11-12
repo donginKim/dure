@@ -347,6 +347,8 @@ export interface Settings {
   notesForAgents: boolean;
   /** 에이전트가 새 메모를 쓰고 메모에 덧붙일 수 있다 (고치거나 지우지는 못한다) */
   notesWriteForAgents: boolean;
+  /** 에이전트나 다른 사람이 나를 기다릴 때 macOS 알림을 띄운다 */
+  notifications: boolean;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -680,3 +682,17 @@ export interface UpdateStatus {
 export interface Note { id: string; title: string; body: string; createdAt: number; updatedAt: number }
 /** 목록에 보이는 메모 한 줄. preview 는 찾은 낱말의 앞뒤 (찾지 않았으면 본문의 앞부분) */
 export interface NoteSummary { id: string; title: string; preview: string; updatedAt: number }
+
+// ---- 확인할 것: 에이전트나 다른 사람이 나를 기다리는 것 ----
+/**
+ * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
+ * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
+ */
+export type AttentionKind = 'agent' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'pair' | 'invite';
+export interface AttentionItem {
+  /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
+  id: string; kind: AttentionKind;
+  projectId: string | null; projectName: string;
+  workspaceId: string | null;
+  title: string; detail: string;
+}

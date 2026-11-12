@@ -4,7 +4,7 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
   expect([...IPC_CHANNELS].sort()).toEqual([
     'projects.create', 'projects.list', 'projects.remove', 'projects.reopen',
     'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
-    'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove', 'update.status', 'update.check', 'update.apply', 'update.dismiss', 'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide', 'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',
+    'attention.list', 'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove', 'update.status', 'update.check', 'update.apply', 'update.dismiss', 'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide', 'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',
     'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
     'repos.add', 'repos.branches', 'repos.list', 'repos.pickFolder', 'repos.remove', 'repos.status',
     'terminals.buffer', 'terminals.kill', 'terminals.list', 'terminals.openShell', 'terminals.resize',
@@ -25,5 +25,5 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
 });
 
 test('이벤트 채널 이름', () => {
-  expect(IPC_EVENTS).toEqual({ terminalData: 'dure:terminal-data', terminalExit: 'dure:terminal-exit', changed: 'dure:changed', browserOpen: 'dure:browser-open' });
+  expect(IPC_EVENTS).toEqual({ terminalData: 'dure:terminal-data', terminalExit: 'dure:terminal-exit', changed: 'dure:changed', browserOpen: 'dure:browser-open', attentionOpen: 'dure:attention-open' });
 });

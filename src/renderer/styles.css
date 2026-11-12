@@ -742,3 +742,14 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .notes-body { flex: 1; min-height: 0; resize: none; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 13px/1.65 inherit; outline: none; }
 .notes-body:focus { border-color: var(--accent); }
 .notes-head .spacer { flex: 1; }
+
+/* 확인할 것 */
+.side-attention { display: flex; align-items: center; justify-content: space-between; margin: 0 8px 6px; padding: 8px 10px; background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); cursor: pointer; font: inherit; font-size: 12.5px; }
+.side-attention:hover, .side-attention.selected { background: var(--panel-2); color: var(--text); }
+.side-attention.has { border-color: var(--accent); color: var(--text); }
+.side-attention.has .count { background: var(--accent); color: var(--accent-ink); }
+.attention-row { width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+.attention-row:hover { background: var(--panel-2); }
+.attention-detail { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70ch; }
+.attention-inline { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.attention-inline .db-requests { padding: 0; }

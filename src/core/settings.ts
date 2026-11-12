@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyAgentOnCommit: true,
   notesForAgents: false,
   notesWriteForAgents: false,
+  notifications: true,
   terminalFontSize: 13,
   chatFontSize: 13.5,
 };
@@ -154,6 +155,7 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   notifyAgentOnCommit: bool('커밋 뒤 에이전트에게 알리기'),
   notesForAgents: bool('에이전트가 메모 읽기'),
   notesWriteForAgents: bool('에이전트가 메모 쓰기'),
+  notifications: bool('알림'),
   terminalFontSize: size('터미널 글자 크기', 9, 28),
   chatFontSize: size('채팅 글자 크기', 10, 28),
 };

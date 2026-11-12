@@ -696,3 +696,13 @@ export interface AttentionItem {
   workspaceId: string | null;
   title: string; detail: string;
 }
+
+// ---- 사용량: 에이전트가 쓴 토큰 ----
+export interface TokenCount {
+  /** 새로 읽은 입력, 출력, 캐시에 쓴 것, 캐시에서 읽은 것 (토큰 수) */
+  input: number; output: number; cacheWrite: number; cacheRead: number;
+  /** 모델에 보낸 요청의 수 */
+  requests: number;
+}
+export interface UsageRow extends TokenCount { workspaceId: string; name: string; /** 지워진 워크스페이스 */ gone: boolean }
+export interface UsageSummary { total: TokenCount; workspaces: UsageRow[]; models: (TokenCount & { model: string })[]; /** 가장 먼저 적힌 기록의 시각 */ since: number | null }

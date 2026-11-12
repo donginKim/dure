@@ -55,6 +55,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'usage.summary': (projectId: string, days?: number) => core.usage.summary(String(projectId), Number(days) > 0 ? Date.now() - Number(days) * 86_400_000 : 0),
     'attention.list': () => core.attention.list(),
     'notes.list': (query?: string) => core.notes.list(String(query ?? '')),
     'notes.get': (id: string) => core.notes.get(String(id)) ?? null,

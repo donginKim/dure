@@ -263,6 +263,22 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX notes_updated ON notes (updated_at DESC);
   `,
+  `
+  -- 사용량: 모델의 답 하나마다 쓴 토큰 수 (대화 기록에서 읽는다). 워크스페이스가 지워져도 남긴다
+  CREATE TABLE token_usage (
+    message_id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    workspace_name TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    input INTEGER NOT NULL DEFAULT 0,
+    output INTEGER NOT NULL DEFAULT 0,
+    cache_write INTEGER NOT NULL DEFAULT 0,
+    cache_read INTEGER NOT NULL DEFAULT 0,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX token_usage_project ON token_usage (project_id, at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

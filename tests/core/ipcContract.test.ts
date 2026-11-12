@@ -16,7 +16,7 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
     'browser.register', 'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline',
     'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
     'peers.share', 'peers.createShare', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
-    'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.drop', 'browser.requests', 'browser.decide', 'commit.state', 'commit.diff', 'commit.run', 'commit.push',
+    'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop', 'browser.requests', 'browser.decide', 'commit.state', 'commit.diff', 'commit.run', 'commit.push',
     'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
     'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
     'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.rename', 'workspaces.setAutoName',

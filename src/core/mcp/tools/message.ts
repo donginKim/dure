@@ -40,7 +40,7 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
     {
       description: `같은 프로젝트의 다른 워크스페이스 에이전트에게 메시지를 보낸다. 받은 에이전트는 스스로 깨어나 읽는다. 답장이면 thread_id 를 넣는다. 사용자가 대화에 남긴 말에 답할 때는 to 를 "${USER_NAME}" 로 한다: 사용자의 대화 패널에 보인다 (평소의 보고는 메시지가 아니라 응답으로 하라).`,
       inputSchema: {
-        to: z.string().describe(`받는 워크스페이스의 이름 (project_overview 로 확인). 다른 사람의 두레에 있는 워크스페이스는 "이름@사람". 사용자에게 답할 때는 "${USER_NAME}"`),
+        to: z.string().describe(`받는 워크스페이스의 이름 (project_overview 로 확인). 다른 사람의 두레에 있는 워크스페이스는 "이름@사람". 함께하는 사람에게 직접 물을 때는 "@사람" (그 사람이 읽고 답한다). 사용자에게 답할 때는 "${USER_NAME}"`),
         body: z.string(),
         thread_id: z.string().optional(),
         artifact_ids: z.array(z.string()).optional(),
@@ -60,6 +60,7 @@ export const messageTools: ToolBundle = (server, ctx, deps) => {
       if (to.includes('@') && !peers().some((w) => w.name === to.trim())) {
         try {
           const m = await deps.peers.sendRemote({ fromWorkspaceId: ctx.workspace.id, to, body, threadId: thread_id, artifactIds: artifact_ids });
+          if (to.trim().startsWith('@')) return ok({ messageId: m.id, threadId: m.threadId, delivery: '그 사람의 두레 화면에 질문으로 떴다. 에이전트가 아니라 사람이 읽고 답한다: 답이 늦거나 오지 않을 수 있으니 기다리지 말고 네 일을 계속하라. 답은 이 스레드로 온다.' });
           return ok({ messageId: m.id, threadId: m.threadId, delivery: '다른 사람의 두레로 보냈다. 그쪽 사용자가 보고 넘겨줘야 그 에이전트에게 갈 수 있다: 답이 바로 오지 않을 수 있으니 기다리지 말고 네 일을 계속하라.' });
         } catch (e) {
           return fail(e instanceof Error ? e.message : String(e));

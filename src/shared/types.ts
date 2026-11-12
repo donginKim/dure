@@ -601,7 +601,8 @@ export interface RemoteWorkspace {
 }
 /** 다른 사람의 에이전트가 보낸 메시지 중, 내가 보고 넘겨주기를 기다리는 것 */
 export interface HeldMessage {
-  id: string; projectId: string; fromRef: string; fromLabel: string; toWorkspaceId: string;
+  /** toWorkspaceId 가 비어 있으면 워크스페이스가 아니라 나에게 온 질문이다 (toPerson) */
+  id: string; projectId: string; fromRef: string; fromLabel: string; toWorkspaceId: string; toPerson: boolean;
   body: string; artifacts: { kind: string; title: string; body: string }[]; createdAt: number;
 }
 

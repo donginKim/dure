@@ -8,6 +8,7 @@ import { ChatPane } from './ChatPane';
 import { DbRequests } from './DbRequests';
 import type { ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
+import { PeerInbox } from './PeerInbox';
 import { describeError } from './WorkspaceView';
 
 /** 계획안의 TODO 목록: 제목을 고치고, 담당을 바꾸고, 빼고, 더한다. */
@@ -265,6 +266,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
       {error && <div className="error" style={{ margin: '8px 16px 0' }}>{error}</div>}
       {!readOnly && <DbRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
       {!(proposal && reviewing) && <AssignPanel projectId={project.id} repos={repos} readOnly={readOnly} />}
+      {!readOnly && !(proposal && reviewing) && <PeerInbox projectId={project.id} workspaces={everyone} only="person" />}
       {proposal && reviewing
         ? <PlanReview key={proposal.id} proposal={proposal} repos={repos} newRepoDir={info.newRepoDir} people={info.people} onBack={() => setReviewing(false)} />
         : (

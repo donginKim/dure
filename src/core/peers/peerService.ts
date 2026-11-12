@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
-import { parseRemoteRef, remoteLabel, remoteRef } from '@shared/remote';
+import { USER_RECIPIENT } from '@shared/messages';
+import { PERSON_ID, parseRemoteRef, personRef, remoteLabel, remoteRef } from '@shared/remote';
 import type {
   FoundPeer, HeldMessage, Message, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Settings, Share, ShareInvite, SharingAudience, WorkspaceSharing,
 } from '@shared/types';
@@ -758,6 +759,8 @@ export class PeerService extends EventEmitter {
     for (const r of this.d.db.prepare('SELECT peer_id, workspace_id, name FROM remote_workspaces').all() as { peer_id: string; workspace_id: string; name: string }[]) {
       out[remoteRef(r.peer_id, r.workspace_id)] = remoteLabel(r.name, this.label(r.peer_id));
     }
+    // 사람 자신 ("@사람")
+    for (const r of this.d.db.prepare('SELECT DISTINCT peer_id FROM share_members').all() as { peer_id: string }[]) out[personRef(r.peer_id)] = remoteLabel('', this.label(r.peer_id));
     return out;
   }
 
@@ -765,6 +768,7 @@ export class PeerService extends EventEmitter {
   nameOf(ref: string): { name: string; owner: string } | undefined {
     const p = parseRemoteRef(ref);
     if (!p) return undefined;
+    if (p.workspaceId === PERSON_ID) return { name: '', owner: this.label(p.peerId) };
     const row = this.d.db.prepare('SELECT name FROM remote_workspaces WHERE peer_id = ? AND workspace_id = ? LIMIT 1').get(p.peerId, p.workspaceId) as { name: string } | undefined;
     const peer = this.peerRow(p.peerId);
     return row || peer ? { name: row?.name ?? '알 수 없는 워크스페이스', owner: this.label(p.peerId) } : undefined;
@@ -781,12 +785,36 @@ export class PeerService extends EventEmitter {
     if (!ws) throw new Error('워크스페이스가 없다.');
     if (this.d.isProjectClosed(ws.projectId)) throw new Error('완료된 프로젝트다.');
     const s = this.shareOfProject(ws.projectId);
-    const all = s ? this.remoteWorkspaces(ws.projectId) : [];
-    const matches = all.filter((r) => r.label === i.to.trim());
-    if (matches.length === 0) throw new Error(`"${i.to}" 라는 다른 사람의 워크스페이스가 없다. 보이는 것: ${all.map((r) => `"${r.label}"`).join(', ') || '(없음)'}`);
-    if (matches.length > 1) throw new Error(`"${i.to}" 가 둘 이상이라 받는 쪽을 정할 수 없다. 사용자에게 알려라.`);
-    const target = matches[0]!;
-    if (!this.visibleTo(ws.id, target.peerId)) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 메시지를 보낼 수 없다. 필요하면 사용자에게 두레에서 이 워크스페이스를 공개해 달라고 하라.`);
+    const to = i.to.trim();
+    const earlier = i.threadId ? this.d.messages.messages(i.threadId) : [];
+    let target: { peerId: string; peerName: string; ref: string };
+    const person = to.startsWith('@');
+    if (person) {
+      // 사람에게 직접 묻는다. 그 사람이 공개한 워크스페이스가 없어도 된다: 그 사람의 화면에 뜨고 사람이 읽고 답한다.
+      const people = s ? this.people(ws.projectId) : [];
+      const who = people.filter((p) => `@${p.name}` === to);
+      if (who.length !== 1) throw new Error(`"${to}" 라는 사람이 이 프로젝트에 없다. 물어볼 수 있는 사람: ${people.map((p) => `"@${p.name}"`).join(', ') || '(없음. 함께하는 프로젝트가 아니다)'}`);
+      target = { peerId: who[0]!.peerId, peerName: who[0]!.name, ref: personRef(who[0]!.peerId) };
+    } else {
+      const all = s ? this.remoteWorkspaces(ws.projectId) : [];
+      const matches: { peerId: string; peerName: string; ref: string }[] = all.filter((r) => r.label === to);
+      // 목록에 없어도, 이 스레드에서 나에게 먼저 보내온 워크스페이스에는 답할 수 있다.
+      if (matches.length === 0) {
+        for (const m of earlier) {
+          if (m.from.kind !== 'workspace' || m.toWorkspaceId !== ws.id || matches.some((x) => x.ref === (m.from as { workspaceId: string }).workspaceId)) continue;
+          const ref = m.from.workspaceId;
+          const parsed = parseRemoteRef(ref);
+          const n = parsed && this.nameOf(ref);
+          if (parsed && n && remoteLabel(n.name, n.owner) === to && s && this.memberIds(s.id).includes(parsed.peerId)) matches.push({ peerId: parsed.peerId, peerName: n.owner, ref });
+        }
+      }
+      if (matches.length === 0) throw new Error(`"${i.to}" 라는 다른 사람의 워크스페이스가 없다. 보이는 것: ${all.map((r) => `"${r.label}"`).join(', ') || '(없음)'}. 사람에게 직접 물으려면 "@사람 이름" 으로 보내라.`);
+      if (matches.length > 1) throw new Error(`"${i.to}" 가 둘 이상이라 받는 쪽을 정할 수 없다. 사용자에게 알려라.`);
+      target = matches[0]!;
+    }
+    // 그 사람이 이 스레드에서 나에게 먼저 보내왔으면 (사용자가 넘겨준 것이다) 공개하지 않은 워크스페이스에서도 답할 수 있다.
+    const replying = earlier.some((m) => m.from.kind === 'workspace' && m.toWorkspaceId === ws.id && parseRemoteRef(m.from.workspaceId)?.peerId === target.peerId);
+    if (!person && !replying && !this.visibleTo(ws.id, target.peerId)) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 그 사람의 에이전트에게 메시지를 보낼 수 없다. 필요하면 사용자에게 두레에서 이 워크스페이스를 공개해 달라고 하라. 그 사람에게 직접 묻는 것은 "@${target.peerName}" 으로 할 수 있다.`);
     const body = String(i.body ?? '').trim();
     if (!body) throw new Error('메시지 내용을 입력하세요.');
     if (body.length > MAX_BODY) throw new Error(`메시지가 너무 깁니다 (최대 ${MAX_BODY}자).`);
@@ -808,17 +836,17 @@ export class PeerService extends EventEmitter {
     return this.d.messages.send({ projectId: ws.projectId, from: { kind: 'workspace', workspaceId: ws.id }, toWorkspaceId: target.ref, body, threadId, createThread: true, artifactIds: ids });
   }
 
-  private toHeld(r: { id: string; share_id: string; from_peer: string; from_workspace: string; to_workspace_id: string; body: string; artifacts: string; created_at: number }): HeldMessage | null {
+  private toHeld(r: { id: string; share_id: string; from_peer: string; from_workspace: string; to_workspace_id: string | null; body: string; artifacts: string; created_at: number }): HeldMessage | null {
     const s = this.shareRow(r.share_id);
     if (!s) return null;
     const ref = remoteRef(r.from_peer, r.from_workspace);
     const n = this.nameOf(ref);
     let artifacts: WireArtifact[] = [];
     try { artifacts = JSON.parse(r.artifacts) as WireArtifact[]; } catch { /* 없음 */ }
-    return { id: r.id, projectId: s.project_id, fromRef: ref, fromLabel: n ? remoteLabel(n.name, n.owner) : '알 수 없는 워크스페이스', toWorkspaceId: r.to_workspace_id, body: r.body, artifacts, createdAt: r.created_at };
+    return { id: r.id, projectId: s.project_id, fromRef: ref, fromLabel: n ? remoteLabel(n.name, n.owner) : '알 수 없는 워크스페이스', toWorkspaceId: r.to_workspace_id ?? '', toPerson: r.to_workspace_id === null, body: r.body, artifacts, createdAt: r.created_at };
   }
 
-  /** 다른 사람의 에이전트가 보낸 메시지 중, 내가 넘겨주기를 기다리는 것. */
+  /** 다른 사람의 에이전트가 보낸 메시지 중, 내가 넘겨주기를 기다리는 것. 나에게 직접 물은 것(toPerson)도 들어 있다. */
   held(projectId: string): HeldMessage[] {
     const s = this.shareOfProject(projectId);
     if (!s) return [];
@@ -826,13 +854,40 @@ export class PeerService extends EventEmitter {
       .map((r) => this.toHeld(r)).filter((h): h is HeldMessage => h !== null);
   }
 
-  /** 붙잡아 둔 메시지를 내 에이전트에게 넘겨준다. */
-  pass(heldId: string): void {
+  /**
+   * 붙잡아 둔 메시지를 내 에이전트에게 넘겨준다.
+   * 나에게 직접 물은 것이면 어느 워크스페이스(보통 조율 에이전트)에게 넘길지 workspaceId 로 고른다.
+   */
+  pass(heldId: string, workspaceId?: string): void {
     const r = this.d.db.prepare('SELECT * FROM peer_inbox WHERE id = ?').get(heldId) as (Parameters<PeerService['toHeld']>[0] & { thread: string }) | undefined;
     const h = r && this.toHeld(r);
     if (!r || !h) throw new Error('기다리는 메시지가 아닙니다.');
     if (this.d.isProjectClosed(h.projectId)) throw new Error('완료된 프로젝트입니다. 넘겨줄 수 없습니다 (버릴 수는 있습니다).');
-    this.deliver({ projectId: h.projectId, fromRef: h.fromRef, toWorkspaceId: h.toWorkspaceId, body: h.body, thread: r.thread, artifacts: h.artifacts });
+    const to = h.toPerson ? this.d.workspaces.get(String(workspaceId ?? '')) : this.d.workspaces.get(h.toWorkspaceId);
+    if (!to || to.projectId !== h.projectId) throw new Error('넘겨줄 워크스페이스를 고르세요.');
+    this.deliver({ projectId: h.projectId, fromRef: h.fromRef, toWorkspaceId: to.id, body: h.body, thread: r.thread, artifacts: h.artifacts });
+    this.d.db.prepare('DELETE FROM peer_inbox WHERE id = ?').run(heldId);
+    this.emit('changed');
+  }
+
+  /** 나에게 직접 물은 것에 내가 답한다. 답은 물은 워크스페이스로 돌아간다. */
+  async answer(heldId: string, body: string): Promise<void> {
+    const r = this.d.db.prepare('SELECT * FROM peer_inbox WHERE id = ?').get(heldId) as (Parameters<PeerService['toHeld']>[0] & { thread: string }) | undefined;
+    const h = r && this.toHeld(r);
+    if (!r || !h || !h.toPerson) throw new Error('나에게 온 질문이 아닙니다.');
+    const text = String(body ?? '').trim();
+    if (!text) throw new Error('답을 적으세요.');
+    if (text.length > MAX_BODY) throw new Error(`답이 너무 깁니다 (최대 ${MAX_BODY}자).`);
+    await this.sendShare(r.share_id, r.from_peer, { type: 'message', shareId: r.share_id, from: { id: PERSON_ID, name: '' }, to: r.from_workspace, body: text, thread: r.thread, artifacts: [] });
+    // 묻고 답한 것을 내 대화 기록에도 남긴다 (남기지 못해도 답은 갔다).
+    try {
+      this.d.db.transaction(() => {
+        const existing = this.d.messages.thread(r.thread);
+        const threadId = existing && existing.projectId !== h.projectId ? crypto.randomUUID() : r.thread;
+        this.d.messages.send({ projectId: h.projectId, from: { kind: 'workspace', workspaceId: h.fromRef }, toWorkspaceId: USER_RECIPIENT, body: h.body, threadId, createThread: true });
+        this.d.messages.send({ projectId: h.projectId, from: { kind: 'user' }, toWorkspaceId: h.fromRef, body: text, threadId });
+      })();
+    } catch { /* 기록만 빠진다 */ }
     this.d.db.prepare('DELETE FROM peer_inbox WHERE id = ?').run(heldId);
     this.emit('changed');
   }
@@ -1097,6 +1152,13 @@ export class PeerService extends EventEmitter {
     }
   }
 
+  /** 내 워크스페이스가 이 스레드에서 그 사람(또는 그 사람의 워크스페이스)에게 먼저 보낸 적이 있는가. */
+  private asked(threadId: string, workspaceId: string, peerId: string, projectId: string): boolean {
+    const t = this.d.messages.thread(threadId);
+    return t !== undefined && t.projectId === projectId
+      && this.d.messages.messages(threadId).some((m) => m.from.kind === 'workspace' && m.from.workspaceId === workspaceId && parseRemoteRef(m.toWorkspaceId)?.peerId === peerId);
+  }
+
   /** 다른 사람의 에이전트가 보낸 메시지. 받는 워크스페이스가 그 사람에게 공개돼 있을 때만 받는다. */
   private onMessage(peer: PeerRow, p: Payload, used: string): unknown {
     const no = (error: string): unknown => ({ ok: false, error });
@@ -1104,12 +1166,18 @@ export class PeerService extends EventEmitter {
     if (!s || !this.isMember(s.id, peer.id, used)) return no('not_member');
     if (this.d.isProjectClosed(s.project_id)) return no('closed');
     const from = (p.from && typeof p.from === 'object' ? p.from : {}) as Record<string, unknown>;
-    const to = this.d.workspaces.get(String(p.to ?? ''));
-    // 공개하지 않은 워크스페이스는 있는지 없는지도 알려 주지 않는다.
-    if (!isId(from.id) || !to || to.projectId !== s.project_id || !this.visibleTo(to.id, peer.id)) return no('no_workspace');
+    // 워크스페이스가 아니라 나(사용자)에게 직접 물은 것인가.
+    const person = p.to === PERSON_ID;
+    const to = person ? undefined : this.d.workspaces.get(String(p.to ?? ''));
+    const thread = isId(p.thread) ? p.thread : crypto.randomUUID();
+    if (!isId(from.id) || (person && from.id === PERSON_ID)) return no('no_workspace');
+    if (!person) {
+      // 공개하지 않은 워크스페이스는 있는지 없는지도 알려 주지 않는다.
+      // 다만 내 워크스페이스가 그 사람에게 먼저 물은 스레드의 답은 받는다.
+      if (!to || to.projectId !== s.project_id || !(this.visibleTo(to.id, peer.id) || this.asked(thread, to.id, peer.id, s.project_id))) return no('no_workspace');
+    }
     const body = typeof p.body === 'string' ? p.body.trim() : '';
     if (!body || body.length > MAX_BODY) return no('bad_body');
-    const thread = isId(p.thread) ? p.thread : crypto.randomUUID();
     const now = Date.now();
     // 상한은 프로젝트와 사람마다 따로 센다: 다른 프로젝트에서 같은 id 를 쓰는 것이 이 프로젝트의 그 사람을 막지 못한다.
     const rateKey = `${s.id}|${peer.id}`;
@@ -1121,10 +1189,13 @@ export class PeerService extends EventEmitter {
       .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
       .map((a) => ({ kind: oneLine(a.kind, 20), title: oneLine(a.title, 120) || '자료', body: String(a.body ?? '').slice(0, MAX_ARTIFACT_BODY) }));
     // 보낸 워크스페이스의 이름을 알아 둔다 (목록에 없던 것이어도 누가 보냈는지 보여 줄 수 있게. 목록에는 올리지 않는다).
-    this.d.db.prepare('INSERT INTO remote_workspaces (share_id, peer_id, workspace_id, name, listed) VALUES (?, ?, ?, ?, 0) ON CONFLICT(share_id, peer_id, workspace_id) DO UPDATE SET name = excluded.name')
-      .run(s.id, peer.id, from.id, cleanName(from.name, '워크스페이스'));
+    if (from.id !== PERSON_ID) {
+      this.d.db.prepare('INSERT INTO remote_workspaces (share_id, peer_id, workspace_id, name, listed) VALUES (?, ?, ?, ?, 0) ON CONFLICT(share_id, peer_id, workspace_id) DO UPDATE SET name = excluded.name')
+        .run(s.id, peer.id, from.id, cleanName(from.name, '워크스페이스'));
+    }
+    // 나에게 직접 물은 것은 언제나 내가 본다 (에이전트에게 바로 가지 않는다).
     // "바로 전달" 은 내가 직접 연결해 그렇게 정한 열쇠로 온 것만이다. 프로젝트를 연 사람이 알려 준 열쇠로 온 것은 언제나 보고 넘겨준다.
-    if (peer.mode === 'direct' && peer.direct === 1 && peer.pub === used) {
+    if (to && peer.mode === 'direct' && peer.direct === 1 && peer.pub === used) {
       this.deliver({ projectId: s.project_id, fromRef: remoteRef(peer.id, from.id), toWorkspaceId: to.id, body, thread, artifacts });
       return { ok: true, delivery: 'delivered' };
     }
@@ -1133,7 +1204,7 @@ export class PeerService extends EventEmitter {
     const waitingAll = (this.d.db.prepare('SELECT count(*) AS n FROM peer_inbox WHERE share_id = ?').get(s.id) as { n: number }).n;
     if (waitingCount >= 50 || waitingAll >= 200) return no('inbox_full');
     this.d.db.prepare('INSERT INTO peer_inbox (id, share_id, from_peer, from_workspace, to_workspace_id, body, thread, artifacts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(crypto.randomUUID(), s.id, peer.id, from.id, to.id, body, thread, JSON.stringify(artifacts), now);
+      .run(crypto.randomUUID(), s.id, peer.id, from.id, to?.id ?? null, body, thread, JSON.stringify(artifacts), now);
     this.emit('changed');
     return { ok: true, delivery: 'held' };
   }

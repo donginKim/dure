@@ -228,3 +228,28 @@ export function matchCommands(draft: string, commands: SlashCommand[], limit = 8
   const contains = commands.filter((c) => !name(c).startsWith(q) && name(c).includes(q));
   return [...exact, ...starts, ...contains].slice(0, limit);
 }
+
+/** 입력창에서 "@" 로 고를 수 있는 것: 함께하는 사람("@이름")과 다른 사람이 공개한 워크스페이스("이름@사람"). */
+export interface Mention { label: string; hint: string }
+
+/**
+ * 커서 바로 앞이 "@글자" 인 낱말이면 (글의 처음이거나 공백 뒤) 맞는 것들과 그 낱말의 자리를 돌려준다.
+ * 이메일 주소처럼 글자 뒤에 붙은 @ 에는 뜨지 않는다.
+ */
+export function matchMentions(draft: string, caret: number, all: Mention[], limit = 8): { start: number; items: Mention[] } | null {
+  const before = draft.slice(0, caret);
+  const m = /(^|\s)@([^\s@]*)$/.exec(before);
+  if (!m || all.length === 0) return null;
+  const q = m[2]!.toLowerCase();
+  const key = (x: Mention): string => x.label.replace(/^@/, '').toLowerCase();
+  const starts = all.filter((x) => key(x).startsWith(q));
+  const contains = all.filter((x) => !key(x).startsWith(q) && x.label.toLowerCase().includes(q));
+  const items = [...starts, ...contains].slice(0, limit);
+  return items.length ? { start: caret - m[2]!.length - 1, items } : null;
+}
+
+/** 고른 것을 넣는다: "@글자" 를 그 이름으로 바꾸고 뒤에 공백을 둔다. 새 글과 커서 자리를 돌려준다. */
+export function applyMention(draft: string, caret: number, start: number, label: string): { text: string; caret: number } {
+  const text = `${draft.slice(0, start)}${label} ${draft.slice(caret).replace(/^ /, '')}`;
+  return { text, caret: start + label.length + 1 };
+}

@@ -210,7 +210,8 @@ const MIGRATIONS: string[] = [
     share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
     from_peer TEXT NOT NULL,
     from_workspace TEXT NOT NULL,
-    to_workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    -- 비어 있으면 워크스페이스가 아니라 나(사용자)에게 온 질문이다
+    to_workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
     body TEXT NOT NULL,
     thread TEXT NOT NULL,
     artifacts TEXT NOT NULL DEFAULT '[]',

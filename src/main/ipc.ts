@@ -178,7 +178,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'peers.remote': (projectId: string) => core.peers.remoteWorkspaces(String(projectId)),
     'peers.names': () => core.peers.remoteNames(),
     'peers.held': (projectId: string) => core.peers.held(String(projectId)),
-    'peers.pass': (heldId: string) => core.peers.pass(String(heldId)),
+    'peers.pass': (heldId: string, workspaceId?: string) => core.peers.pass(String(heldId), workspaceId ? String(workspaceId) : undefined),
+    'peers.answer': (heldId: string, body: string) => core.peers.answer(String(heldId), String(body ?? '')),
     'peers.drop': (heldId: string) => core.peers.drop(String(heldId)),
     'browser.register': (workspaceId: string, webContentsId: number) => {
       if (!core.workspaces.get(String(workspaceId))) throw new Error('워크스페이스가 없습니다.');

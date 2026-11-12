@@ -693,3 +693,5 @@ select.share-on { border-color: #6b5a2a; color: var(--accent); }
 .assign-mark { width: 12px; flex-shrink: 0; text-align: center; }
 .tag.assign-accepted { color: var(--ok, #6fbf73); }
 .tag.assign-declined { color: var(--danger, #c25b5b); }
+
+.held-answer { width: 100%; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; }

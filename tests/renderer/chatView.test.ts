@@ -1,5 +1,5 @@
 import type { ChatItem, ChatStep, Message } from '@shared/types';
-import { elapsed, matchCommands, mergeEntries, recallView, rememberView, stepsLabel, toBlocks, toInline } from '../../src/renderer/chatView';
+import { elapsed, matchCommands, mergeEntries, recallView, rememberView, stepsLabel, toBlocks, toInline, applyMention, matchMentions } from '../../src/renderer/chatView';
 
 test('toBlocks: 문단, 제목, 목록, 번호 목록, 코드 블록(언어), 표, 가로줄', () => {
   const md = ['# 제목', '', '첫 문단', '이어지는 줄', '', '- 하나', '- 둘', '  - 둘의 하나', '', '1. 첫째', '2. 둘째', '', '```ts', 'const a = 1;', '', '# 제목 아님', '```', '',
@@ -159,4 +159,23 @@ test('matchCommands: "/" 로 시작하는 한 낱말일 때만, 앞글자가 맞
 test('matchCommands: 정확히 맞는 명령이 맨 위다', () => {
   const cmds = ['review-pr', 'review', 'reviewer'].map((name) => ({ name, description: '', argumentHint: '' }));
   expect(matchCommands('/review', cmds).map((c) => c.name)).toEqual(['review', 'review-pr', 'reviewer']);
+});
+
+describe('@ 로 사람 고르기', () => {
+  const all = [{ label: '@개발', hint: '' }, { label: '@디자인', hint: '' }, { label: '로그인 API@개발', hint: '' }];
+  test('커서 앞이 @글자 일 때만 뜬다. 글자 뒤에 붙은 @ 에는 뜨지 않는다', () => {
+    expect(matchMentions('@', 1, all)).toEqual({ start: 0, items: all });
+    expect(matchMentions('이건 @디', 5, all)).toEqual({ start: 3, items: [all[1]] });
+    expect(matchMentions('이건 @개', 5, all)?.items.map((m) => m.label)).toEqual(['@개발', '로그인 API@개발']);
+    expect(matchMentions('메일 a@b', 6, all)).toBeNull();
+    expect(matchMentions('@개발 에게', 6, all)).toBeNull();
+    // 커서가 낱말 안에 있으면 커서 앞까지만 본다
+    expect(matchMentions('@개발 에게', 2, all)?.items.map((m) => m.label)).toEqual(['@개발', '로그인 API@개발']);
+    expect(matchMentions('@없음', 3, all)).toBeNull();
+    expect(matchMentions('@', 1, [])).toBeNull();
+  });
+  test('고르면 그 낱말만 바뀌고 커서는 그 뒤로 간다', () => {
+    expect(applyMention('이건 @디 에게 물어봐', 5, 3, '@디자인')).toEqual({ text: '이건 @디자인 에게 물어봐', caret: 8 });
+    expect(applyMention('@', 1, 0, '@개발')).toEqual({ text: '@개발 ', caret: 4 });
+  });
 });

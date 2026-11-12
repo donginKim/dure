@@ -206,7 +206,10 @@ export interface DureApi {
     names(): Promise<Record<string, string>>;
     /** 내가 보고 넘겨주기를 기다리는 메시지 */
     held(projectId: string): Promise<HeldMessage[]>;
-    pass(heldId: string): Promise<void>;
+    /** workspaceId: 나에게 직접 물은 것을 넘겨줄 워크스페이스 (보통 조율 에이전트) */
+    pass(heldId: string, workspaceId?: string): Promise<void>;
+    /** 나에게 직접 물은 것에 답한다 */
+    answer(heldId: string, body: string): Promise<void>;
     drop(heldId: string): Promise<void>;
   };
   browser: {
@@ -238,7 +241,7 @@ export const IPC_CHANNELS = [
   'artifacts.list', 'artifacts.get',
   'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
   'peers.share', 'peers.createShare', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
-  'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.drop',
+  'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline',
   'browser.register', 'browser.requests', 'browser.decide',
   'commit.state', 'commit.diff', 'commit.run', 'commit.push',

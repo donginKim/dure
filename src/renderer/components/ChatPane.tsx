@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { ChatItem, ChatQuestion, ChatStep, ChatView, Message, SlashCommand, Workspace } from '@shared/types';
-import { elapsed, matchCommands, mergeEntries, stepsLabel, stepsRunning, type Entry, type PeerEntry } from '../chatView';
+import { applyMention, elapsed, matchCommands, matchMentions, mergeEntries, stepsLabel, stepsRunning, type Entry, type Mention, type PeerEntry } from '../chatView';
 import { clock, deliveryNote, workspaceName } from '../conversationView';
 import { Attachment, type ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
@@ -254,6 +254,32 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   useEffect(() => { setMenuAt(0); }, [draft]);
   const pick = (c: SlashCommand): void => { setDraft(`/${c.name} `); input.current?.focus(); };
 
+  // "@" 로 함께하는 사람과 그 사람들의 워크스페이스를 고른다 (함께하는 프로젝트일 때만 뜬다).
+  const [mentionable, setMentionable] = useState<Mention[]>([]);
+  const [caret, setCaret] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = (): void => {
+      void Promise.all([window.dure.peers.share(workspace.projectId), window.dure.peers.remote(workspace.projectId)]).then(([share, remote]) => {
+        if (!alive) return;
+        setMentionable([
+          ...(share?.members ?? []).filter((m) => !m.me).map((m) => ({ label: `@${m.name}`, hint: `${m.owner ? '프로젝트를 연 사람' : '함께하는 사람'}${m.online ? '' : ' · 지금 안 보임'} · 그 사람에게 직접 묻습니다` })),
+          ...remote.map((r) => ({ label: r.label, hint: `${r.peerName} 의 워크스페이스 · 그 에이전트에게 보냅니다` })),
+        ]);
+      }).catch(() => undefined);
+    };
+    load();
+    const off = window.dure.onChanged((topic) => { if (topic === 'peers') load(); });
+    return () => { alive = false; off(); };
+  }, [workspace.projectId]);
+  const mention = useMemo(() => (menuClosed === draft ? null : matchMentions(draft, caret, mentionable)), [draft, caret, mentionable, menuClosed]);
+  const pickMention = (m: Mention): void => {
+    if (!mention) return;
+    const next = applyMention(draft, caret, mention.start, m.label);
+    setDraft(next.text); setCaret(next.caret);
+    requestAnimationFrame(() => { input.current?.focus(); input.current?.setSelectionRange(next.caret, next.caret); });
+  };
+
   const messages = useMemo(() => Object.values(conversation.messages).flat(), [conversation.messages]);
   const entries = useMemo(() => mergeEntries(view.items, messages, workspace.id), [view.items, messages, workspace.id]);
 
@@ -303,6 +329,14 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
+    // 사람 목록이 떠 있으면 ↑↓ 로 고르고 Tab 이나 Enter 로 넣는다.
+    if (mention && !e.nativeEvent.isComposing) {
+      const n = mention.items.length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMenuAt((i) => (i + 1) % n); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMenuAt((i) => (i - 1 + n) % n); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) { e.preventDefault(); pickMention(mention.items[Math.min(menuAt, n - 1)]!); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setMenuClosed(draft); return; }
+    }
     // 슬래시 명령 목록이 떠 있으면 ↑↓ 로 고르고 Tab 이나 Enter 로 넣는다.
     if (menu.length && !e.nativeEvent.isComposing) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setMenuAt((i) => (i + 1) % menu.length); return; }
@@ -418,6 +452,17 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
             <div className="slash-foot">↑↓ 고르기 · Tab 넣기 · Esc 닫기</div>
           </div>
         )}
+        {mention && (
+          <div className="slash-menu" role="listbox">
+            {mention.items.map((m, i) => (
+              <button key={m.label} role="option" aria-selected={i === menuAt} className={`slash-item${i === menuAt ? ' on' : ''}`} onMouseDown={(e) => { e.preventDefault(); pickMention(m); }} onMouseEnter={() => setMenuAt(i)}>
+                <span className="slash-name">{m.label}</span>
+                <span className="slash-desc">{m.hint}</span>
+              </button>
+            ))}
+            <div className="slash-foot">↑↓ 고르기 · Tab 넣기 · Esc 닫기 · 에이전트가 그 사람에게 물어봅니다</div>
+          </div>
+        )}
         {attach && (
           <button
             className="btn attach" title="기획서 파일을 고릅니다. 내용이 입력창에 들어가고, 보내기를 눌러야 전달됩니다"
@@ -428,8 +473,9 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
           ref={input}
           value={draft}
           rows={Math.min(8, Math.max(1, draft.split('\n').length))}
-          placeholder={status === 'working' ? '작업 중에 보내면 에이전트가 다음 단계에서 읽습니다' : commands.length ? '에이전트에게 시킬 일을 쓰세요 · / 로 명령 고르기' : '에이전트에게 시킬 일을 쓰세요'}
-          onChange={(e) => setDraft(e.target.value)}
+          placeholder={status === 'working' ? '작업 중에 보내면 에이전트가 다음 단계에서 읽습니다' : `에이전트에게 시킬 일을 쓰세요${commands.length ? ' · / 로 명령 고르기' : ''}${mentionable.length ? ' · @ 로 사람 고르기' : ''}`}
+          onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKey}
         />
         <button className="btn primary" disabled={!draft.trim() || sending} onClick={() => void send()} title="보내기 (Enter) · 줄바꿈은 Shift+Enter">보내기</button>

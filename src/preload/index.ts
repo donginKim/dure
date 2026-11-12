@@ -156,7 +156,8 @@ const api: DureApi = {
     remote: (projectId) => call('peers.remote', projectId),
     names: () => call('peers.names'),
     held: (projectId) => call('peers.held', projectId),
-    pass: (heldId) => call('peers.pass', heldId),
+    pass: (heldId, workspaceId) => call('peers.pass', heldId, workspaceId),
+    answer: (heldId, body) => call('peers.answer', heldId, body),
     drop: (heldId) => call('peers.drop', heldId),
   },
   browser: {

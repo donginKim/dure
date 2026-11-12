@@ -574,3 +574,52 @@ describe('믿지 않는 것', () => {
     expect(a.core.peers.requests().every((r) => !r.peerConfirmed)).toBe(true);
   });
 });
+
+describe('사람에게 묻기', () => {
+  const idOf = (n: Node): string => n.core.peers.status().id;
+
+  test('공개한 워크스페이스가 없어도 "@사람" 으로 물을 수 있다. 그 사람이 읽고 답하면 물은 스레드로 돌아온다', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2');
+    await on(a); await on(b);
+    await pair(a, b); await join2(a, b);
+    expect(await call(a.core, a.ws.id, 'project_overview')).toContain('\\"askPeople\\":[{\\"name\\":\\"@나\\"');
+    expect(await call(a.core, a.ws.id, 'message_send', { to: '@없는사람', body: 'x' })).toContain('물어볼 수 있는 사람: \\"@나\\"');
+    const sent = await call(a.core, a.ws.id, 'message_send', { to: '@나', body: '어느 저장소를 쓰나?' });
+    expect(sent).toContain('사람이 읽고 답한다');
+    const q = b.core.peers.held(b.projectId);
+    expect(q).toMatchObject([{ toPerson: true, toWorkspaceId: '', body: '어느 저장소를 쓰나?', fromLabel: '가-화면@가' }]);
+    // 에이전트에게는 가지 않았다
+    expect(b.core.messages.undelivered(b.ws.id)).toEqual([]);
+    await b.core.peers.answer(q[0]!.id, 'shop-api 를 쓴다');
+    expect(b.core.peers.held(b.projectId)).toEqual([]);
+    // 답은 가 에게 온다 (보고 넘겨주기): 가-화면 은 공개돼 있지 않지만 먼저 물은 스레드라 받는다
+    const back = a.core.peers.held(a.projectId);
+    expect(back).toMatchObject([{ toPerson: false, toWorkspaceId: a.ws.id, body: 'shop-api 를 쓴다', fromLabel: '@나' }]);
+    a.core.peers.pass(back[0]!.id);
+    const got = a.core.messages.undelivered(a.ws.id);
+    expect(got.map((m) => m.body)).toEqual(['shop-api 를 쓴다']);
+    expect(a.core.messages.messages(got[0]!.threadId).map((m) => m.body)).toEqual(['어느 저장소를 쓰나?', 'shop-api 를 쓴다']);
+    // 답한 쪽의 기록에도 묻고 답한 것이 남는다
+    expect(b.core.messages.threads(b.projectId).flatMap((t) => b.core.messages.messages(t.id)).map((m) => m.body)).toEqual(['어느 저장소를 쓰나?', 'shop-api 를 쓴다']);
+    // 묻지 않은 스레드로는 공개하지 않은 워크스페이스에 보낼 수 없다
+    const shareId = b.core.peers.share(b.projectId)!.id;
+    await expect(b.core.peers['sendShare'](shareId, idOf(a), { type: 'message', shareId, from: { id: '00000000-0000-0000-0000-000000000000', name: '' }, to: a.ws.id, body: '끼어들기', thread: crypto.randomUUID(), artifacts: [] })).rejects.toThrow('보낼 수 없다');
+  });
+
+  test('받은 질문을 내 에이전트에게 넘기면, 그 에이전트가 같은 스레드로 답할 수 있다', async () => {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2');
+    await on(a); await on(b);
+    await pair(a, b); await join2(a, b);
+    await call(a.core, a.ws.id, 'message_send', { to: '@나', body: 'API 형식을 알려 달라' });
+    const q = b.core.peers.held(b.projectId)[0]!;
+    expect(() => b.core.peers.pass(q.id)).toThrow('넘겨줄 워크스페이스를 고르세요');
+    b.core.peers.pass(q.id, b.ws.id);
+    const m = b.core.messages.undelivered(b.ws.id)[0]!;
+    expect(m.body).toBe('API 형식을 알려 달라');
+    // 나-화면 은 공개돼 있지 않지만, 사용자가 넘겨준 스레드에는 답할 수 있다
+    expect(await call(b.core, b.ws.id, 'message_send', { to: '가-화면@가', body: '새 스레드' })).toContain('없다');
+    const res = await call(b.core, b.ws.id, 'message_send', { to: '가-화면@가', body: 'POST /login', thread_id: m.threadId });
+    expect(res).toContain('messageId');
+    expect(a.core.peers.held(a.projectId)).toMatchObject([{ toWorkspaceId: a.ws.id, body: 'POST /login', fromLabel: '나-화면@나' }]);
+  });
+});

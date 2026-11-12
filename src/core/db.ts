@@ -302,6 +302,16 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  -- 받은 기획서 정리: 프로젝트를 연 사람이 함께하는 사람 모두에게 보낸 것. 사용자가 자료로 받거나 버린다
+  CREATE TABLE briefs_in (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

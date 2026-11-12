@@ -1,4 +1,5 @@
 import type {
+  Brief,
   PrInfo,
   Checkpoint, CheckpointPreview,
   UsageSummary,
@@ -237,6 +238,11 @@ export interface DureApi {
     /** 수락한다: 내 프로젝트에 워크스페이스와 TODO 가 만들어진다 */
     accept(id: string, choices: AssignChoice[], share: boolean): Promise<Workspace[]>;
     decline(id: string, reason?: string): Promise<void>;
+    /** 프로젝트를 연 사람이 보내 준 기획서 정리 */
+    briefs(projectId: string): Promise<Brief[]>;
+    /** 자료로 받는다 (에이전트가 읽을 수 있다) */
+    takeBrief(id: string): Promise<void>;
+    dropBrief(id: string): Promise<void>;
   };
   /** 다른 사람의 두레와의 연결 */
   peers: {
@@ -310,7 +316,7 @@ export const IPC_CHANNELS = [
   'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
   'peers.share', 'peers.createShare', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
-  'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline',
+  'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief',
   'browser.register', 'browser.requests', 'browser.decide',
   'commit.state', 'commit.diff', 'commit.run', 'commit.push',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',

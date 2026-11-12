@@ -219,7 +219,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   });
   const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos'), settings: () => settings.get(),
     // 계획안의 일을 함께하는 사람에게 나눠 준다. 아래에서 만들어지는 것들을 부를 때 읽는다.
-    assign: { people: (projectId) => peers.assignable(projectId), send: (projectId, peerId, a) => assignments.send(projectId, peerId, a), cancel: (id) => assignments.cancel(id) },
+    assign: { people: (projectId) => peers.assignable(projectId), send: (projectId, peerId, a) => assignments.send(projectId, peerId, a), cancel: (id) => assignments.cancel(id), brief: (projectId, summary, skip) => assignments.sendBrief(projectId, summary, skip) },
   });
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
@@ -279,7 +279,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const attention = new AttentionService({
     projects: () => projects.list(), isClosed: (id) => service.isProjectClosed(id), workspaces: (id) => workspaces.listAll(id),
     plan: (id) => coordinator.pending(id), db: (id) => dbs.pending(id), slack: (id) => slack.pending(id), browser: (id) => browser.pending(id),
-    held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
+    held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), briefs: (id) => assignments.briefs(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
   });
   for (const src of [service, coordinator, dbs, slack, browser, peers, assignments]) src.on('changed', () => attention.poke());
   attention.poke();

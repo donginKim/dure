@@ -80,6 +80,8 @@ export class CoordinatorService extends EventEmitter {
       people(projectId: string): { peerId: string; name: string }[];
       send(projectId: string, peerId: string, a: { summary: string; items: { name: string; role: string; todos: PlanTodo[] }[] }): Promise<string>;
       cancel(assignmentId: string): Promise<void>;
+      /** 함께하는 사람들에게 기획서 정리를 보낸다 (skip: 이미 배정으로 받은 사람) */
+      brief?(projectId: string, summary: string, skip: string[]): Promise<{ sent: string[]; failed: string[] }>;
     };
     /** 새 저장소를 만드는 상위 폴더의 기본값. 설정에 값이 있으면 그것을 쓴다. 그 아래 프로젝트 이름의 폴더에 만든다 */
     repoRoot: string;
@@ -437,6 +439,8 @@ export class CoordinatorService extends EventEmitter {
       this.d.db.prepare("UPDATE proposals SET status = 'approved', items = ? WHERE id = ? AND status = 'pending'")
         .run(JSON.stringify({ summary, newRepos, addRepos, items: all, projectTodos }), proposalId);
       this.emit('changed', r.project_id);
+      // 일을 받지 않는 사람에게도 기획서 정리를 보낸다 (사용자가 골랐을 때). 못 보내도 승인은 그대로다.
+      const briefed = decision?.shareSummary && summary && this.d.assign?.brief ? await this.d.assign.brief(r.project_id, summary, [...byOwner.keys()]).catch(() => ({ sent: [], failed: [] })) : { sent: [], failed: [] };
       // 새 저장소를 조율 에이전트가 읽을 수 있게 다시 띄운다. 못 하면 알림에 적는다.
       const reloaded = madeRepos.length || added.length ? await this.reload(r.project_id).catch(() => 'busy' as const) : 'off';
       const repoName = (id: string): string => this.d.repos.get(id)?.name ?? '';
@@ -448,6 +452,8 @@ export class CoordinatorService extends EventEmitter {
         ...(projectTodos.length ? ['- 프로젝트 TODO:', ...projectTodos.map((t) => `  - ${t.assignee === 'user' ? '(사용자 몫) ' : ''}${t.title}`)] : []),
         ...(reloaded === 'busy' ? ['새 저장소의 파일은 네가 다시 떠야 읽을 수 있다. 읽어야 하면 사용자에게 조율 에이전트를 껐다 켜 달라고 하라.'] : []),
         ...[...byOwner].map(([peerId, list]) => `- ${people.find((p) => p.peerId === peerId)?.name ?? '다른 사람'} 에게 나눠 줬다 (아직 만들어지지 않았다. 그 사람이 자기 두레에서 수락해야 만들어진다. 수락하거나 거절하면 두레가 알려 준다): ${list.map((it) => `"${it.name}"`).join(', ')}`),
+        ...(briefed.sent.length ? [`- 기획서 정리를 ${briefed.sent.join(', ')} 에게도 보냈다 (일은 맡기지 않았다. 그 사람이 자료로 받으면 그쪽 에이전트가 읽을 수 있다).`] : []),
+        ...(briefed.failed.length ? [`- ${briefed.failed.join(', ')} 에게는 기획서 정리가 닿지 않았다 (꺼져 있다).`] : []),
         mine.length ? 'TODO 는 이미 적혀 있다. 다시 적지 마라. 이제 내 PC 의 각 워크스페이스에 message_send 로 작업을 시작하라고 알려라 (할 일은 그 워크스페이스의 TODO 에 있다고 알려 주면 된다).' : '내 PC 에 만든 워크스페이스는 없다. 나눠 준 사람들의 수락을 기다려라.',
       ].join('\n'));
       return { assigned: sent.length, repos: [...added, ...madeRepos.flatMap((m) => (m.repo ? [m.repo] : []))], created, todos: todoIds.length };

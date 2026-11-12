@@ -170,6 +170,9 @@ const api: DureApi = {
     incoming: (projectId) => call('assignments.incoming', projectId),
     accept: (id, choices, share) => call('assignments.accept', id, choices, share),
     decline: (id, reason) => call('assignments.decline', id, reason),
+    briefs: (projectId) => call('assignments.briefs', projectId),
+    takeBrief: (id) => call('assignments.takeBrief', id),
+    dropBrief: (id) => call('assignments.dropBrief', id),
   },
   peers: {
     status: () => call('peers.status'),

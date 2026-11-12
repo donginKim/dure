@@ -227,3 +227,38 @@ test('일을 나눠 주는 것은 프로젝트를 연 사람만 한다: 참여�
   await expect(dev.core.peers.sendMember(dev.projectId, des.id, { type: 'assign', assignment: { aid: crypto.randomUUID(), summary: '', items: [{ name: '몰래', role: '', todos: [] }] } })).rejects.toThrow('프로젝트를 연 사람만');
   expect(des.core.assignments.incoming()).toEqual([]);
 });
+
+test('기획서 정리를 일을 받지 않는 사람에게도 보낸다. 받는 사람이 자료로 받아야 에이전트가 읽는다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  await until(() => des.core.peers.people(des.projectId).length === 2);
+  const coordinator = pm.core.coordinator.ensure(pm.projectId);
+  const p = await pm.core.coordinator.propose(pm.projectId, { summary: '# 로그인\n이메일 로그인', workspaces: [W('로그인 API', { owner: '개발', role: 'API', todos: ['POST /login'] })] });
+  await pm.core.coordinator.approve(p.id, { items: p.items, projectTodos: [], shareSummary: true });
+  // 개발 은 배정으로 정리를 받았으니 따로 가지 않고, 디자인 에게만 간다
+  expect(dev.core.assignments.briefs(dev.projectId)).toEqual([]);
+  const got = des.core.assignments.briefs(des.projectId);
+  expect(got).toMatchObject([{ fromName: '기획', summary: '# 로그인\n이메일 로그인' }]);
+  expect(des.core.attention.list().map((i) => i.kind)).toEqual(['brief']);
+  // 받기 전에는 자료가 아니다
+  expect(des.core.messages.artifacts(des.projectId)).toEqual([]);
+  des.core.coordinator.ensure(des.projectId);
+  des.core.assignments.takeBrief(got[0]!.id);
+  const art = des.core.messages.artifacts(des.projectId);
+  expect(art.map((a) => a.title)).toEqual(['기획서 정리 (기획 이(가) 공유)']);
+  expect(art[0]!.body).toContain('다른 사람(기획)이 보낸 기획서 정리다');
+  expect(des.core.assignments.briefs(des.projectId)).toEqual([]);
+  // 조율 에이전트에게 누구에게 보냈는지 알린다
+  expect(pm.core.messages.undelivered(coordinator.id).map((m) => m.body).join('\n')).toContain('기획서 정리를 디자인 에게도 보냈다');
+  // 프로젝트를 연 사람이 아니면 보내지 못한다
+  expect(await dev.core.assignments.sendBrief(dev.projectId, '몰래')).toEqual({ sent: [], failed: [] });
+  await expect(dev.core.peers.sendMember(dev.projectId, des.id, { type: 'brief', bid: crypto.randomUUID(), summary: '몰래' })).rejects.toThrow('프로젝트를 연 사람만');
+});
+
+test('기획서 정리 보내기를 끄면 보내지 않는다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, des);
+  const p = await pm.core.coordinator.propose(pm.projectId, { summary: '정리', project_todos: [{ title: '정하기', assignee: 'user' }] });
+  await pm.core.coordinator.approve(p.id, { items: [], projectTodos: p.projectTodos });
+  expect(des.core.assignments.briefs(des.projectId)).toEqual([]);
+});

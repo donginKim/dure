@@ -51,15 +51,23 @@
 - [Claude Code](https://claude.com/claude-code) (`claude` 명령) 와 로그인
 - 개발하려면 Node.js (v26.12.0 에서 확인)
 
-## 설치해서 쓰기
+## 설치 (소스에서)
 
-묶인 앱(`.dmg`)을 받아 설치합니다. 만드는 법과 받는 사람이 처음 열 때 할 일은 [docs/packaging.md](docs/packaging.md) 에 있습니다.
-
-서명하지 않은 `.dmg` 는 같은 폴더에 `scripts/install-dure.sh` 를 두고 터미널에서 실행하면 됩니다.
+저장소를 받아 스크립트 하나를 실행하면, 이 Mac 에서 앱을 만들어 "응용 프로그램" 에 넣고 엽니다.
 
 ```sh
-bash install-dure.sh
+git clone https://github.com/donginKim/dure.git
+cd dure
+bash scripts/install.sh
 ```
+
+- 처음에는 패키지를 받느라 몇 분 걸립니다. Node.js 22 이상과 `git` 이 있어야 합니다.
+- 이 Mac 에서 직접 만든 앱이라 macOS 가 "확인되지 않은 개발자" 라고 막지 않습니다. 관리자 암호도 묻지 않습니다.
+- **업데이트**: `git pull` 한 뒤 `bash scripts/install.sh` 를 다시 실행합니다. 데이터(`~/Library/Application Support/dure`)는 그대로 남습니다.
+- 설치한 뒤 Dure 를 끄고 켜는 것은 보통 앱과 같습니다 ("응용 프로그램" 의 Dure).
+- "다른 사람과 연결" 을 처음 켜면 macOS 가 키체인 사용, 로컬 네트워크 찾기, 들어오는 연결 허용을 물을 수 있습니다. 모두 허용합니다.
+
+설치 파일(`.dmg`)로 나눠 주는 방법은 [docs/packaging.md](docs/packaging.md) 에 있습니다.
 
 ## 개발
 

@@ -1,6 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import type { Todo, Workspace } from '@shared/types';
-import { progress, TODO_STATUS_LABEL } from '../todoView';
+import { childrenOf, progress, TODO_STATUS_LABEL } from '../todoView';
+
+/** 항목들 사이의 이음을 그리는 데 쓰는 것: 프로젝트 전체의 항목과 워크스페이스 */
+export interface TodoLinks { all: Todo[]; workspaces: Workspace[] }
 
 export interface PendingInfo { count: number; canNudge: boolean }
 
@@ -57,7 +60,7 @@ function StatusMark({ todo, onToggle, readOnly }: { todo: Todo; onToggle: () => 
   );
 }
 
-function TodoRow({ todo, first, last, onError, readOnly }: { todo: Todo; first: boolean; last: boolean; onError: (m: string) => void; readOnly?: boolean }) {
+function TodoRow({ todo, first, last, onError, readOnly, links }: { todo: Todo; first: boolean; last: boolean; onError: (m: string) => void; readOnly?: boolean; links?: TodoLinks }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(todo.title);
   const run = (p: Promise<unknown>): void => { p.catch((e: Error) => onError(e.message)); };
@@ -69,10 +72,16 @@ function TodoRow({ todo, first, last, onError, readOnly }: { todo: Todo; first: 
   };
   const done = todo.status === 'done';
   const cancelled = todo.status === 'cancelled';
+  // 프로젝트 항목: 딸린 워크스페이스 항목들. 워크스페이스 항목: 딸릴 수 있는 프로젝트 항목들.
+  const kids = links && todo.workspaceId === null ? childrenOf(todo.id, links.all, links.workspaces) : [];
+  const parents = links && todo.workspaceId !== null ? links.all.filter((t) => t.workspaceId === null) : [];
+  const parent = todo.parentId ? parents.find((t) => t.id === todo.parentId) : undefined;
+  const kidsDone = progress(kids.map((k) => k.todo));
 
   return (
+    <>
     <div className={`todo-row ${todo.status}`}>
-      <StatusMark todo={todo} readOnly={readOnly} onToggle={() => run(window.dure.todos.update(todo.id, { status: done ? 'todo' : 'done' }))} />
+      <StatusMark todo={todo} readOnly={readOnly || kids.length > 0} onToggle={() => run(window.dure.todos.update(todo.id, { status: done ? 'todo' : 'done' }))} />
       <div className="todo-main">
         {editing && !readOnly ? (
           <input
@@ -91,7 +100,9 @@ function TodoRow({ todo, first, last, onError, readOnly }: { todo: Todo; first: 
           <div className="todo-title" title={readOnly ? undefined : '눌러서 고치기'} onClick={() => { if (!readOnly) { setDraft(todo.title); setEditing(true); } }}>{todo.title}</div>
         )}
         {todo.detail && <div className="todo-detail" title={todo.detail}>{todo.detail}</div>}
+        {parent && <div className="todo-under" title={`프로젝트 항목 "${parent.title}" 에 딸린 일입니다. 딸린 일이 다 끝나면 그 항목이 완료됩니다`}>↳ {parent.title}</div>}
       </div>
+      {kids.length > 0 && <span className="todo-count" title={`딸린 일 ${kidsDone.total}개 중 ${kidsDone.done}개 완료. 다 끝나면 이 항목이 저절로 완료됩니다`}>{kidsDone.done}/{kidsDone.total}</span>}
       {todo.status === 'doing' && <span className="todo-state">{TODO_STATUS_LABEL.doing}</span>}
       {cancelled && <span className="todo-state off">{TODO_STATUS_LABEL.cancelled}</span>}
       {!readOnly && <div className="todo-actions">
@@ -109,15 +120,36 @@ function TodoRow({ todo, first, last, onError, readOnly }: { todo: Todo; first: 
           aria-label={cancelled ? '되살리기' : '하지 않기로 표시'}
           onClick={() => run(window.dure.todos.update(todo.id, { status: cancelled ? 'todo' : 'cancelled' }))}
         ><Icon name={cancelled ? 'restore' : 'cancel'} /></button>
+        {parents.length > 0 && (
+          <select className="todo-parent" value={todo.parentId ?? ''} title="이 일이 딸린 프로젝트 항목. 딸린 일이 다 끝나면 그 항목이 완료됩니다" aria-label="딸린 프로젝트 항목" onChange={(e) => run(window.dure.todos.setParent(todo.id, e.target.value || null))}>
+            <option value="">(딸린 곳 없음)</option>
+            {parents.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+          </select>
+        )}
         <button className="icon danger" title="삭제" aria-label="삭제" onClick={() => run(window.dure.todos.remove(todo.id))}><Icon name="trash" /></button>
       </div>}
     </div>
+    {kids.length > 0 && (
+      <div className="todo-kids">
+        {kids.map((k) => (
+          <div key={k.todo.id} className={`todo-kid ${k.todo.status}`}>
+            <span className={`tick ${k.todo.status}`} />
+            <span className="todo-kid-ws">{k.workspace}</span>
+            <span className="todo-kid-title">{k.todo.title}</span>
+            {k.todo.status === 'doing' && <span className="todo-state">{TODO_STATUS_LABEL.doing}</span>}
+          </div>
+        ))}
+      </div>
+    )}
+    </>
   );
 }
 
 /** 한 범위(워크스페이스 하나 또는 프로젝트)의 항목들과 추가 입력칸. */
-export function TodoList({ projectId, workspaceId, items, readOnly }: {
+export function TodoList({ projectId, workspaceId, items, readOnly, links }: {
   projectId: string; workspaceId: string | null; items: Todo[];
+  /** 주면 프로젝트 항목 아래에 딸린 일을 보이고, 워크스페이스 항목을 프로젝트 항목에 달 수 있다 */
+  links?: TodoLinks;
   /** 완료된 프로젝트: 보기만 한다 */
   readOnly?: boolean;
 }) {
@@ -141,7 +173,7 @@ export function TodoList({ projectId, workspaceId, items, readOnly }: {
       setError((e as Error).message);
     }
   };
-  const row = (t: Todo) => <TodoRow key={t.id} todo={t} first={t.id === firstId} last={t.id === lastId} onError={setError} readOnly={readOnly} />;
+  const row = (t: Todo) => <TodoRow key={t.id} todo={t} first={t.id === firstId} last={t.id === lastId} onError={setError} readOnly={readOnly} links={links} />;
 
   return (
     <div className="todo-list">
@@ -172,7 +204,7 @@ export function TodoList({ projectId, workspaceId, items, readOnly }: {
 }
 
 /** TODO 탭의 본문: 진행 눈금, 미전달 알림, 목록. */
-export function TodoBody({ workspace, items, pending, readOnly }: { workspace: Workspace; items: Todo[]; pending?: PendingInfo; readOnly?: boolean }) {
+export function TodoBody({ workspace, items, pending, readOnly, links }: { workspace: Workspace; items: Todo[]; pending?: PendingInfo; readOnly?: boolean; links?: TodoLinks }) {
   const [error, setError] = useState('');
   // 꺼진 에이전트에게는 전달할 것이 없다: 새로 시작하면 목록을 직접 읽는다
   const undelivered = pending && workspace.status !== 'stopped' ? pending.count : 0;
@@ -199,7 +231,7 @@ export function TodoBody({ workspace, items, pending, readOnly }: { workspace: W
       )}
       {error && <div className="error" style={{ margin: 10 }}>{error}</div>}
       <div className="todo-scroll">
-        <TodoList projectId={workspace.projectId} workspaceId={workspace.id} items={items} readOnly={readOnly} />
+        <TodoList projectId={workspace.projectId} workspaceId={workspace.id} items={items} readOnly={readOnly} links={links} />
       </div>
     </>
   );

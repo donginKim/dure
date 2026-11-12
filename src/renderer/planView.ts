@@ -80,7 +80,7 @@ export function planProblem(d: PlanDecision): string | null {
 
 /** 빈 제목의 TODO 는 빼고, 앞뒤 공백을 다듬어 보낼 모양으로. */
 export function tidyPlan(d: PlanDecision): PlanDecision {
-  const todos = (list: PlanDecision['projectTodos']): PlanDecision['projectTodos'] => list.filter((t) => t.title.trim()).map((t) => ({ ...t, title: t.title.trim() }));
+  const todos = (list: PlanDecision['projectTodos']): PlanDecision['projectTodos'] => list.filter((t) => t.title.trim()).map((t) => { const { under, ...rest } = t; return { ...rest, title: t.title.trim(), ...(under?.trim() ? { under: under.trim() } : {}) }; });
   return { newRepos: (d.newRepos ?? []).map((r) => ({ name: r.name.trim(), description: r.description.trim() })), addRepos: d.addRepos ?? [], items: d.items.map((i) => ({ ...i, name: i.name.trim(), role: i.role.trim(), todos: todos(i.todos) })), projectTodos: todos(d.projectTodos) };
 }
 
@@ -122,4 +122,22 @@ export function assignChoiceProblem(items: AssignItem[], choices: AssignChoice[]
     if (!c.repoId && !validRepoName(c.newRepo!.trim())) return `새 저장소 이름 "${c.newRepo}": 영문, 숫자, . _ - 만 쓸 수 있습니다.`;
   }
   return null;
+}
+
+/**
+ * 검토 화면에서 프로젝트 TODO 를 고쳤을 때: 워크스페이스 TODO 의 under(딸린 프로젝트 TODO 의 제목)를 맞춘다.
+ * 제목을 고치면 따라 바꾸고, 뺀 항목에 딸려 있던 것은 떼어 낸다.
+ */
+export function setProjectTodos(d: PlanDraft, next: PlanTodo[]): PlanDraft {
+  const prev = d.projectTodos;
+  const renamed = new Map<string, string>();
+  if (next.length === prev.length) prev.forEach((t, i) => { if (t.title !== next[i]!.title) renamed.set(t.title, next[i]!.title); });
+  const gone = new Set(next.length < prev.length ? prev.map((t) => t.title).filter((title) => !next.some((n) => n.title === title)) : []);
+  if (renamed.size === 0 && gone.size === 0) return { ...d, projectTodos: next };
+  const fix = (t: PlanTodo): PlanTodo => {
+    if (!t.under) return t;
+    if (gone.has(t.under)) { const { under: _drop, ...rest } = t; return rest; }
+    return renamed.has(t.under) ? { ...t, under: renamed.get(t.under)! } : t;
+  };
+  return { ...d, projectTodos: next, items: d.items.map((it) => ({ ...it, todos: it.todos.map(fix) })) };
 }

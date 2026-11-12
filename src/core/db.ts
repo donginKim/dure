@@ -333,6 +333,11 @@ const MIGRATIONS: string[] = [
   -- 그날의 휴게 시간 (분). 사용자가 달력에서 적는다. 근무시간에서 뺀다
   CREATE TABLE work_breaks (day TEXT PRIMARY KEY, minutes INTEGER NOT NULL);
   `,
+  `
+  -- 워크스페이스 TODO 가 딸린 프로젝트 TODO. 딸린 항목이 다 끝나면 프로젝트 항목이 저절로 완료된다
+  ALTER TABLE todos ADD COLUMN parent_id TEXT;
+  CREATE INDEX todos_by_parent ON todos (parent_id);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

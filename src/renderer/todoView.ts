@@ -26,3 +26,12 @@ export function progress(items: Todo[]): { done: number; total: number } {
   const counted = items.filter((t) => t.status !== 'cancelled');
   return { done: counted.filter((t) => t.status === 'done').length, total: counted.length };
 }
+
+/** 프로젝트 항목에 딸린 워크스페이스 항목들 (워크스페이스를 만든 순서, 그 안에서는 자리 순서). */
+export function childrenOf(parentId: string, todos: Todo[], workspaces: Pick<Workspace, 'id' | 'name' | 'createdAt'>[]): { todo: Todo; workspace: string }[] {
+  const order = new Map([...workspaces].sort((a, b) => a.createdAt - b.createdAt).map((w, i) => [w.id, { i, name: w.name }]));
+  return todos
+    .filter((t) => t.parentId === parentId && t.workspaceId !== null)
+    .sort((a, b) => (order.get(a.workspaceId!)?.i ?? 1e9) - (order.get(b.workspaceId!)?.i ?? 1e9) || a.position - b.position)
+    .map((t) => ({ todo: t, workspace: order.get(t.workspaceId!)?.name ?? '' }));
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { folderRepoId, folderRepoPath, isFolderRepoId, isNewRepoId } from '@shared/plan';
 import type { CoordinatorInfo, PlanTodo, Project, Proposal, ProposalItem, Repo, Workspace } from '@shared/types';
-import { approveLabel, draftRepoId, fromDraft, planCounts, planProblem, specMessage, tidyPlan, toDraft, type PlanDraft } from '../planView';
+import { approveLabel, draftRepoId, fromDraft, planCounts, planProblem, setProjectTodos, specMessage, tidyPlan, toDraft, type PlanDraft } from '../planView';
 import { STATUS_LABEL } from '../tree';
 import { AssignPanel } from './AssignPanel';
 import { ChatPane } from './ChatPane';
@@ -13,7 +13,9 @@ import { PeerInbox } from './PeerInbox';
 import { describeError } from './WorkspaceView';
 
 /** 계획안의 TODO 목록: 제목을 고치고, 담당을 바꾸고, 빼고, 더한다. */
-function TodoEditor({ todos, onChange, agentLabel }: { todos: PlanTodo[]; onChange: (next: PlanTodo[]) => void; agentLabel: string }) {
+function TodoEditor({ todos, onChange, agentLabel, parents }: { todos: PlanTodo[]; onChange: (next: PlanTodo[]) => void; agentLabel: string;
+  /** 워크스페이스의 TODO 일 때: 딸릴 수 있는 프로젝트 TODO 의 제목들 */
+  parents?: string[] }) {
   const patch = (i: number, p: Partial<PlanTodo>): void => onChange(todos.map((t, k) => (k === i ? { ...t, ...p } : t)));
   return (
     <div className="plan-todos">
@@ -28,6 +30,13 @@ function TodoEditor({ todos, onChange, agentLabel }: { todos: PlanTodo[]; onChan
             <input type="text" value={t.title} placeholder="할 일" onChange={(e) => patch(i, { title: e.target.value })} />
             {t.detail && <div className="plan-detail">{t.detail}</div>}
           </div>
+          {parents && (parents.length > 0 || t.under) && (
+            <select className="plan-under" value={t.under ?? ''} title="이 일이 딸린 프로젝트 TODO. 딸린 일이 다 끝나면 그 프로젝트 TODO 가 저절로 완료됩니다" onChange={(e) => patch(i, { under: e.target.value || undefined })}>
+              <option value="">(딸린 곳 없음)</option>
+              {t.under && !parents.includes(t.under) && <option value={t.under}>{t.under}</option>}
+              {parents.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          )}
           <button className="btn ghost" title="이 TODO 는 만들지 않습니다" onClick={() => onChange(todos.filter((_, k) => k !== i))}>빼기</button>
         </div>
       ))}
@@ -200,15 +209,15 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
                 {!it.existing && <input type="text" className="plan-role" value={it.role} placeholder="맡을 일" onChange={(e) => patchItem(i, { role: e.target.value })} />}
                 {it.owner && <div className="plan-path">승인하면 <b>{personName(it.owner)}</b> 에게 이 일과 기획서 정리를 보냅니다. 그 사람이 자기 두레에서 수락해야 그 사람의 PC 에 만들어집니다 (저장소는 그 사람이 고릅니다). 그 사람이 꺼져 있으면 승인되지 않습니다.</div>}
                 <div className="plan-sublabel">TODO <span className="count">{it.todos.length}</span></div>
-                <TodoEditor todos={it.todos} agentLabel={`"${it.name || '이 워크스페이스'}" 에이전트`} onChange={(next) => patchItem(i, { todos: next })} />
+                <TodoEditor todos={it.todos} agentLabel={`"${it.name || '이 워크스페이스'}" 에이전트`} parents={it.owner ? undefined : [...new Set(plan.projectTodos.map((t) => t.title.trim()).filter(Boolean))]} onChange={(next) => patchItem(i, { todos: next })} />
               </div>
             ))}
             <button className="btn" disabled={repos.length === 0 && plan.newRepos.length === 0 && plan.addRepos.length === 0 && people.length === 0} onClick={addItem}>+ 워크스페이스 더하기</button>
           </div>
 
           <div className="plan-section">
-            <div className="plan-label">프로젝트 TODO <span className="count">{plan.projectTodos.length}</span><span className="plan-hint">어느 워크스페이스에도 속하지 않는 일, 내가 정해야 하는 것</span></div>
-            <TodoEditor todos={plan.projectTodos} agentLabel="조율 에이전트" onChange={(next) => setPlan((d) => ({ ...d, projectTodos: next }))} />
+            <div className="plan-label">프로젝트 TODO <span className="count">{plan.projectTodos.length}</span><span className="plan-hint">프로젝트에서 이뤄야 하는 큰 일. 워크스페이스의 TODO 가 여기에 딸리고, 딸린 일이 다 끝나면 저절로 완료됩니다</span></div>
+            <TodoEditor todos={plan.projectTodos} agentLabel="조율 에이전트" onChange={(next) => setPlan((d) => setProjectTodos(d, next))} />
           </div>
         </div>
       </div>

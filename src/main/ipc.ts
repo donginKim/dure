@@ -169,9 +169,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'terminals.buffer': (id: string) => core.pty.snapshot(id),
     // 화면에서 온 TODO 변경은 모두 사용자의 변경이다.
     'todos.list': (projectId: string) => core.todos.listProject(projectId),
-    'todos.add': (i: { projectId: string; workspaceId: string | null; title: string; assignee?: TodoAssignee }) => { assertOpen(i.projectId); return core.todos.add(i, 'user'); },
+    'todos.add': (i: { projectId: string; workspaceId: string | null; title: string; assignee?: TodoAssignee; parentId?: string | null }) => { assertOpen(i.projectId); return core.todos.add(i, 'user'); },
     'todos.update': (id: string, patch: TodoPatch) => assertTodoOpen(id) ?? core.todos.update(id, patch, { actor: 'user' }),
     'todos.remove': (id: string) => assertTodoOpen(id) ?? core.todos.remove(id, { actor: 'user' }),
+    'todos.setParent': (id: string, parentId: string | null) => assertTodoOpen(id) ?? core.todos.setParent(String(id), parentId === null ? null : String(parentId)),
     'todos.move': (id: string, direction: 'up' | 'down') => assertTodoOpen(id) ?? core.todos.move(id, direction),
     'todos.pending': (projectId: string) => Object.fromEntries(
       core.workspaces.listAll(projectId).map((w) => [w.id, { count: core.todos.pendingCount(w.id), canNudge: core.service.canNudge(w.id) }]),

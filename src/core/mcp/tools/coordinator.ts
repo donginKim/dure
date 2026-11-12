@@ -13,12 +13,16 @@ export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
     detail: z.string().optional().describe('필요하면 자세한 설명'),
     assignee: z.enum(['agent', 'user']).optional().describe('사용자가 해야 하는 일(결정, 커밋, 배포 등)이면 user. 기본은 agent'),
   });
+  const WORK_TODO = TODO.extend({
+    under: z.string().optional().describe('이 일이 딸린 프로젝트 TODO 의 제목 (project_todos 의 제목이나 이미 있는 프로젝트 TODO 의 제목과 글자까지 같게). 딸린 TODO 가 다 끝나면 그 프로젝트 TODO 가 저절로 완료된다'),
+  });
 
   server.registerTool(
     'plan_propose',
     {
       description: [
-        '기획서를 분석한 계획안을 사용자에게 올린다: 기획서 정리, 만들 워크스페이스, 워크스페이스마다의 TODO, 프로젝트 전체의 TODO.',
+        '기획서를 분석한 계획안을 사용자에게 올린다: 기획서 정리, 프로젝트 TODO(큰 일), 만들 워크스페이스, 워크스페이스마다의 TODO(프로젝트 TODO 에 딸린 실제 작업).',
+        '함께하는 사람(project_overview 의 people)이 있으면, 누가 무엇을 맡을지 사용자와 대화로 정한 뒤에 올려라.',
         '이 도구는 아무것도 만들지 않는다. 사용자가 두레의 검토 화면에서 보고 고친 뒤 승인하면, 두레가 워크스페이스(작업 폴더와 브랜치)와 TODO 를 그대로 만든다.',
         '승인이나 거절은 두레가 [두레] 알림으로 알려 준다. 그때까지는 만들어진 것이 없으니 일을 시키지 말고 기다려라.',
         '저장소는 등록된 것을 쓴다 (project_overview 로 확인). 등록돼 있지 않지만 사용자의 PC 에 이미 있는 git 저장소 폴더가 맞으면 add_repos 에 그 절대 경로를 넣어라: 승인하면 두레가 그 폴더를 등록한다. 맞는 저장소가 어디에도 없으면 new_repos 에 새 저장소를 넣어라: 승인하면 두레가 빈 git 저장소를 만들어 등록한다. 저장소를 등록하는 다른 도구는 없다: 등록은 이 계획안으로 한다. 이름이 이미 있는 워크스페이스와 같으면 새로 만들지 않고 TODO 만 더한다. 다시 올리면 앞의 미결 계획안은 사라진다.',
@@ -38,9 +42,9 @@ export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
           base_branch: z.string().optional().describe('기준 브랜치. 비우면 그 저장소의 현재 브랜치'),
           role: z.string().describe('이 워크스페이스가 맡을 일 (한두 줄)'),
           owner: z.string().optional().describe('이 일을 맡을 다른 사람의 이름 (project_overview 의 people). 주면 그 사람에게 나눠 준다: 그 사람이 자기 두레에서 수락해야 만들어지고, 저장소는 그 사람이 고른다 (repo 는 비워라). 비우면 내 사용자의 PC 에 만든다'),
-          todos: z.array(TODO).max(40).describe('이 워크스페이스에 만들 TODO. 그 에이전트가 순서대로 할 수 있는 크기로 나눠라'),
+          todos: z.array(WORK_TODO).max(40).describe('이 워크스페이스에 만들 TODO. 그 에이전트가 순서대로 할 수 있는 크기로 나눠라. 각 TODO 의 under 에 딸린 프로젝트 TODO 를 적어라'),
         })).max(20),
-        project_todos: z.array(TODO).max(40).optional().describe('어느 워크스페이스에도 속하지 않는 일. 사용자가 결정할 것은 assignee 를 user 로'),
+        project_todos: z.array(TODO).max(40).optional().describe('프로젝트에서 이뤄야 하는 큰 일의 목록. 워크스페이스의 TODO 가 under 로 여기에 딸린다. 워크스페이스가 할 수 없는 일(사용자의 결정 등)도 여기에 둔다: 사용자가 할 것은 assignee 를 user 로'),
         note: z.string().optional().describe('사용자에게 덧붙일 설명 (왜 이렇게 나눴는지)'),
       },
     },
@@ -64,16 +68,21 @@ export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
         title: z.string(),
         detail: z.string().optional(),
         assignee: z.enum(['agent', 'user']).optional().describe('사용자가 해야 하는 일이면 user'),
+        under: z.string().optional().describe('이 일이 딸린 프로젝트 TODO 의 제목이나 id (todo_list 의 items). 주면 그 프로젝트 TODO 의 진행에 함께 잡힌다'),
       },
     },
-    async ({ workspace, title, detail, assignee }) => {
+    async ({ workspace, title, detail, assignee, under }) => {
       const peers = deps.workspaces.list(ctx.project.id);
       const matches = peers.filter((w) => w.name === workspace.trim());
       if (matches.length === 0) return fail(`"${workspace}" 라는 워크스페이스가 없다. 있는 워크스페이스: ${peers.map((w) => `"${w.name}"`).join(', ') || '(없음. 먼저 plan_propose 로 계획안을 올려라)'}`);
       if (matches.length > 1) return fail(`이름이 같은 워크스페이스가 둘 이상이다: "${workspace}"`);
+      const key = under?.trim();
+      const projectItems = deps.todos.listProject(ctx.project.id).filter((t) => t.workspaceId === null);
+      const parent = key ? projectItems.find((t) => t.id === key) ?? projectItems.find((t) => t.title === key) : undefined;
+      if (key && !parent) return fail(`"${key}" 라는 프로젝트 TODO 가 없다. 있는 프로젝트 TODO: ${projectItems.map((t) => `"${t.title}"`).join(', ') || '(없음. todo_add 로 먼저 만들어라)'}`);
       try {
-        const t = deps.todos.add({ projectId: ctx.project.id, workspaceId: matches[0]!.id, title, detail, assignee }, 'agent');
-        return ok({ id: t.id, workspace: matches[0]!.name, title: t.title });
+        const t = deps.todos.add({ projectId: ctx.project.id, workspaceId: matches[0]!.id, title, detail, assignee, parentId: parent?.id ?? null }, 'agent');
+        return ok({ id: t.id, workspace: matches[0]!.name, title: t.title, ...(parent ? { under: parent.title } : {}) });
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
       }

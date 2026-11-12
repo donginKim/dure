@@ -162,6 +162,7 @@ export function App() {
             project={projects.find((p) => p.id === workspace.projectId)}
             repo={repos.find((r) => r.id === workspace.repoId)}
             todos={todos.filter((t) => t.workspaceId === workspace.id)}
+            projectTodos={todos.filter((t) => t.projectId === workspace.projectId)}
             pending={pending[workspace.id]}
             readOnly={projects.find((p) => p.id === workspace.projectId)?.status === 'done'}
             onSelect={setSelection}

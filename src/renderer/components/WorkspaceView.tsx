@@ -68,7 +68,8 @@ function NameEditor({ workspace, readOnly }: { workspace: Workspace; readOnly: b
   );
 }
 
-export function WorkspaceView({ workspace, workspaces, project, repo, todos, pending, conversation, readOnly = false, onSelect }: {
+export function WorkspaceView({ workspace, workspaces, project, repo, todos, projectTodos, pending, conversation, readOnly = false, onSelect }: {
+  projectTodos?: Todo[];
   workspace: Workspace; workspaces: Workspace[]; project?: Project; repo?: Repo; todos: Todo[]; pending?: PendingInfo;
   conversation: ConversationData;
   /** 완료된 프로젝트의 워크스페이스다: 기록만 보고, 에이전트를 시작하지 않는다 */
@@ -269,7 +270,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pen
       </div>
       </div>
       )}
-      <SidePanel workspace={workspace} workspaces={workspaces} todos={todos} pending={pending} conversation={conversation} readOnly={project?.status === 'done'} />
+      <SidePanel workspace={workspace} workspaces={workspaces} todos={todos} projectTodos={projectTodos} pending={pending} conversation={conversation} readOnly={project?.status === 'done'} />
       </div>
       {committing && <CommitDialog workspace={workspace} onClose={() => setCommitting(false)} />}
       {removing && (

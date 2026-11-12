@@ -814,3 +814,17 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 /* 근무시간: 퇴근 가능 */
 .work-leave { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 .work-badge.leave { border-color: var(--accent); }
+
+/* TODO: 프로젝트 항목과 거기에 딸린 워크스페이스 항목 */
+.todo-under { color: var(--muted); font-size: 11px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-count { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; padding-top: 2px; }
+.todo-parent { max-width: 150px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 11.5px; padding: 1px 4px; }
+.todo-kids { margin: 0 0 4px 34px; padding-left: 10px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.todo-kid { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 2px 0; min-width: 0; }
+.todo-kid .tick { flex: none; }
+.todo-kid-ws { flex: none; color: var(--muted); font-size: 11px; border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-kid-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-kid.done .todo-kid-title, .todo-kid.cancelled .todo-kid-title { color: var(--muted); }
+.todo-kid.cancelled .todo-kid-title { text-decoration: line-through; }
+.plan-under { flex: none; max-width: 180px; margin-top: 2px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; font: inherit; font-size: 11.5px; padding: 2px 4px; }
+.todo-kid .tick { flex: none; width: 8px; height: 8px; border-radius: 50%; }

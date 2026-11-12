@@ -16,12 +16,12 @@ export class TodoConflictError extends Error {
 export type By = { actor: 'user' } | { actor: 'agent'; rev: number };
 
 interface Row {
-  id: string; project_id: string; workspace_id: string | null; title: string; detail: string; status: string;
+  id: string; project_id: string; workspace_id: string | null; parent_id: string | null; title: string; detail: string; status: string;
   assignee: string; position: number; rev: number; updated_by: string; created_at: number; updated_at: number;
 }
 
 const toTodo = (r: Row): Todo => ({
-  id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, title: r.title, detail: r.detail,
+  id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, parentId: r.parent_id ?? null, title: r.title, detail: r.detail,
   status: r.status as TodoStatus, assignee: r.assignee as TodoAssignee, position: r.position, rev: r.rev,
   updatedBy: r.updated_by as Actor, createdAt: r.created_at, updatedAt: r.updated_at,
 });
@@ -59,6 +59,17 @@ export function todoDigest(workspaceItems: Todo[], projectItems: Todo[]): string
     `완료 ${all.filter((t) => t.status === 'done').length}건, 취소 ${all.filter((t) => t.status === 'cancelled').length}건.`,
     '빠졌거나 사용자가 놓친 할 일이 보이면 todo_add 로 추가하라. 사용자가 해야 하는 일이면 assignee 를 user 로 한다. 항목을 고치기 전에는 todo_list 로 rev 를 읽어라.',
   ].join('\n');
+}
+
+/**
+ * 딸린 항목들로 본 프로젝트 항목의 상태. 취소한 것은 빼고 본다.
+ * 다 끝났으면 완료, 하나라도 시작됐으면 진행 중, 아니면 할 일. 딸린 것이 없으면 null (그대로 둔다).
+ */
+export function rollup(children: Pick<Todo, 'status'>[]): TodoStatus | null {
+  const counted = children.filter((c) => c.status !== 'cancelled');
+  if (counted.length === 0) return null;
+  if (counted.every((c) => c.status === 'done')) return 'done';
+  return counted.some((c) => c.status !== 'todo') ? 'doing' : 'todo';
 }
 
 function statusLine(status: TodoStatus, title: string): string {
@@ -113,17 +124,55 @@ export class TodoService extends EventEmitter {
     for (const line of lines) insert.run(to, todo.workspaceId === null ? `(프로젝트 TODO) ${line}` : line);
   }
 
+  /** 프로젝트 항목에 딸린 워크스페이스 항목들. */
+  children(parentId: string): Todo[] {
+    return (this.db.prepare('SELECT * FROM todos WHERE parent_id = ? ORDER BY position, rowid').all(parentId) as Row[]).map(toTodo);
+  }
+
+  /** 딸릴 수 있는 프로젝트 항목인지 본다: 같은 프로젝트의 프로젝트 범위 항목이어야 한다. */
+  private checkParent(projectId: string, workspaceId: string | null, parentId: string): void {
+    if (workspaceId === null) throw new Error('프로젝트 항목은 다른 항목 아래에 둘 수 없습니다.');
+    const p = this.get(parentId);
+    if (!p || p.projectId !== projectId || p.workspaceId !== null) throw new Error('그런 프로젝트 항목이 없습니다.');
+  }
+
+  /** 딸린 항목이 바뀌었다: 프로젝트 항목의 상태를 맞춘다. 취소해 둔 프로젝트 항목은 건드리지 않는다. */
+  private settle(parentId: string | null): void {
+    if (!parentId) return;
+    const p = this.get(parentId);
+    if (!p || p.status === 'cancelled') return;
+    const next = rollup(this.children(parentId));
+    if (!next || next === p.status) return;
+    this.db.prepare("UPDATE todos SET status = ?, rev = rev + 1, updated_by = 'agent', updated_at = ? WHERE id = ?").run(next, Date.now(), parentId);
+  }
+
+  /** 워크스페이스 항목을 프로젝트 항목 아래에 달거나 (parentId), 뗀다 (null). */
+  setParent(id: string, parentId: string | null): Todo {
+    const current = this.mustGet(id);
+    if (parentId === current.parentId) return current;
+    if (parentId !== null) this.checkParent(current.projectId, current.workspaceId, parentId);
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE todos SET parent_id = ?, updated_at = ? WHERE id = ?').run(parentId, Date.now(), id);
+      this.settle(current.parentId);
+      this.settle(parentId);
+    })();
+    this.emit('changed', current.projectId);
+    return this.mustGet(id);
+  }
+
   private checkRev(current: Todo, by: By): void {
     if (by.actor === 'agent' && by.rev !== current.rev) throw new TodoConflictError(current);
   }
 
   add(
-    i: { projectId: string; workspaceId?: string | null; title: string; detail?: string; assignee?: TodoAssignee; status?: TodoStatus },
+    i: { projectId: string; workspaceId?: string | null; title: string; detail?: string; assignee?: TodoAssignee; status?: TodoStatus; parentId?: string | null },
     actor: Actor,
   ): Todo {
     const title = clean(i.title).trim();
     if (!title) throw new Error('제목을 입력하세요.');
     const workspaceId = i.workspaceId ?? null;
+    const parentId = i.parentId ?? null;
+    if (parentId !== null) this.checkParent(i.projectId, workspaceId, parentId);
     const siblings = this.scope(i.projectId, workspaceId);
     const position = siblings.length === 0 ? 1 : siblings[siblings.length - 1].position + 1;
     const now = Date.now();
@@ -131,10 +180,11 @@ export class TodoService extends EventEmitter {
     const assignee = i.assignee ?? 'agent';
     this.db.transaction(() => {
       this.db.prepare(
-        `INSERT INTO todos (id, project_id, workspace_id, title, detail, status, assignee, position, rev, updated_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-      ).run(id, i.projectId, workspaceId, title, clean(i.detail ?? ''), i.status ?? 'todo', assignee, position, actor, now, now);
+        `INSERT INTO todos (id, project_id, workspace_id, parent_id, title, detail, status, assignee, position, rev, updated_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+      ).run(id, i.projectId, workspaceId, parentId, title, clean(i.detail ?? ''), i.status ?? 'todo', assignee, position, actor, now, now);
       this.notePending({ workspaceId, projectId: i.projectId }, actor, [`추가됨: "${title}"${assignee === 'user' ? ' (사용자 몫)' : ''}`]);
+      this.settle(parentId);
     })();
     this.emit('changed', i.projectId);
     return this.mustGet(id);
@@ -169,6 +219,7 @@ export class TodoService extends EventEmitter {
         'UPDATE todos SET title = ?, detail = ?, status = ?, assignee = ?, rev = rev + 1, updated_by = ?, updated_at = ? WHERE id = ?',
       ).run(next.title, next.detail, next.status, next.assignee, by.actor, Date.now(), id);
       this.notePending(current, by.actor, lines);
+      if (next.status !== current.status) this.settle(current.parentId);
     })();
     this.emit('changed', current.projectId);
     return this.mustGet(id);
@@ -179,7 +230,10 @@ export class TodoService extends EventEmitter {
     this.checkRev(current, by);
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM todos WHERE id = ?').run(id);
+      // 프로젝트 항목을 지우면 딸려 있던 항목은 남고, 어디에도 딸리지 않게 된다.
+      this.db.prepare('UPDATE todos SET parent_id = NULL WHERE parent_id = ?').run(id);
       this.notePending(current, by.actor, [`삭제됨: "${current.title}"`]);
+      this.settle(current.parentId);
     })();
     this.emit('changed', current.projectId);
   }

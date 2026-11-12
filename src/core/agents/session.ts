@@ -105,8 +105,12 @@ export class AgentSession extends EventEmitter {
   }
 
   /** 사용자의 말(또는 두레가 전하는 글)을 보낸다. 작업 중에 보내면 에이전트가 같은 차례 안에 읽는다 (실험 18). */
-  say(text: string): void {
-    this.write({ type: 'user', message: { role: 'user', content: text } });
+  say(text: string, images: { mediaType: string; data: string }[] = []): void {
+    if (images.length === 0) { this.write({ type: 'user', message: { role: 'user', content: text } }); return; }
+    // 이미지는 글 앞에 둔다 (글이 그 이미지에 대해 말하는 것이 보통이다).
+    const content: unknown[] = images.map((i) => ({ type: 'image', source: { type: 'base64', media_type: i.mediaType, data: i.data } }));
+    if (text) content.push({ type: 'text', text });
+    this.write({ type: 'user', message: { role: 'user', content } });
   }
 
   /** 에이전트에게 요청을 보내고 답을 기다린다 (초기화, 멈춤 등). */

@@ -152,3 +152,17 @@ process.stdin.resume();
   expect((s as unknown as { buffer: string }).buffer.length).toBeLessThan(1 << 20);
   s.kill();
 }, 20000);
+
+test('이미지를 붙여 보내면 이미지와 글이 한 메시지의 조각으로 간다', async () => {
+  const sent: unknown[] = [];
+  const write = session['child'].stdin.write.bind(session['child'].stdin);
+  session['child'].stdin.write = ((chunk: string) => { sent.push(JSON.parse(chunk)); return write(chunk); }) as typeof session['child']['stdin']['write'];
+  session.say('이 화면 봐줘', [{ mediaType: 'image/png', data: 'AAAA' }]);
+  session.say('', [{ mediaType: 'image/jpeg', data: 'BBBB' }]);
+  session.say('글만');
+  expect(sent).toEqual([
+    { type: 'user', message: { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }, { type: 'text', text: '이 화면 봐줘' }] } },
+    { type: 'user', message: { role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'BBBB' } }] } },
+    { type: 'user', message: { role: 'user', content: '글만' } },
+  ]);
+});

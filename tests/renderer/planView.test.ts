@@ -6,7 +6,7 @@ const todo = (title: string, assignee: 'agent' | 'user' = 'agent') => ({ title, 
 
 test('planCounts 와 approveLabel: 새로 만들 워크스페이스와 제목이 있는 TODO 만 센다', () => {
   const d: PlanDecision = { items: [item({ todos: [todo('폼'), todo(' ')] }), item({ name: '이미 있던 것', existing: true, todos: [todo('고치기')] })], projectTodos: [todo('결정', 'user')] };
-  expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 3, handed: 0 });
+  expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 3, handed: 0, added: 0 });
   expect(approveLabel(d)).toBe('승인하고 워크스페이스 1개, TODO 3개 만들기');
   expect(approveLabel({ items: [], projectTodos: [todo('결정')] })).toBe('승인하고 TODO 1개 만들기');
   expect(approveLabel({ items: [], projectTodos: [] })).toBe('만들 것이 없습니다');
@@ -25,7 +25,7 @@ test('planProblem: 빈 이름, 겹친 이름, 빈 저장소, 만들 것이 없�
 
 test('tidyPlan: 빈 제목의 TODO 를 빼고 공백을 다듬는다', () => {
   expect(tidyPlan({ items: [item({ name: ' 화면 ', role: ' 폼 ', todos: [todo(' 폼 만들기 '), todo('')] })], projectTodos: [todo('  '), todo('결정')] })).toEqual({
-    newRepos: [], items: [item({ name: '화면', role: '폼', todos: [todo('폼 만들기')] })], projectTodos: [todo('결정')],
+    newRepos: [], addRepos: [], items: [item({ name: '화면', role: '폼', todos: [todo('폼 만들기')] })], projectTodos: [todo('결정')],
   });
 });
 
@@ -44,7 +44,7 @@ test('specMessage: 내용에 ``` 가 있어도 블록이 일찍 닫히지 않는
 
 test('새 저장소: 수에 들어가고, 이름을 확인하고, 없는 새 저장소를 가리키는 워크스페이스를 잡는다', () => {
   const d: PlanDecision = { newRepos: [{ name: 'web', description: ' 웹 ' }], items: [item({ repoId: 'new:web' })], projectTodos: [] };
-  expect(planCounts(d)).toEqual({ repos: 1, workspaces: 1, todos: 0, handed: 0 });
+  expect(planCounts(d)).toEqual({ repos: 1, workspaces: 1, todos: 0, handed: 0, added: 0 });
   expect(approveLabel(d)).toBe('승인하고 저장소 1개, 워크스페이스 1개 만들기');
   expect(planProblem(d)).toBeNull();
   expect(tidyPlan(d).newRepos).toEqual([{ name: 'web', description: '웹' }]);
@@ -83,7 +83,7 @@ describe('일 나눠 주기', () => {
 
   test('나눠 주는 워크스페이스는 내 PC 에 만들 것으로 세지 않는다. 저장소가 비어 있어도 된다', () => {
     const d = { newRepos: [], items: [item2(), item2({ name: '서버', repoId: '', baseBranch: '', owner: 'p1' })], projectTodos: [] };
-    expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 1, handed: 1 });
+    expect(planCounts(d)).toEqual({ repos: 0, workspaces: 1, todos: 1, handed: 1, added: 0 });
     expect(planProblem(d)).toBeNull();
     expect(approveLabel(d)).toBe('승인하고 워크스페이스 1개, TODO 1개 만들기, 1개 나눠 주기');
     const only = { newRepos: [], items: [item2({ repoId: '', owner: 'p1' })], projectTodos: [] };
@@ -107,4 +107,13 @@ describe('일 나눠 주기', () => {
     expect(assignChoiceProblem(items, [{ repoId: 'r1' }, { repoId: '', newRepo: 'api' }])).toBeNull();
     expect(assignChoiceProblem(items, [{ repoId: 'r1', name: '알림' }, { repoId: 'r1' }])).toContain('겹칩니다');
   });
+});
+
+test('이미 있는 폴더를 등록하는 계획: 등록만 있어도 승인할 수 있고, 뺀 폴더를 가리키는 워크스페이스를 잡는다', () => {
+  const f = { path: '/p/catalog-web', name: 'catalog-web', remote: '' };
+  const ws = { name: '화면', repoId: 'path:/p/catalog-web', baseBranch: '', role: '', todos: [], existing: false };
+  expect(approveLabel({ addRepos: [f], items: [], projectTodos: [] })).toBe('승인하고 저장소 1개 등록');
+  expect(planProblem({ addRepos: [f], items: [], projectTodos: [] })).toBeNull();
+  expect(approveLabel({ addRepos: [f], items: [ws], projectTodos: [] })).toBe('승인하고 저장소 1개 등록, 워크스페이스 1개 만들기');
+  expect(planProblem({ addRepos: [], items: [ws], projectTodos: [] })).toContain('등록할 저장소 목록에 없습니다');
 });

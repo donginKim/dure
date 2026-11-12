@@ -575,3 +575,54 @@ describe('프로젝트를 닫을 때', () => {
     expect(existsSync(front.path)).toBe(true);
   });
 });
+
+describe('이미 있는 폴더를 저장소로 등록하기', () => {
+  const W2 = (name: string, repo: string, o: Record<string, unknown> = {}) => ({ name, repo, role: '', todos: [], ...o });
+
+  test('계획안에 PC 에 있는 저장소 폴더를 넣으면, 승인할 때 등록하고 거기에 워크스페이스를 만든다', async () => {
+    const path = makeRepo('catalog-web');
+    mkdirSync(join(path, 'api'));
+    // 저장소 안의 하위 폴더를 적어도 저장소의 맨 위 폴더로 맞춘다
+    const p = await core.coordinator.propose(projectId, { summary: '', add_repos: [{ path: join(path, 'api') }], workspaces: [W2('화면', 'catalog-web', { todos: ['목록'] }), W2('데이터', path)] });
+    expect(p.addRepos).toEqual([{ path, name: 'catalog-web', remote: '' }]);
+    expect(p.items.map((i) => [i.name, i.repoId, i.baseBranch])).toEqual([['화면', `path:${path}`, 'main'], ['데이터', `path:${path}`, 'main']]);
+    // 승인 전에는 등록되지 않았다
+    expect(core.repos.list(projectId).map((r) => r.name)).not.toContain('catalog-web');
+    const res = await core.coordinator.approve(p.id, { addRepos: p.addRepos, items: p.items, projectTodos: [] });
+    expect(res.repos.map((r) => r.path)).toEqual([path]);
+    const repo = core.repos.list(projectId).find((r) => r.path === path)!;
+    expect(res.created.map((w) => [w.name, w.repoId])).toEqual([['화면', repo.id], ['데이터', repo.id]]);
+    expect(gitOut(path, 'branch', '--list', 'dure/*').split('\n').length).toBe(2);
+  });
+
+  test('git 저장소가 아니거나 없는 폴더, 상대 경로는 올리지 않는다. 이미 등록된 폴더는 그 저장소를 쓴다', async () => {
+    const plain = tempDir();
+    await expect(core.coordinator.propose(projectId, { add_repos: [{ path: plain }], workspaces: [] })).rejects.toThrow('git 저장소가 아니다');
+    await expect(core.coordinator.propose(projectId, { add_repos: [{ path: join(plain, 'nope') }], workspaces: [] })).rejects.toThrow('그런 폴더가 없다');
+    await expect(core.coordinator.propose(projectId, { add_repos: [{ path: 'relative/dir' }], workspaces: [] })).rejects.toThrow('절대 경로');
+    const p = await core.coordinator.propose(projectId, { add_repos: [{ path: front.path }], workspaces: [W2('화면', front.path)] });
+    expect(p.addRepos).toEqual([]);
+    expect(p.items[0]!.repoId).toBe(front.id);
+  });
+
+  test('검토 화면에서 폴더를 뺐는데 그 저장소를 쓰는 워크스페이스가 남아 있으면 승인되지 않는다', async () => {
+    const path = makeRepo('catalog-web');
+    const p = await core.coordinator.propose(projectId, { add_repos: [{ path }], workspaces: [W2('화면', 'catalog-web')] });
+    await expect(core.coordinator.approve(p.id, { addRepos: [], items: p.items, projectTodos: [] })).rejects.toThrow('등록할 저장소에 없다');
+    expect(core.repos.list(projectId).some((r) => r.path === path)).toBe(false);
+  });
+
+  test('도중에 실패하면 등록만 푼다. 폴더는 건드리지 않는다', async () => {
+    const path = makeRepo('catalog-web');
+    const p = await core.coordinator.propose(projectId, { add_repos: [{ path }], workspaces: [W2('화면', 'catalog-web', { todos: ['목록'] })] });
+    const spy = vi.spyOn(core.todos, 'add').mockImplementation(() => { throw new Error('실패'); });
+    await expect(core.coordinator.approve(p.id, { addRepos: p.addRepos, items: p.items, projectTodos: [] })).rejects.toThrow('실패');
+    spy.mockRestore();
+    expect(core.repos.list(projectId).some((r) => r.path === path)).toBe(false);
+    expect(existsSync(join(path, '.git'))).toBe(true);
+    expect(gitOut(path, 'branch', '--list', 'dure/*')).toBe('');
+    // 계획안은 그대로 기다리고, 다시 승인하면 된다
+    const res = await core.coordinator.approve(p.id, { addRepos: p.addRepos, items: core.coordinator.pending(projectId)!.items, projectTodos: [] });
+    expect(res.created.length).toBe(1);
+  });
+});

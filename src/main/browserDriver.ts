@@ -1,11 +1,9 @@
-import { BrowserWindow, webContents, type WebContents } from 'electron';
+import { BrowserWindow, nativeImage, webContents, type WebContents } from 'electron';
 import type { BrowserDriver } from '@core/browserService';
 import { IPC_EVENTS } from '@shared/ipc';
 
 interface Page { wc: WebContents; logs: string[] }
 const MAX_LOGS = 200;
-const KEY: Record<string, string> = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right' };
-
 const within = <T>(p: Promise<T>, ms: number, what: string): Promise<T> => new Promise<T>((resolve, reject) => {
   const t = setTimeout(() => reject(new Error(`${what} 이(가) ${Math.round(ms / 1000)}초 안에 끝나지 않았다.`)), ms);
   p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
@@ -24,6 +22,13 @@ export function createBrowserHost(): { driver: BrowserDriver; register(workspace
     if (p && !p.wc.isDestroyed()) return p;
     pages.delete(workspaceId);
     return undefined;
+  };
+  /**
+   * 페이지에 Chromium 의 디버깅 프로토콜(CDP)로 명령을 보낸다. 화면 찍기에 쓴다 (capturePage 는 보기에 나와 있지 않은 페이지에서 멈춘다).
+   */
+  const cdp = async <T = unknown>(wc: WebContents, method: string, params: Record<string, unknown> = {}): Promise<T> => {
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+    return within(wc.debugger.sendCommand(method, params) as Promise<T>, 8000, method);
   };
   const must = (workspaceId: string): Page => {
     const p = alive(workspaceId);
@@ -46,11 +51,19 @@ export function createBrowserHost(): { driver: BrowserDriver; register(workspace
       const level = typeof args[1] === 'number' ? args[1] : e?.level;
       const message = typeof args[2] === 'string' ? args[2] : e?.message;
       const kind = level === 3 || level === 'error' ? '오류' : level === 2 || level === 'warning' ? '경고' : null;
-      if (kind && message) note(`[${kind}] ${message}`);
+      // Electron 이 개발 실행에서 내는 안내는 페이지의 문제가 아니다.
+      if (kind && message && !message.startsWith('Electron Security Warning')) note(`[${kind}] ${message.replace(/\s+/g, ' ')}`);
     });
     wc.on('did-fail-load', (_e, code, description, url, isMainFrame) => { if (code !== -3) note(`[불러오지 못함${isMainFrame ? '' : ' (일부)'}] ${url}: ${description}`); });
     wc.on('did-start-navigation', (_e, url, _inPlace, isMainFrame) => { if (isMainFrame) note(`--- ${url} 로 이동 ---`); });
+    // 배경을 칠하지 않은 페이지는 webview 안에서 투명하다: 찍으면 검은 바탕에 검은 글자가 된다.
+    // 보통의 브라우저처럼 흰 바탕을 깔아 둔다. 'user' 로 넣어 페이지가 정한 배경이 있으면 그것이 이긴다.
+    const white = (): void => { wc.insertCSS('html { background-color: #fff; }', { cssOrigin: 'user' }).catch(() => undefined); };
+    wc.on('dom-ready', white);
+    white();
     wc.once('destroyed', () => { if (pages.get(workspaceId)?.wc === wc) pages.delete(workspaceId); });
+    // 보기에 나와 있지 않아도 타이머와 화면 갱신을 늦추지 않게 한다.
+    try { wc.setBackgroundThrottling(false); } catch { /* 이 판에서는 지원하지 않음 */ }
     pages.set(workspaceId, page);
     for (const done of waiting.get(workspaceId) ?? []) done();
     waiting.delete(workspaceId);
@@ -84,28 +97,18 @@ export function createBrowserHost(): { driver: BrowserDriver; register(workspace
     evaluate(workspaceId, expression) {
       return within(must(workspaceId).wc.executeJavaScript(expression, true), 8000, '페이지 읽기');
     },
-    async click(workspaceId, x, y) {
+    async idle(workspaceId) {
       const { wc } = must(workspaceId);
-      wc.sendInputEvent({ type: 'mouseMove', x, y });
-      wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
-      wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
-    },
-    insertText(workspaceId, text) {
-      return within(must(workspaceId).wc.insertText(text), 8000, '글 넣기');
-    },
-    async pressKey(workspaceId, key) {
-      const { wc } = must(workspaceId);
-      const keyCode = KEY[key] ?? key;
-      wc.sendInputEvent({ type: 'keyDown', keyCode });
-      // 글자가 되는 키는 char 도 보내야 입력칸과 폼이 반응한다.
-      if (key === 'Enter') wc.sendInputEvent({ type: 'char', keyCode: '\r' });
-      if (key === 'Space') wc.sendInputEvent({ type: 'char', keyCode: ' ' });
-      wc.sendInputEvent({ type: 'keyUp', keyCode });
+      const end = Date.now() + 10_000;
+      while (!wc.isDestroyed() && wc.isLoading() && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
     },
     async screenshot(workspaceId) {
       const { wc } = must(workspaceId);
-      let image = await within(wc.capturePage(), 8000, '화면 찍기');
-      if (image.isEmpty()) throw new Error('화면을 찍지 못했다 (페이지가 화면에 그려지지 않았다). browser_snapshot 으로 내용을 읽어라.');
+      // CDP 로 찍는다: 지금 화면을 새로 그려서 준다. (capturePage 는 가려진 창에서 예전에 그린 화면을 돌려준다, 실측)
+      // 창이 가려져도 그리기가 멈추지 않게 앱을 띄울 때 설정해 둔다 (main/index.ts).
+      const shot = await cdp<{ data: string }>(wc, 'Page.captureScreenshot', { format: 'jpeg', quality: 80 });
+      let image = nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64'));
+      if (image.isEmpty()) throw new Error('화면을 찍지 못했다. browser_snapshot 으로 내용을 읽어라.');
       const { width } = image.getSize();
       if (width > 1280) image = image.resize({ width: 1280 });
       return { data: image.toJPEG(70).toString('base64'), mimeType: 'image/jpeg' };

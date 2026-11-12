@@ -10,22 +10,29 @@ let projectId: string;
 let ws: Workspace;
 let page: { url: string; title: string; lines: string[]; refs: number; cut: boolean };
 let calls: string[];
-let elements: Record<number, { x: number; y: number; tag: string; type: string; disabled: boolean }>;
+let elements: Record<number, 'input' | 'button' | 'disabled'>;
 
 const driver: BrowserDriver = {
   ensure: async (_id, url) => { calls.push(`ensure ${url}`); },
   navigate: async (_id, url) => { calls.push(`navigate ${url}`); page = { ...page, url }; },
   info: async () => ({ url: page.url, title: page.title }),
+  // 페이지 안에서 도는 글을 흉내 낸다: 어떤 글이 왔는지 보고 그 결과를 돌려준다.
   evaluate: async (_id, expr) => {
     if (expr.includes('const MAX =')) return page;
-    const ref = /data-dure-ref="(\d+)"/.exec(expr)?.[1];
-    if (expr.includes('scrollIntoView')) return elements[Number(ref)] ?? null;
-    calls.push(`focus ${ref}`);
-    return true;
+    if (expr.includes("new KeyboardEvent('keydown'")) { calls.push(`key ${/const key = "(\w+)"/.exec(expr)?.[1]}`); return { ok: true }; }
+    const ref = Number(/data-dure-ref="(\d+)"/.exec(expr)?.[1]);
+    const el = elements[ref];
+    if (!el) return { missing: true };
+    if (el === 'disabled') return { disabled: true };
+    if (expr.includes("new InputEvent('input'")) {
+      if (el !== 'input') return { notInput: 'button' };
+      calls.push(`type ${ref} ${/\.set\.call\(el, (".*?")\);/.exec(expr)?.[1]}`);
+      return { ok: true };
+    }
+    calls.push(`click ${ref}`);
+    return { ok: true };
   },
-  click: async (_id, x, y) => { calls.push(`click ${x},${y}`); },
-  insertText: async (_id, text) => { calls.push(`text ${text}`); },
-  pressKey: async (_id, key) => { calls.push(`key ${key}`); },
+  idle: async () => undefined,
   screenshot: async () => ({ data: 'AAAA', mimeType: 'image/jpeg' }),
   logs: () => ['[오류] boom', '[경고] slow'],
 };
@@ -42,7 +49,7 @@ async function call(workspaceId: string, name: string, args: unknown = {}): Prom
 beforeEach(async () => {
   calls = [];
   page = { url: '', title: '', lines: ['제목1: 할 일', '[1] 입력(text) "새 할 일"', '[2] 버튼 "추가"'], refs: 2, cut: false };
-  elements = { 1: { x: 100, y: 40, tag: 'input', type: 'text', disabled: false }, 2: { x: 300, y: 40, tag: 'button', type: '', disabled: false }, 3: { x: 1, y: 1, tag: 'button', type: '', disabled: true } };
+  elements = { 1: 'input', 2: 'button', 3: 'disabled' };
   core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), browser: driver });
   projectId = core.projects.create('쇼핑몰').id;
   const repo = await core.addRepo(projectId, makeRepo('shop'));
@@ -93,14 +100,18 @@ test('사용자가 같은 페이지를 다른 곳으로 옮겼으면 그 내용�
   expect(calls).toEqual([]);
 });
 
-test('누르기와 입력: 번호로 요소를 찾아 진짜 입력을 보내고, 바뀐 페이지를 돌려준다', async () => {
+test('누르기와 입력: 번호로 요소를 찾아 조작하고, 바뀐 페이지를 돌려준다', async () => {
   await call(ws.id, 'browser_open', { url: 'http://localhost:3000' });
   calls = [];
   expect(await call(ws.id, 'browser_type', { ref: 1, text: '우유 사기', submit: true })).toContain('주소: http://localhost:3000');
-  expect(calls).toEqual(['click 100,40', 'focus 1', 'text 우유 사기', 'key Enter']);
+  expect(calls).toEqual(['type 1 "우유 사기"', 'key Enter']);
   calls = [];
   await call(ws.id, 'browser_click', { ref: 2 });
-  expect(calls).toEqual(['click 300,40']);
+  expect(calls).toEqual(['click 2']);
+  // 따옴표와 줄바꿈이 든 글도 페이지의 글을 깨지 않고 그대로 들어간다
+  calls = [];
+  await call(ws.id, 'browser_type', { ref: 1, text: 'a"b\\c' });
+  expect(calls).toEqual(['type 1 "a\\"b\\\\c"']);
   expect(await call(ws.id, 'browser_click', { ref: 9 })).toContain('[9] 인 요소가 없다');
   expect(await call(ws.id, 'browser_click', { ref: 3 })).toContain('꺼져 있어');
   expect(await call(ws.id, 'browser_type', { ref: 2, text: 'x' })).toContain('글을 넣는 칸이 아니다');

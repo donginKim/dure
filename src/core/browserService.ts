@@ -12,12 +12,8 @@ export interface BrowserDriver {
   info(workspaceId: string): Promise<{ url: string; title: string }>;
   /** 페이지 안에서 식을 실행하고 값을 돌려준다 (JSON 으로 옮길 수 있는 값) */
   evaluate(workspaceId: string, expression: string): Promise<unknown>;
-  /** 페이지 좌표를 진짜 마우스처럼 누른다 */
-  click(workspaceId: string, x: number, y: number): Promise<void>;
-  /** 지금 초점이 있는 곳에 글을 넣는다 */
-  insertText(workspaceId: string, text: string): Promise<void>;
-  /** 키 하나를 누른다 (Enter, Tab, Escape, ArrowDown 등) */
-  pressKey(workspaceId: string, key: string): Promise<void>;
+  /** 불러오는 중이면 끝날 때까지 기다린다 (누른 것이 다른 페이지로 넘어가게 했을 때) */
+  idle(workspaceId: string): Promise<void>;
   /** 보이는 화면을 그림으로 (base64) */
   screenshot(workspaceId: string): Promise<{ data: string; mimeType: string }>;
   /** 최근의 콘솔 경고·오류와 불러오지 못한 것 */
@@ -105,14 +101,73 @@ export const SNAPSHOT_SCRIPT = `(() => {
   return { url: location.href, title: document.title, lines, refs: n, cut };
 })()`;
 
-/** ref 가 붙은 요소를 화면에 보이게 하고 가운데 좌표를 돌려준다. */
-const locate = (ref: number): string => `(() => {
-  const el = document.querySelector('[data-dure-ref="${ref}"]');
-  if (!el) return null;
+/*
+ * 누르기와 입력은 페이지 안에서 도는 글로 한다 (진짜 마우스·키보드 입력을 보내지 않는다).
+ * 이유: 보기에 나와 있지 않은 페이지는 Chromium 이 숨은 것으로 다뤄 진짜 입력을 버리거나 한참 뒤에 처리한다 (실측).
+ * 에이전트는 사용자가 다른 화면을 보는 동안에도 페이지를 써야 한다. 한계: 드래그, 마우스를 올려야 나오는 메뉴 같은 것은 되지 않는다.
+ */
+const FIND = (ref: number): string => `const el = document.querySelector('[data-dure-ref="${ref}"]'); if (!el) return { missing: true };`;
+
+/** 요소를 누른다: 누르는 동안의 이벤트를 차례로 내고, 기본 동작(링크 이동, 체크, 폼 보내기)이 일어나게 click() 을 부른다. */
+const CLICK = (ref: number): string => `(() => {
+  ${FIND(ref)}
+  if (el.disabled || el.getAttribute('aria-disabled') === 'true') return { disabled: true };
   el.scrollIntoView({ block: 'center', inline: 'center' });
   const r = el.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), tag: el.tagName.toLowerCase(), type: el.getAttribute('type') || '', disabled: !!el.disabled };
+  const at = { bubbles: true, cancelable: true, composed: true, view: window, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 };
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...at, pointerType: 'mouse', isPrimary: true }));
+  el.dispatchEvent(new MouseEvent('mousedown', at));
+  if (typeof el.focus === 'function') el.focus();
+  el.dispatchEvent(new PointerEvent('pointerup', { ...at, pointerType: 'mouse', isPrimary: true }));
+  el.dispatchEvent(new MouseEvent('mouseup', at));
+  el.click();
+  return { ok: true };
 })()`;
+
+/** 입력칸의 값을 바꾼다. 화면 라이브러리(React 등)가 알아채도록 원래의 값 넣기 함수를 쓰고 input, change 이벤트를 낸다. */
+const TYPE = (ref: number, text: string): string => `(() => {
+  ${FIND(ref)}
+  const tag = el.tagName.toLowerCase();
+  if (tag !== 'input' && tag !== 'textarea') return { notInput: tag };
+  if (el.disabled || el.readOnly) return { disabled: true };
+  el.scrollIntoView({ block: 'center', inline: 'center' });
+  el.focus();
+  const proto = tag === 'input' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(text)});
+  el.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText', data: ${JSON.stringify(text)} }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  return { ok: true };
+})()`;
+
+/** 초점이 있는 곳에 키를 누른다. 키 이벤트를 내고, 페이지가 막지 않았으면 그 키의 기본 동작을 흉내 낸다. */
+const PRESS = (key: string): string => `(() => {
+  const key = ${JSON.stringify(key)};
+  const codes = { Enter: 13, Tab: 9, Escape: 27, Backspace: 8, Delete: 46, Space: 32, ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, PageUp: 33, PageDown: 34, Home: 36, End: 35 };
+  const el = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+  const init = { key: key === 'Space' ? ' ' : key, code: key, keyCode: codes[key], which: codes[key], bubbles: true, cancelable: true, composed: true };
+  const went = el.dispatchEvent(new KeyboardEvent('keydown', init));
+  if (went && (key === 'Enter' || key === 'Space')) el.dispatchEvent(new KeyboardEvent('keypress', init));
+  if (went) {
+    const tag = el.tagName.toLowerCase();
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (key === 'Enter') {
+      if (tag === 'button' || tag === 'a' || tag === 'summary' || (tag === 'input' && ['submit', 'button', 'checkbox', 'radio'].includes(type))) el.click();
+      else if (tag === 'input' && el.form) { if (el.form.requestSubmit) el.form.requestSubmit(); else el.form.submit(); }
+    } else if (key === 'Space') {
+      if (tag === 'button' || (tag === 'input' && ['submit', 'button', 'checkbox', 'radio'].includes(type))) el.click();
+    } else if (key === 'Tab') {
+      const all = [...document.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')].filter((x) => !x.disabled && x.tabIndex >= 0 && x.getClientRects().length > 0);
+      const next = all[(all.indexOf(el) + 1) % Math.max(1, all.length)];
+      if (next) next.focus();
+    } else if (key === 'PageDown' || key === 'PageUp') window.scrollBy(0, (key === 'PageDown' ? 1 : -1) * window.innerHeight * 0.9);
+    else if (key === 'Home') window.scrollTo(0, 0);
+    else if (key === 'End') window.scrollTo(0, document.documentElement.scrollHeight);
+  }
+  el.dispatchEvent(new KeyboardEvent('keyup', init));
+  return { ok: true };
+})()`;
+
+type Acted = { ok?: boolean; missing?: boolean; disabled?: boolean; notInput?: string } | null;
 
 export interface PageSnapshot { url: string; title: string; text: string; refs: number }
 
@@ -165,20 +220,31 @@ export class BrowserService {
     return { url: r.url, title: String(r.title ?? '').slice(0, 200), text: text || '(보이는 내용이 없다)', refs: r.refs };
   }
 
-  private async point(workspaceId: string, ref: number): Promise<{ x: number; y: number; tag: string; type: string }> {
-    if (!Number.isInteger(ref) || ref < 1) throw new Error('ref 는 browser_snapshot 이 붙인 번호다.');
-    const at = await this.d.driver.evaluate(workspaceId, locate(ref)) as { x: number; y: number; tag: string; type: string; disabled: boolean } | null;
-    if (!at) throw new Error(`[${ref}] 인 요소가 없다. 페이지가 바뀌었을 수 있다: browser_snapshot 으로 다시 읽어라.`);
-    if (at.disabled) throw new Error(`[${ref}] 는 꺼져 있어 쓸 수 없다.`);
-    return at;
+  /** 누른 뒤 화면이 바뀔 틈을 준다. 다른 페이지로 넘어가는 중이면 다 불러올 때까지 기다린다 (그 전에 읽으면 번호가 옛 페이지에 붙는다). */
+  private async settle(workspaceId: string): Promise<void> {
+    await sleep(300);
+    await this.d.driver.idle(workspaceId).catch(() => undefined);
+    await sleep(150);
+  }
+
+  /** 페이지 안에서 한 조작의 결과를 보고, 안 됐으면 이유를 던진다. */
+  private acted(r: Acted, ref: number): void {
+    if (!r) throw new Error('페이지에서 조작하지 못했다.');
+    if (r.missing) throw new Error(`[${ref}] 인 요소가 없다. 페이지가 바뀌었을 수 있다: browser_snapshot 으로 다시 읽어라.`);
+    if (r.disabled) throw new Error(`[${ref}] 는 꺼져 있어 쓸 수 없다.`);
+    if (r.notInput) throw new Error(`[${ref}] 는 글을 넣는 칸이 아니다 (${r.notInput}).`);
+  }
+
+  private ref(ref: number): number {
+    if (!Number.isInteger(ref) || ref < 1 || ref > 100_000) throw new Error('ref 는 browser_snapshot 이 붙인 번호다.');
+    return ref;
   }
 
   async click(workspaceId: string, ref: number): Promise<PageSnapshot> {
     this.check(workspaceId);
     await this.here(workspaceId);
-    const at = await this.point(workspaceId, ref);
-    await this.d.driver.click(workspaceId, at.x, at.y);
-    await settle();
+    this.acted(await this.d.driver.evaluate(workspaceId, CLICK(this.ref(ref))) as Acted, ref);
+    await this.settle(workspaceId);
     return this.snapshot(workspaceId);
   }
 
@@ -186,14 +252,9 @@ export class BrowserService {
     this.check(workspaceId);
     await this.here(workspaceId);
     if (typeof text !== 'string' || text.length > 5000) throw new Error('넣을 글은 5000자까지다.');
-    const at = await this.point(workspaceId, ref);
-    if (!['input', 'textarea'].includes(at.tag)) throw new Error(`[${ref}] 는 글을 넣는 칸이 아니다 (${at.tag}).`);
-    await this.d.driver.click(workspaceId, at.x, at.y);
-    // 있던 글을 고르고 새 글로 바꾼다.
-    await this.d.driver.evaluate(workspaceId, `(() => { const el = document.querySelector('[data-dure-ref="${ref}"]'); if (el) { el.focus(); if (el.select) el.select(); } return true; })()`);
-    await this.d.driver.insertText(workspaceId, text);
-    if (o.submit) await this.d.driver.pressKey(workspaceId, 'Enter');
-    await settle();
+    this.acted(await this.d.driver.evaluate(workspaceId, TYPE(this.ref(ref), text)) as Acted, ref);
+    if (o.submit) await this.d.driver.evaluate(workspaceId, PRESS('Enter'));
+    await this.settle(workspaceId);
     return this.snapshot(workspaceId);
   }
 
@@ -201,8 +262,8 @@ export class BrowserService {
     this.check(workspaceId);
     await this.here(workspaceId);
     if (!(BROWSER_KEYS as readonly string[]).includes(key)) throw new Error(`누를 수 있는 키: ${BROWSER_KEYS.join(', ')}`);
-    await this.d.driver.pressKey(workspaceId, key);
-    await settle();
+    await this.d.driver.evaluate(workspaceId, PRESS(key));
+    await this.settle(workspaceId);
     return this.snapshot(workspaceId);
   }
 
@@ -222,5 +283,4 @@ export class BrowserService {
   }
 }
 
-/** 누른 뒤 화면이 바뀔 틈을 준다. */
-const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 400));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));

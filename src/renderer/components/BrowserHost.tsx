@@ -4,7 +4,10 @@ import { browserStore, webviewId, type BrowserEntry } from '../browserStore';
 
 interface WebviewEl extends HTMLElement { getWebContentsId(): number }
 
-/** 페이지 하나. 자리가 있으면 그 자리에, 없으면 화면 밖에 둔다 (숨기면 그려지지 않아 에이전트가 화면을 찍을 수 없다). */
+/**
+ * 페이지 하나. 자리가 있으면 그 자리에 둔다. 없으면 창의 왼쪽 위 모서리에 두고 2x2 픽셀만, 거의 투명하게 그리게 한다.
+ * 숨기거나, 창 밖으로 빼거나, 다른 것으로 완전히 가리면 Chromium 이 그 페이지를 그리지 않아 에이전트가 화면을 찍을 수 없다 (실측).
+ */
 function Page({ entry }: { entry: BrowserEntry }) {
   useEffect(() => {
     const el = document.getElementById(webviewId(entry.workspaceId)) as WebviewEl | null;
@@ -18,7 +21,7 @@ function Page({ entry }: { entry: BrowserEntry }) {
   const r = entry.rect;
   const style = r
     ? { position: 'fixed', left: r.left, top: r.top, width: r.width, height: r.height, zIndex: 5 }
-    : { position: 'fixed', left: -20000, top: 0, width: 1280, height: 800, zIndex: -1 };
+    : { position: 'fixed', left: 0, top: 0, width: 1280, height: 800, zIndex: 5, pointerEvents: 'none', opacity: 0.01, clipPath: 'inset(0 1278px 798px 0)' };
   // 로그인 정보는 두레 전용 저장소에 따로 둔다 (다른 브라우저와 섞이지 않는다).
   return createElement('webview', { id: webviewId(entry.workspaceId), src: entry.url, partition: 'persist:dure-browser', className: 'browser-view', style });
 }

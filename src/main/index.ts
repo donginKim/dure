@@ -25,6 +25,8 @@ function createWindow(): void {
       nodeIntegration: false,
       // 워크스페이스의 "브라우저" 보기 (개발 서버를 앱 안에서 본다)
       webviewTag: true,
+      // 창이 가려져 있어도 화면을 늦추지 않는다: 사용자가 다른 앱을 쓰는 동안에도 에이전트가 브라우저 페이지를 쓰고 화면을 찍는다.
+      backgroundThrottling: false,
     },
   });
   // 내장 브라우저는 두레의 권한을 갖지 않는 보통의 웹 페이지다: preload 와 node 를 붙이지 않고, http·https 만 연다.
@@ -40,7 +42,13 @@ function createWindow(): void {
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
   }
+  // 검증용: 창을 최소화한 채로 띄운다 (가려진 창에서의 동작을 확인할 때).
+  if (process.env.DURE_START_MINIMIZED) win.once('ready-to-show', () => win.minimize());
 }
+
+// 두레 창이 다른 창에 가려지거나 최소화돼도 Chromium 이 화면 그리기를 멈추지 않게 한다 (에이전트의 브라우저 조작과 화면 찍기가 그때도 돼야 한다).
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 async function start(): Promise<void> {
   await app.whenReady();

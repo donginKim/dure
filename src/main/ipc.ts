@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron';
 import { isTerminalReply } from '@core/agents/trustPrompt';
 import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
@@ -55,6 +55,14 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'update.status': () => core.updates.status(),
+    'update.check': () => core.updates.check(),
+    'update.apply': () => {
+      core.updates.apply();
+      // 스크립트는 앱이 꺼지기를 기다린다. 응답이 화면에 닿은 뒤에 끈다 (에이전트와 터미널은 종료 과정에서 정리된다).
+      setTimeout(() => app.quit(), 300);
+    },
+    'update.dismiss': () => core.updates.dismissLast(),
     'slack.status': () => core.slack.status(),
     'slack.connect': (token: string) => core.slack.connect(String(token ?? '')),
     'slack.disconnect': () => core.slack.disconnect(),
@@ -244,6 +252,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onCleanupChanged = (): void => changed('cleanup');
   const onDbChanged = (): void => changed('db');
   const onSlackChanged = (): void => changed('slack');
+  const onUpdateChanged = (): void => changed('update');
   const onBrowserChanged = (): void => changed('browser');
   const onPeersChanged = (): void => changed('peers');
   // 승인으로 새 저장소가 등록될 수 있다.
@@ -264,6 +273,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.cleanup.on('changed', onCleanupChanged);
   core.dbs.on('changed', onDbChanged);
   core.slack.on('changed', onSlackChanged);
+  core.updates.on('changed', onUpdateChanged);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
   core.assignments.on('changed', onPeersChanged);
@@ -283,6 +293,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.cleanup.off('changed', onCleanupChanged);
     core.dbs.off('changed', onDbChanged);
     core.slack.off('changed', onSlackChanged);
+    core.updates.off('changed', onUpdateChanged);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);
     core.assignments.off('changed', onPeersChanged);

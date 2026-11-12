@@ -13,6 +13,7 @@ import { BrowserService, noBrowser, type BrowserDriver } from './browserService'
 import { dbTools } from './mcp/tools/db';
 import { slackTools } from './mcp/tools/slack';
 import { SlackService } from './slackService';
+import { UpdateService } from './updateService';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
 import { cleanupTools } from './mcp/tools/cleanup';
@@ -52,6 +53,7 @@ export interface Core {
   coordinator: CoordinatorService;
   dbs: DbService;
   slack: SlackService;
+  updates: UpdateService;
   browser: BrowserService;
   peers: PeerService;
   assignments: AssignmentService;
@@ -95,6 +97,10 @@ export interface CoreOptions {
   secrets?: SecretBox;
   /** 시험용: DB 실행기를 가짜로 바꾸고, 승인을 기다리는 시간을 줄인다 */
   dbRunner?: ConstructorParameters<typeof DbService>[0]['runner'];
+  /** 지금 돌고 있는 앱 묶음의 경로 (…/Dure.app). 묶인 앱일 때만 준다: 소스에서 설치한 앱의 업데이트에 쓴다 */
+  runningApp?: string | null;
+  /** false 면 업데이트 뒤 앱을 다시 켜지 않는다 (검증용) */
+  updateReopen?: boolean;
   /** 시험에서 가짜 슬랙으로 바꾼다 */
   slackFetch?: ConstructorParameters<typeof SlackService>[0]['fetch'];
   dbWaitMs?: number;
@@ -201,6 +207,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
   const slack: SlackService = new SlackService({ db, workspaces, messages, secrets: o.secrets ?? noSecrets, fetch: o.slackFetch, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   service.on('changed', (id: string) => { if (!workspaces.get(id)) slack.dropWorkspace(id); });
+  const updates = new UpdateService({ git, dataDir: o.dataDir, infoPath: join(o.dataDir, 'install.json'), runningApp: o.runningApp ?? null, env: o.baseEnv, reopen: o.updateReopen });
+  updates.start();
   const browser = new BrowserService({ driver: o.browser ?? noBrowser, workspaces, messages, waitMs: o.browserWaitMs, settings: () => settings.get(), isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   service.on('changed', (id: string) => { if (!workspaces.get(id)) browser.dropWorkspace(id); });
   const noTransport: PeerTransport = {
@@ -252,7 +260,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {
@@ -368,6 +376,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       messages.off('sent', onSent);
       messages.off('released', onReleased);
       service.detach();
+      updates.dispose();
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();

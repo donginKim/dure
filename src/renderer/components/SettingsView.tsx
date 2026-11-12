@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { ClaudeEffort, ModelChoice, Settings } from '@shared/types';
 import { BYPASS_WARNING } from './dialogs';
 import { SlackSettings } from './SlackSettings';
+import { UpdateSettings } from './UpdateNotice';
 
 type Key = keyof Settings;
 
@@ -239,6 +240,7 @@ export function SettingsView() {
       </div>
 
       <SlackSettings />
+      <UpdateSettings />
 
       <div className="section">
         <div className="section-head"><h2>에이전트끼리의 대화</h2></div>

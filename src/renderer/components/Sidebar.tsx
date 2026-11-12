@@ -1,3 +1,4 @@
+import { UpdateNotice } from './UpdateNotice';
 import { useState, type ReactNode } from 'react';
 import type { Project, Repo, Todo, Workspace } from '@shared/types';
 import { deliveryNote } from '../conversationView';
@@ -123,6 +124,7 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
           </>
         )}
       </div>
+      <UpdateNotice />
       <button className={`side-settings side-people${selection?.type === 'people' ? ' selected' : ''}`} title="두레를 쓰는 다른 사람과 연결합니다" onClick={() => onSelect({ type: 'people' })}>
         <span className="gear" aria-hidden>◎</span>사람{peopleAlert > 0 && <span className="pip" title="확인할 요청이나 초대가 있습니다" />}
       </button>

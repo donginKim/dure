@@ -655,3 +655,19 @@ export type SlackAccess = 'ask' | 'auto' | 'off';
 export interface SlackStatus { connected: boolean; team: string; user: string; access: SlackAccess }
 /** 에이전트가 올린, 결정을 기다리는 슬랙 읽기 요청. 두레를 다시 켜면 사라진다 */
 export interface SlackRequest { id: string; projectId: string; workspaceId: string; /** 무엇을 읽으려는지 (사용자에게 보이는 글) */ what: string; createdAt: number }
+
+// ---- 업데이트 (소스에서 설치한 앱) ----
+export interface UpdateStatus {
+  /** 여기서 업데이트할 수 있는 앱인가 (scripts/install.sh 로 넣은 앱이고, 그 소스 폴더가 남아 있다) */
+  supported: boolean;
+  sourceDir: string;
+  /** 설치된 판 (커밋의 앞 7자) */
+  installed: string;
+  available: boolean;
+  /** 새로 들어온 커밋의 수와 그 제목들 */
+  behind: number; changes: string[];
+  checkedAt: number | null; checking: boolean; error?: string;
+  /** 지난 업데이트의 결과 (사용자가 닫을 때까지 남는다) */
+  last: { ok: boolean; at: number } | null;
+  logPath: string;
+}

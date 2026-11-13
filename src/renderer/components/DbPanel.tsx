@@ -81,10 +81,21 @@ function Browser({ conn }: { conn: DbConnection }) {
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
 
+  // Oracle: 볼 계정(스키마). 비우면 내 것과 다른 계정 것을 함께 받는다 (큰 DB 에서는 느릴 수 있다).
+  const [schema, setSchema] = useState('');
+  const [schemas, setSchemas] = useState<string[]>([]);
+  useEffect(() => {
+    setSchema(''); setSchemas([]);
+    if (conn.kind === 'oracle') window.dure.db.schemas(conn.id).then(setSchemas).catch(() => setSchemas([]));
+  }, [conn.id, conn.kind]);
+  const tablesSeq = useRef(0);
   const loadTables = useCallback(() => {
     setTables(null); setTablesError('');
-    window.dure.db.tables(conn.id).then(setTables).catch((e: Error) => setTablesError(e.message));
-  }, [conn.id]);
+    const seq = ++tablesSeq.current;
+    window.dure.db.tables(conn.id, schema || undefined)
+      .then((t) => { if (seq === tablesSeq.current) setTables(t); })
+      .catch((e: Error) => { if (seq === tablesSeq.current) setTablesError(e.message); });
+  }, [conn.id, schema]);
   useEffect(() => { loadTables(); }, [loadTables]);
 
   const [columnsError, setColumnsError] = useState('');
@@ -111,6 +122,14 @@ function Browser({ conn }: { conn: DbConnection }) {
           <input type="text" value={filter} placeholder="표 찾기" onChange={(e) => setFilter(e.target.value)} />
           <button className="btn ghost" title="표 목록을 다시 읽습니다" onClick={loadTables}>새로 고침</button>
         </div>
+        {conn.kind === 'oracle' && schemas.length > 0 && (
+          <div className="db-tables-head">
+            <select value={schema} title="볼 계정(스키마)을 고릅니다" onChange={(e) => { setSchema(e.target.value); setPicked(null); setColumns(null); }}>
+              <option value="">내 계정 + 다른 계정 전부</option>
+              {schemas.map((x) => <option key={x} value={x}>{x}{x.toUpperCase() === conn.user.toUpperCase() ? ' (내 계정)' : ''}</option>)}
+            </select>
+          </div>
+        )}
         <div className="db-tables-list">
           {tablesError && <div className="error">{tablesError}</div>}
           {!tables && !tablesError && <div className="muted">표 목록을 읽는 중…</div>}

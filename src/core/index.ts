@@ -385,6 +385,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   });
   // 합치기 도우미: 워크스페이스 브랜치들을 차례로 합쳐 보고, 합치기 브랜치를 만들어 확인한 뒤, 사용자가 누르면 기준 브랜치를 옮긴다.
   const merges = new MergeService({
+    db,
     repos, workspaces, git, messages, todos: (id) => todos.listProject(id), worktreeRoot: o.worktreeRoot, env: o.baseEnv,
     run: o.verifyRunner ?? shellRunner, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, isProjectClosed: (id) => service.isProjectClosed(id),
   });
@@ -401,7 +402,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     }
   });
   // 자동 반영: 확인 명령, 리뷰, 비밀 값을 거쳐 커밋하고, 설정이면 기준 브랜치까지 옮긴다.
-  const autoShip = new AutoShipService({ projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
+  const autoShip = new AutoShipService({ db, projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
   autoShip.on('changed', () => attention.poke());
   const activity = new ActivityService({ workspaces, messages, todos, git, chat, verify, review, autoShip, figures });
   budget.on('changed', () => attention.poke());

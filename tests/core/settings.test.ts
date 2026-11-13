@@ -101,3 +101,11 @@ test('expandHome', () => {
   expect(expandHome('/x/y')).toBe('/x/y');
   expect(expandHome('')).toBe('');
 });
+
+test('로그인할 때 켜기: 처음에는 꺼져 있고, 켜고 끌 수 있으며, 참·거짓이 아니면 받지 않는다', () => {
+  const s = fresh();
+  expect(s.get().openAtLogin).toBe(false);
+  expect(s.update({ openAtLogin: true }).openAtLogin).toBe(true);
+  expect(() => s.update({ openAtLogin: 'yes' as never })).toThrow();
+  expect(s.get().openAtLogin).toBe(true);
+});

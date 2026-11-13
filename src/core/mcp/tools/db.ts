@@ -28,9 +28,9 @@ export const dbTools: ToolBundle = (server, ctx, deps) => {
 
   server.registerTool(
     'db_tables',
-    { description: 'DB 연결의 표와 뷰 목록을 돌려준다 (mongo 연결은 컬렉션과 뷰).', inputSchema: { connection: z.string().describe('db_list 가 돌려준 연결 이름') } },
-    async ({ connection }) => {
-      try { return ok({ tables: await deps.dbs.agentTables(ctx.project.id, connection) }); } catch (e) { return fail(e); }
+    { description: 'DB 연결의 표와 뷰 목록을 돌려준다 (mongo 연결은 컬렉션과 뷰). oracle 은 schema 에 계정 이름을 주면 그 계정의 것만 받는다.', inputSchema: { connection: z.string().describe('db_list 가 돌려준 연결 이름'), schema: z.string().max(128).optional().describe('oracle 에서 볼 계정(스키마) 이름. 비우면 접속 계정 것과 다른 계정 것을 함께') } },
+    async ({ connection, schema }) => {
+      try { return ok({ tables: await deps.dbs.agentTables(ctx.project.id, connection, schema) }); } catch (e) { return fail(e); }
     },
   );
 

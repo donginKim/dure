@@ -318,6 +318,9 @@ export function SettingsView() {
       <div className="section">
         <div className="section-head"><h2>커밋</h2></div>
         <div className="set-box">
+          <Row label="Mac 에 로그인하면 두레 켜기" help="로그인할 때 두레를 저절로 켭니다 (창은 최소화해서). 근무시간이 출근부터 잡히고, 에이전트에게 온 메시지를 놓치지 않습니다." {...row('openAtLogin')}>
+            <Toggle on={s.openAtLogin} onChange={(v) => save('openAtLogin', v)} label="Mac 에 로그인하면 두레 켜기" />
+          </Row>
           <Row label="커밋·push 뒤 에이전트에게 알리기" help="커밋 창에서 커밋하거나 push 하면 켜져 있는 에이전트에게 알려, 관련 할 일을 정리하게 합니다." {...row('notifyAgentOnCommit')}>
             <Toggle on={s.notifyAgentOnCommit} onChange={(v) => save('notifyAgentOnCommit', v)} label="커밋·push 뒤 에이전트에게 알리기" />
           </Row>

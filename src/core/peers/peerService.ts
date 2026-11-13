@@ -37,6 +37,31 @@ interface Pending {
   id: string; peerId: string; name: string; pub: string; address: string; direction: 'in' | 'out'; createdAt: number;
   commit: string; myNonce: string; theirNonce: string; mine: boolean; theirs: boolean; host: string;
 }
+/**
+ * DB 에도 적어 두는 Map: 연결 요청과 초대는 몇 분 동안 살아 있다. 그사이 두레를 다시 켜도 (업데이트 등) 사라지지 않게 한다.
+ * 값을 그 자리에서 고친 뒤에는 save() 를 부른다.
+ */
+class StoredMap<V> extends Map<string, V> {
+  private loading = true;
+  constructor(private readonly db: Database.Database, private readonly kind: string) {
+    super();
+    for (const r of db.prepare('SELECT id, data FROM peer_pending WHERE kind = ?').all(kind) as { id: string; data: string }[]) {
+      try { super.set(r.id, JSON.parse(r.data) as V); } catch { /* 깨진 것은 버린다 */ }
+    }
+    this.loading = false;
+  }
+  save(): void {
+    if (this.loading) return;
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM peer_pending WHERE kind = ?').run(this.kind);
+      const add = this.db.prepare('INSERT INTO peer_pending (kind, id, data) VALUES (?, ?, ?)');
+      for (const [id, v] of this) add.run(this.kind, id, JSON.stringify(v));
+    })();
+  }
+  override set(k: string, v: V): this { super.set(k, v); this.save(); return this; }
+  override delete(k: string): boolean { const r = super.delete(k); if (r) this.save(); return r; }
+  override clear(): void { super.clear(); this.save(); }
+}
 interface MemberRow { share_id: string; peer_id: string; state: string; pub: string | null; address: string }
 interface WireArtifact { kind: string; title: string; body: string }
 
@@ -138,8 +163,8 @@ export class PeerService extends EventEmitter {
   private port: number | null = null;
   private error: string | undefined;
   private applying: Promise<void> = Promise.resolve();
-  private readonly pending = new Map<string, Pending>();
-  private readonly invites = new Map<string, ShareInvite>();
+  private readonly pending: StoredMap<Pending>;
+  private readonly invites: StoredMap<ShareInvite>;
   private readonly seen = new Map<string, { name: string; address: string }>();
   private readonly rate = new Map<string, number[]>();
   private readonly keys = new Map<string, Buffer>();
@@ -156,6 +181,10 @@ export class PeerService extends EventEmitter {
     isProjectClosed(projectId: string): boolean;
   }) {
     super();
+    this.pending = new StoredMap<Pending>(d.db, 'pair');
+    this.invites = new StoredMap<ShareInvite>(d.db, 'invite');
+    // 요청을 그 자리에서 고친 것(확인 눌림 등)도 적어 둔다.
+    this.on('changed', () => { this.pending.save(); this.invites.save(); });
     d.messages.useRemoteNames((ref) => this.nameOf(ref));
   }
 

@@ -5,7 +5,7 @@ import { remoteLabel } from '@shared/remote';
 import type { AssignChoice, AssignItem, AssignmentIn, AssignmentOut, AssignProgress, Board, BoardGoal, BoardPerson, BoardWork, PlanTodo, TodoStatus, Workspace, Brief } from '@shared/types';
 import type { CoordinatorService, SuggestedPlan } from './coordinator';
 import type { MessageService } from './messages';
-import type { PeerService } from './peers/peerService';
+import { PeerOfflineError, type PeerService } from './peers/peerService';
 import type { ProjectStore, RepoStore, WorkspaceStore } from './stores';
 import type { TodoService } from './todos';
 import { COORDINATOR_NAME, type WorkspaceService } from './workspaceService';
@@ -104,7 +104,7 @@ export class AssignmentService extends EventEmitter {
     d.todos.on('changed', () => { this.progressSoon(); this.boardSoon(); });
     d.service.on('changed', () => { this.progressSoon(); this.boardSoon(); });
     // 누가 들어오거나 다시 켜지면 그 사람에게도 현황판이 가야 한다.
-    d.peers.on('changed', () => this.boardSoon());
+    d.peers.on('changed', () => { this.boardSoon(); void this.resendResults().catch(() => undefined); });
     this.on('changed', () => this.boardSoon());
     // 다른 사람에게 나눠 준 일도 프로젝트 TODO 에 딸린 일로 센다.
     d.todos.setExtraChildren((projectId, parentId) => this.counted(projectId).flatMap((w) => w.todos).filter((t) => t.goal === parentId).map((t) => ({ status: STATUSES.includes(t.status as TodoStatus) ? t.status as TodoStatus : 'unknown' as const })));
@@ -130,9 +130,48 @@ export class AssignmentService extends EventEmitter {
     }
   }
 
-  /** 제안한 사람에게 결과를 알린다 (리더가 승인하거나 거절했을 때). */
+  /**
+   * 제안한 사람에게 결과를 알린다 (리더가 승인하거나 거절했을 때). 먼저 적어 두고 보낸다:
+   * 그 사람이 꺼져 있으면 닿을 때 (다시 켜져 보이거나, 무엇이 바뀔 때) 다시 보낸다. 상대가 답했으면 (받았든 거절했든) 지운다.
+   */
   async result(projectId: string, peerId: string, sid: string, state: 'approved' | 'rejected', reason: string): Promise<void> {
-    await this.d.peers.sendMember(projectId, peerId, { type: 'plan.result', sid, state, reason: oneLine(reason, 300) });
+    this.d.db.prepare('INSERT INTO plan_results_out (sid, project_id, peer_id, state, reason, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(sid) DO UPDATE SET state = excluded.state, reason = excluded.reason')
+      .run(sid, projectId, peerId, state, oneLine(reason, 300), Date.now());
+    const sent = await this.sendResult(sid);
+    if (sent instanceof Error) throw sent;
+  }
+
+  /** 적어 둔 결과 하나를 보낸다. 닿지 않았으면 그 오류를 돌려주고 남겨 둔다. */
+  private async sendResult(sid: string): Promise<true | Error> {
+    const r = this.d.db.prepare('SELECT * FROM plan_results_out WHERE sid = ?').get(sid) as { project_id: string; peer_id: string; state: string; reason: string } | undefined;
+    if (!r) return true;
+    try {
+      await this.d.peers.sendMember(r.project_id, r.peer_id, { type: 'plan.result', sid, state: r.state, reason: r.reason });
+    } catch (e) {
+      if (e instanceof PeerOfflineError) return e;
+      // 상대가 답하고 거절했거나 (이미 받았다 등) 더는 함께하는 사람이 아니다: 다시 보내도 소용없다.
+    }
+    this.d.db.prepare('DELETE FROM plan_results_out WHERE sid = ?').run(sid);
+    return true;
+  }
+
+  private resending = false;
+  /** 아직 닿지 않은 결과를 다시 보낸다. 2주가 지난 것은 버린다. */
+  async resendResults(): Promise<void> {
+    if (this.resending) return;
+    this.resending = true;
+    try {
+      this.d.db.prepare('DELETE FROM plan_results_out WHERE created_at < ?').run(Date.now() - 14 * 24 * 3_600_000);
+      const rows = this.d.db.prepare('SELECT sid, peer_id FROM plan_results_out ORDER BY created_at LIMIT 50').all() as { sid: string; peer_id: string }[];
+      // 지금 닿는 사람의 것만 (꺼진 사람에게 매번 두드리지 않는다).
+      const online = new Set(this.d.projects.list().flatMap((p) => this.d.peers.people(p.id).filter((x) => x.online).map((x) => x.peerId)));
+      for (const r of rows) if (online.has(r.peer_id)) await this.sendResult(r.sid);
+    } finally { this.resending = false; }
+  }
+
+  /** 아직 보내지 못한 결과의 수 (그 프로젝트). */
+  pendingResults(projectId: string): number {
+    return (this.d.db.prepare('SELECT count(*) AS n FROM plan_results_out WHERE project_id = ?').get(projectId) as { n: number }).n;
   }
 
   private onPlanResult(peer: { id: string; name: string }, p: Record<string, unknown>, projectId: string): unknown {

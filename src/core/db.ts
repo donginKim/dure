@@ -451,6 +451,10 @@ const MIGRATIONS: string[] = [
   `
   CREATE TABLE share_leader_notice (share_id TEXT NOT NULL, peer_id TEXT NOT NULL, leader TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (share_id, peer_id));
   `,
+  // 계획안 제안의 결과 (리더 → 제안한 사람). 닿을 때까지 다시 보낸다.
+  `
+  CREATE TABLE plan_results_out (sid TEXT PRIMARY KEY, project_id TEXT NOT NULL, peer_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

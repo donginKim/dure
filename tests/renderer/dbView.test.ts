@@ -1,5 +1,5 @@
 import type { DbConnection } from '@shared/types';
-import { cellText, emptyForm, formOf, formProblem, previewSql, toInput } from '../../src/renderer/dbView';
+import { cellText, DEFAULT_PORT, emptyForm, formOf, formProblem, KIND_LABEL, previewSql, toInput } from '../../src/renderer/dbView';
 
 const conn: DbConnection = { id: 'c1', projectId: 'p1', name: '운영', kind: 'mysql', host: 'db', port: 3306, database: 'shop', user: 'reader', ssl: true, agentAccess: 'auto', hasPassword: true, createdAt: 1 };
 
@@ -35,4 +35,14 @@ test('previewSql: 이름을 그 DB 의 방식으로 감싼다', () => {
 
 test('cellText', () => {
   expect([null, true, false, 0, 'x'].map(cellText)).toEqual(['NULL', 'true', 'false', '0', 'x']);
+});
+
+test('Oracle: 기본 포트, 서비스 이름이 있어야 한다, 미리 보기 문장은 ROWNUM 으로 줄인다', () => {
+  expect(DEFAULT_PORT.oracle).toBe(1521);
+  expect(KIND_LABEL.oracle).toBe('Oracle');
+  const f = { ...emptyForm(), kind: 'oracle' as const, name: 'ora', user: 'reader', port: '1521' };
+  expect(formProblem(f)).toContain('서비스 이름');
+  expect(formProblem({ ...f, database: 'ORCLPDB1' })).toBeNull();
+  expect(previewSql('oracle', { schema: 'READER', name: 'ITEMS', type: 'table' })).toBe('SELECT * FROM "READER"."ITEMS" WHERE ROWNUM <= 100');
+  expect(previewSql('oracle', { schema: '', name: 'ITEMS', type: 'table' })).toBe('SELECT * FROM "ITEMS" WHERE ROWNUM <= 100');
 });

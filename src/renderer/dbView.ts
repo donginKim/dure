@@ -1,7 +1,7 @@
 import type { DbAccess, DbCell, DbConnection, DbConnectionInput, DbKind, DbTable } from '@shared/types';
 
-export const KIND_LABEL: Record<DbKind, string> = { postgres: 'PostgreSQL', mysql: 'MySQL' };
-export const DEFAULT_PORT: Record<DbKind, number> = { postgres: 5432, mysql: 3306 };
+export const KIND_LABEL: Record<DbKind, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', oracle: 'Oracle' };
+export const DEFAULT_PORT: Record<DbKind, number> = { postgres: 5432, mysql: 3306, oracle: 1521 };
 export const ACCESS_LABEL: Record<DbAccess, string> = { ask: '물어보고 조회', auto: '바로 조회', off: '에이전트 사용 안 함' };
 export const ACCESS_HELP: Record<DbAccess, string> = {
   ask: '에이전트가 표 목록과 스키마는 바로 보고, 데이터를 조회할 때마다 내 승인을 받습니다.',
@@ -23,6 +23,7 @@ export function formProblem(f: DbForm): string | null {
   if (!/^\d+$/.test(f.port.trim()) || port < 1 || port > 65535) return '포트는 1~65535 사이의 숫자입니다.';
   if (!f.user.trim()) return '사용자 이름을 적으세요.';
   if (f.kind === 'postgres' && !f.database.trim()) return '데이터베이스 이름을 적으세요.';
+  if (f.kind === 'oracle' && !f.database.trim()) return '서비스 이름을 적으세요 (예: ORCLPDB1).';
   return null;
 }
 
@@ -43,6 +44,8 @@ export function toInput(f: DbForm, projectId: string, editing: DbConnection | nu
 /** 표를 누르면 조회 칸에 넣을 문장. 이름은 그 DB 의 방식으로 감싼다. */
 export function previewSql(kind: DbKind, t: DbTable): string {
   const q = (s: string): string => (kind === 'mysql' ? `\`${s.replace(/`/g, '``')}\`` : `"${s.replace(/"/g, '""')}"`);
+  // Oracle 은 LIMIT 이 없다. 옛 판에서도 되는 ROWNUM 으로 줄인다.
+  if (kind === 'oracle') return `SELECT * FROM ${t.schema ? `${q(t.schema)}.` : ''}${q(t.name)} WHERE ROWNUM <= 100`;
   const name = kind === 'postgres' && t.schema && t.schema !== 'public' ? `${q(t.schema)}.${q(t.name)}` : q(t.name);
   return `SELECT * FROM ${name} LIMIT 100`;
 }

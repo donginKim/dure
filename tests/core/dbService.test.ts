@@ -72,7 +72,9 @@ describe('DB 연결', () => {
     core.dbs.save(input());
     expect(() => core.dbs.save(input())).toThrow('이미 있는 연결 이름');
     expect(() => core.dbs.save(input({ name: ' ' }))).toThrow('연결 이름');
-    expect(() => core.dbs.save(input({ name: 'x', kind: 'oracle' as never }))).toThrow('지원하지 않는');
+    expect(() => core.dbs.save(input({ name: 'x', kind: 'sqlite' as never }))).toThrow('지원하지 않는');
+    // Oracle 은 서비스 이름이 있어야 한다
+    expect(() => core.dbs.save(input({ name: 'x', kind: 'oracle', database: '' }))).toThrow('서비스 이름');
     expect(() => core.dbs.save(input({ name: 'x', host: '' }))).toThrow('호스트');
     expect(() => core.dbs.save(input({ name: 'x', port: 70000 }))).toThrow('포트');
     expect(() => core.dbs.save(input({ name: 'x', user: '' }))).toThrow('사용자 이름');

@@ -530,7 +530,7 @@ export interface CoordinatorInfo {
 }
 
 // ---- DB 조회 (5단계) ----
-export type DbKind = 'postgres' | 'mysql';
+export type DbKind = 'postgres' | 'mysql' | 'oracle';
 /**
  * 에이전트가 이 연결을 쓰는 방식.
  * ask: 표 목록과 스키마는 바로 보고, 데이터 조회는 사용자의 승인을 받는다. auto: 바로 조회한다. off: 에이전트는 쓸 수 없다.

@@ -9,6 +9,8 @@ import type { DbKind } from '@shared/types';
 const ALLOWED: Record<DbKind, string[]> = {
   postgres: ['select', 'with', 'show', 'explain', 'table', 'values'],
   mysql: ['select', 'with', 'show', 'explain', 'describe', 'desc', 'table', 'values'],
+  // Oracle 은 읽기 전용 트랜잭션이 DDL 과 PL/SQL 을 막지 못한다: 조회 문장만 받는다 (EXPLAIN PLAN 은 표에 쓴다).
+  oracle: ['select', 'with'],
 };
 
 /**
@@ -23,7 +25,7 @@ export function skeleton(sql: string, kind: DbKind): string | null {
     const c = sql[i]!;
     const two = sql.slice(i, i + 2);
     // MySQL 은 -- 뒤에 공백이나 제어 문자가 와야 주석이다. `5 --1` 은 5 - (-1) 이다: 주석으로 보면 뒤에 숨은 글을 놓친다.
-    const dash = two === '--' && (kind === 'postgres' || i + 2 >= n || /[\s\x00-\x1f]/.test(sql[i + 2]!));
+    const dash = two === '--' && (kind !== 'mysql' || i + 2 >= n || /[\s\x00-\x1f]/.test(sql[i + 2]!));
     if (dash || (kind === 'mysql' && c === '#')) {
       const end = sql.indexOf('\n', i);
       i = end === -1 ? n : end;
@@ -81,8 +83,18 @@ export function checkReadOnly(sql: string, kind: DbKind): string {
   // 아래 낱말은 문장의 어디에 있든(글자열 안이어도) 받지 않는다. 뼈대를 만드는 규칙이 서버의 해석과 어긋나는 경우에도 놓치지 않기 위해서다.
   // 읽기 전용 트랜잭션으로 막히지 않는 것들이다: 서버 파일 읽기·쓰기, 다른 세션 끊기, 서버 설정, 다른 DB 로 나가기.
   const raw = sql.toLowerCase();
+  if (kind === 'oracle') {
+    // q'[...]' 형태의 글자열은 닫는 곳을 정하는 규칙이 달라, 글자열 안팎을 잘못 볼 수 있다.
+    if (/(^|[^a-z0-9_$#])n?q'/.test(raw)) throw new Error("q'...' 형태의 글자열은 쓸 수 없습니다. 보통의 '...' 를 쓰세요.");
+    // 문장 안에서 PL/SQL 을 선언하면 (WITH FUNCTION) 읽기 전용 트랜잭션 밖에서 쓸 수 있다.
+    if (/\bwith\s+(function|procedure)\b/.test(raw)) throw new Error('WITH FUNCTION, WITH PROCEDURE 는 쓸 수 없습니다.');
+    if (/\bfor\s+update\b/.test(raw)) throw new Error('행을 잠그는 조회(FOR UPDATE)는 쓸 수 없습니다.');
+  }
   const banned = kind === 'mysql'
     ? ['outfile', 'dumpfile', 'load_file', 'get_lock', 'benchmark']
+    : kind === 'oracle'
+      // 서버의 파일·네트워크·작업 예약·다른 세션에 닿는 꾸러미, 읽기 전용 트랜잭션 밖에서 쓰는 길, 비밀번호가 든 표.
+      ? ['utl_', 'dbms_', 'httpuritype', 'pragma', 'autonomous_transaction', 'ctxsys', 'ordsys', 'user$', 'link$', 'default_pwd$', 'nextval']
     : ['pg_read_file', 'pg_read_binary_file', 'pg_ls_', 'pg_stat_file', 'lo_export', 'lo_import', 'lo_from_bytea', 'lo_put', 'dblink', 'pg_terminate_backend', 'pg_cancel_backend',
       'pg_reload_conf', 'pg_rotate_logfile', 'pg_promote', 'replication_slot', 'pg_switch_wal', 'pg_create_restore_point', 'pg_stat_reset', 'pg_logical_emit_message', 'set_config',
       'pg_advisory', 'pg_shadow', 'pg_authid', 'copy_from', 'pg_execute_server_program'];
@@ -97,6 +109,8 @@ export function checkReadOnly(sql: string, kind: DbKind): string {
   const first = /^\(*\s*([A-Za-z]+)/.exec(body)?.[1]?.toLowerCase() ?? '';
   if (!ALLOWED[kind].includes(first)) throw new Error(`조회 전용입니다. ${ALLOWED[kind].map((w) => w.toUpperCase()).join(', ')} 로 시작하는 문장만 실행할 수 있습니다.`);
   const flat = body.toLowerCase().replace(/\s+/g, ' ');
+  // Oracle: 다른 DB 로 나가는 연결(표@링크)은 그쪽에서 무엇이 도는지 알 수 없다.
+  if (kind === 'oracle' && body.includes('@')) throw new Error('DB 링크(@)를 거치는 조회는 쓸 수 없습니다.');
   // EXPLAIN ANALYZE 는 문장을 실제로 실행한다.
   if (first === 'explain' && /\banaly[sz]e\b/.test(flat)) throw new Error('EXPLAIN ANALYZE 는 문장을 실제로 실행하므로 쓸 수 없습니다.');
   // 읽기 전용 트랜잭션으로 막히지 않는 것: 서버의 파일에 쓰기, 행 잠금.

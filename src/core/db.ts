@@ -455,6 +455,10 @@ const MIGRATIONS: string[] = [
   `
   CREATE TABLE plan_results_out (sid TEXT PRIMARY KEY, project_id TEXT NOT NULL, peer_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
   `,
+  // 리더를 넘겨 준 사람 (넘겨받은 쪽에 적는다): 넘기기 응답이 사라져 다시 보내도 받아 준다.
+  `
+  ALTER TABLE shares ADD COLUMN prev_owner TEXT;
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

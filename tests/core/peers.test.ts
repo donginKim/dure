@@ -540,7 +540,9 @@ describe('믿지 않는 것', () => {
       return (b.core.peers['d'].db.prepare('SELECT address FROM share_members WHERE share_id = ? AND peer_id = ?').get(shareId, id) as { address: string }).address;
     };
     expect(await tryAddress('192.168.0.7:47800')).toBe('192.168.0.7:47800');
-    for (const bad of ['010.8.8.8:80', '172.016.0.1:80', '127.0.0.1:5432', '8.8.8.8:80', 'evil.example.com:80', '[::1]:80', '10.0.0.5:0', '10.0.0.5:99999']) expect(await tryAddress(bad)).toBe('');
+    // VPN(Tailscale 등) 대역은 받는다
+    expect(await tryAddress('100.101.2.3:47800')).toBe('100.101.2.3:47800');
+    for (const bad of ['010.8.8.8:80', '172.016.0.1:80', '127.0.0.1:5432', '8.8.8.8:80', '100.128.0.1:80', '100.63.0.1:80', 'evil.example.com:80', '[::1]:80', '10.0.0.5:0', '10.0.0.5:99999']) expect(await tryAddress(bad)).toBe('');
     // 목록에서 빠진 사람의 기록은 쌓이지 않는다
     expect((b.core.peers['d'].db.prepare('SELECT count(*) AS n FROM peers WHERE direct = 0').get() as { n: number }).n).toBe(1);
   });
@@ -763,8 +765,44 @@ describe('리더 넘기기', () => {
     const send = (a.core.peers as unknown as { sendShare(s: string, p: string, x: unknown): Promise<Record<string, unknown>> }).sendShare.bind(a.core.peers);
     const shareId = a.core.peers.share(a.projectId)!.id;
     await expect(send(shareId, c.core.peers.status().id, { type: 'share.leader', shareId, leader: a.core.peers.status().id })).rejects.toThrow('그 프로젝트를 연 사람이 아니다');
-    await expect(send(shareId, b.core.peers.status().id, { type: 'share.lead', shareId })).rejects.toThrow('그 프로젝트를 연 사람이 아니다');
+    // 넘겨 준 가가 같은 넘기기를 다시 보내면 (응답이 사라졌을 때) 받아 주기만 하고 아무것도 바뀌지 않는다
+    expect(await send(shareId, b.core.peers.status().id, { type: 'share.lead', shareId })).toMatchObject({ ok: true });
     expect(ownerName(c)).toBe('나');
     expect(b.core.peers.share(b.projectId)!.mine).toBe(true);
   });
+
+  test('두 번 넘기는 동안 꺼져 있던 사람도 지금의 리더를 알게 된다. 넘기기의 응답이 사라져 다시 넘겨도 된다', async () => {
+    const { a, b, c } = await team();
+    const d = await node('라', '10.0.0.4'); await on(d);
+    await pair(a, d); await join2(a, d);
+    await pair(b, d);
+    await until(() => c.core.peers.share(c.projectId)!.members.length === 4);
+    const cAddr = '10.0.0.3:47800';
+    const handle = net.get(cAddr)!;
+    net.delete(cAddr);
+    // 응답이 사라진 것처럼: 나는 이미 넘겨받았는데 가는 아직 모른다
+    const send = (a.core.peers as unknown as { sendShare(s: string, p: string, x: unknown): Promise<Record<string, unknown>> }).sendShare.bind(a.core.peers);
+    const shareId = a.core.peers.share(a.projectId)!.id;
+    await send(shareId, b.core.peers.status().id, { type: 'share.lead', shareId });
+    expect(b.core.peers.share(b.projectId)!.mine).toBe(true);
+    expect(a.core.peers.share(a.projectId)!.mine).toBe(true);
+    await a.core.peers.handOver(a.projectId, b.core.peers.status().id);
+    expect(a.core.peers.share(a.projectId)!.mine).toBe(false);
+    // 나가 다시 라에게 넘긴다. 다는 아직 꺼져 있다
+    await b.core.peers.handOver(b.projectId, d.core.peers.status().id);
+    await until(() => ownerName(a) === '라');
+    expect(ownerName(c)).toBe('가');
+    // 다가 켜지면 가가 지금의 리더(라)를 알린다
+    net.set(cAddr, handle);
+    await (a.core.peers as unknown as { pingAll(): Promise<void> }).pingAll();
+    await until(() => ownerName(c) === '라');
+  });
+});
+
+test('내 주소: 같은 네트워크 주소를 먼저, VPN(100.64.0.0/10) 주소는 VPN 으로 표시한다. 자기 자신과 자동 할당 주소는 뺀다', async () => {
+  const { myAddresses } = await import('@core/peers/peerService');
+  const nic = (address: string, internal = false, family = 'IPv4') => ({ address, internal, family, netmask: '', mac: '', cidr: null }) as never;
+  expect(myAddresses(47800, { lo0: [nic('127.0.0.1', true)], utun4: [nic('100.101.2.3')], en0: [nic('192.168.0.12'), nic('fe80::1', false, 'IPv6'), nic('169.254.3.3')], en1: [nic('100.200.1.1')] })).toEqual([
+    { address: '192.168.0.12:47800', kind: 'lan' }, { address: '100.200.1.1:47800', kind: 'lan' }, { address: '100.101.2.3:47800', kind: 'vpn' },
+  ]);
 });

@@ -110,8 +110,14 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
         </div>
         {on && (
           <div className="people-manual">
-            <input type="text" value={address} placeholder="주소로 직접 연결 (예: 192.168.0.12:47800)" onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') connect(address); }} />
+            <input type="text" value={address} placeholder="주소로 직접 연결 (예: 192.168.0.12:47800, VPN 이면 100.x.x.x:47800)" onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') connect(address); }} />
             <button className="btn" disabled={busy || !address.trim()} onClick={() => connect(address)}>연결 요청</button>
+          </div>
+        )}
+        {on && (status.addresses?.length ?? 0) > 0 && (
+          <div className="help">
+            내 주소: {status.addresses!.map((a) => <span key={a.address}><code>{a.address}</code>{a.kind === 'vpn' ? ' (VPN)' : ''} </span>)}
+            <br />다른 네트워크에 있는 사람(집과 회사 등)과는 두 PC 모두 Tailscale 같은 VPN 에 들어간 뒤, VPN 주소(100.x.x.x)를 서로 알려 주고 위 칸에 적어 연결하세요. 두레는 서버를 거치지 않고 두 PC 가 직접 주고받습니다. 회사 VPN 이나 방화벽 정책은 먼저 확인하세요.
           </div>
         )}
       </div>

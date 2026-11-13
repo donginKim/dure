@@ -720,6 +720,8 @@ export interface PeerRequest {
 export interface FoundPeer { peerId: string; name: string; address: string; known: boolean }
 export interface PeerStatus {
   enabled: boolean; id: string; name: string; fingerprint: string;
+  /** 상대에게 알려 줄 내 주소들 (켜져 있을 때). vpn: Tailscale 같은 VPN 의 주소 (100.64.0.0/10) — 다른 네트워크에서도 닿는다 */
+  addresses?: { address: string; kind: 'lan' | 'vpn' }[];
   /** 듣고 있는 포트. 꺼져 있거나 열지 못했으면 null */
   port: number | null;
   /** 켰는데 열지 못한 이유 */

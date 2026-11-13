@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { networkInterfaces } from 'node:os';
 import type Database from 'better-sqlite3';
 import { USER_RECIPIENT } from '@shared/messages';
 import { PERSON_ID, parseRemoteRef, personRef, remoteLabel, remoteRef } from '@shared/remote';
@@ -26,7 +27,7 @@ export interface PeerDiscovery {
 }
 
 interface PeerRow { id: string; name: string; pub: string; address: string; mode: string; direct: number; created_at: number }
-interface ShareRow { id: string; name: string; owner_peer: string; project_id: string; created_at: number; suggest_mode?: string }
+interface ShareRow { id: string; name: string; owner_peer: string; project_id: string; created_at: number; suggest_mode?: string; prev_owner?: string | null }
 interface Envelope { v: 1; from: string; to: string; ts: number; nonce: string; box: string }
 type Payload = { id: string; type: string; port?: number; name?: string } & Record<string, unknown>;
 /**
@@ -113,7 +114,8 @@ const isLanAddress = (s: unknown): s is string => {
     if (v4.slice(1).some((n) => String(Number(n)) !== n || Number(n) > 255)) return false;
     const [a, b] = [Number(v4[1]), Number(v4[2])];
     // 내 PC 자신(127.x)은 받지 않는다: 남이 내 두레를 시켜 내 PC 의 다른 프로그램에 요청을 보내게 할 수 없다.
-    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+    // 100.64.0.0/10 은 Tailscale 같은 VPN 이 쓰는 대역이다: 다른 네트워크에 있는 사람과 VPN 으로 이을 때.
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
   }
   return /^\[(fe[89ab][0-9a-f]:[0-9a-f:]*|f[cd][0-9a-f]{2}:[0-9a-f:]*)\]$/.test(host);
 };
@@ -148,6 +150,18 @@ const PLAIN_ERRORS: Record<string, string> = {
 };
 
 export class PeerOfflineError extends Error {}
+
+/** 이 PC 의 IPv4 주소들 (자기 자신 127.x 와 자동 할당 169.254.x 는 뺀다). 100.64.0.0/10 은 VPN 으로 본다. */
+export function myAddresses(port: number, list = networkInterfaces()): { address: string; kind: 'lan' | 'vpn' }[] {
+  const out: { address: string; kind: 'lan' | 'vpn' }[] = [];
+  for (const addrs of Object.values(list)) for (const a of addrs ?? []) {
+    if (a.family !== 'IPv4' || a.internal || a.address.startsWith('169.254.')) continue;
+    const [x, y] = a.address.split('.').map(Number);
+    const kind = x === 100 && y! >= 64 && y! <= 127 ? 'vpn' : 'lan';
+    if (!out.some((o) => o.address === `${a.address}:${port}`)) out.push({ address: `${a.address}:${port}`, kind });
+  }
+  return out.sort((p, q) => Number(p.kind === 'vpn') - Number(q.kind === 'vpn')).slice(0, 8);
+}
 
 /**
  * 다른 사람의 두레와의 연결. 같은 네트워크에서 직접 주고받는다 (서버가 없다).
@@ -222,7 +236,7 @@ export class PeerService extends EventEmitter {
     const enabled = this.d.settings().peersEnabled;
     try {
       const me = this.me();
-      return { enabled, id: me.id, name: this.myName(), fingerprint: fingerprint(me.pub), port: this.port, error: this.error };
+      return { enabled, id: me.id, name: this.myName(), fingerprint: fingerprint(me.pub), port: this.port, error: this.error, addresses: this.port === null ? [] : myAddresses(this.port) };
     } catch (e) {
       return { enabled, id: '', name: this.myName(), fingerprint: '', port: null, error: e instanceof Error ? e.message : String(e) };
     }
@@ -721,9 +735,11 @@ export class PeerService extends EventEmitter {
     const r = await this.sendShare(s.id, peerId, { type: 'share.lead', shareId: s.id });
     if (r.ok !== true) throw new Error(`넘기지 못했습니다: ${REMOTE_ERRORS[String(r.error)] ?? String(r.error ?? '알 수 없는 까닭')}`);
     const others = this.memberIds(s.id).filter((id) => id !== peerId);
+    // 초대만 해 둔 사람에게는 초대를 거둔다고 알린다 (그 초대는 내 이름으로 간 것이다).
+    const invited = (this.d.db.prepare("SELECT peer_id FROM share_members WHERE share_id = ? AND state = 'invited'").all(s.id) as { peer_id: string }[]).map((x) => x.peer_id);
+    await Promise.all(invited.map((id) => this.sendPeer(id, { type: 'share.removed', shareId: s.id }).catch(() => undefined)));
     this.d.db.transaction(() => {
       this.d.db.prepare("UPDATE shares SET owner_peer = ?, suggest_mode = 'review' WHERE id = ?").run(peerId, s.id);
-      // 초대만 해 둔 사람은 거둔다 (그 초대는 내 이름으로 간 것이다).
       this.d.db.prepare("DELETE FROM share_members WHERE share_id = ? AND state = 'invited'").run(s.id);
       const add = this.d.db.prepare('INSERT INTO share_leader_notice (share_id, peer_id, leader, at) VALUES (?, ?, ?, ?) ON CONFLICT(share_id, peer_id) DO UPDATE SET leader = excluded.leader, at = excluded.at');
       for (const id of others) add.run(s.id, id, peerId, Date.now());
@@ -733,15 +749,26 @@ export class PeerService extends EventEmitter {
     return this.share(projectId)!;
   }
 
-  /** 새 리더를 아직 알리지 못한 참여자에게 알린다. 닿은 것은 지운다. 그사이 리더가 다시 바뀌었거나 빠진 사람의 것은 버린다. */
+  /**
+   * 새 리더를 아직 알리지 못한 참여자에게 알린다. 그사이 리더가 또 바뀌었으면 지금 내가 아는 리더를 알린다:
+   * 그 참여자는 아직 나를 리더로 알고 있어 내 말만 믿는다 (그 뒤의 리더가 보낸 알림은 받지 않는다).
+   * 리더가 다시 나에게 왔거나, 빠진 사람이거나, 상대가 분명히 거절했거나, 30일이 지났으면 버린다.
+   */
   private async sendLeaderNotices(): Promise<void> {
+    this.d.db.prepare('DELETE FROM share_leader_notice WHERE at < ?').run(Date.now() - 30 * 24 * 3_600_000);
     const rows = this.d.db.prepare('SELECT * FROM share_leader_notice').all() as { share_id: string; peer_id: string; leader: string }[];
+    const me = this.me().id;
     await Promise.all(rows.map(async (n) => {
       const s = this.shareRow(n.share_id);
       const drop = (): void => { this.d.db.prepare('DELETE FROM share_leader_notice WHERE share_id = ? AND peer_id = ?').run(n.share_id, n.peer_id); };
-      if (!s || s.owner_peer !== n.leader || !this.memberIds(s.id).includes(n.peer_id)) { drop(); return; }
-      const r = await this.sendShare(s.id, n.peer_id, { type: 'share.leader', shareId: s.id, leader: n.leader }).catch(() => null);
-      if (r && r.ok === true) drop();
+      if (!s || s.owner_peer === me || s.owner_peer === n.peer_id || !this.memberIds(s.id).includes(n.peer_id)) { drop(); return; }
+      try {
+        await this.sendShare(s.id, n.peer_id, { type: 'share.leader', shareId: s.id, leader: s.owner_peer });
+        drop();
+      } catch (e) {
+        // 상대가 답하고 거절했다: 리더를 모르는 사람(not_member)이면 다음에 다시 해 본다 (그 사이 목록을 받을 수 있다). 다른 거절은 버린다.
+        if (!(e instanceof PeerOfflineError) && !String((e as Error).message).includes(REMOTE_ERRORS.not_member!)) drop();
+      }
     }));
   }
 
@@ -762,14 +789,15 @@ export class PeerService extends EventEmitter {
   }
 
   /** 참여자 목록을 모두에게 나눠 준다 (연 사람만). 참여자끼리는 이 목록의 열쇠로 서로를 안다. */
-  private async broadcastMembers(s: ShareRow): Promise<void> {
+  private async broadcastMembers(s: ShareRow, only?: string[]): Promise<void> {
     const me = this.me();
-    const ids = this.memberIds(s.id);
+    const all = this.memberIds(s.id);
     const members = [
       { id: me.id, name: this.myName(), pub: me.pub, address: '' },
       // 이 프로젝트에서 쓰는 열쇠로 (리더를 넘겨받았으면 직접 연결하지 않은 사람도 있다).
-      ...ids.flatMap((id) => { const t = this.memberTarget(s.id, id); const r = this.peerRow(id); return t && r ? [{ id, name: r.name, pub: t.pub, address: t.address }] : []; }),
+      ...all.flatMap((id) => { const t = this.memberTarget(s.id, id); const r = this.peerRow(id); return t && r ? [{ id, name: r.name, pub: t.pub, address: t.address }] : []; }),
     ];
+    const ids = only ? all.filter((id) => only.includes(id)) : all;
     await Promise.all(ids.map((id) => this.sendShare(s.id, id, { type: 'share.members', shareId: s.id, shareName: s.name, members }).catch(() => undefined)));
   }
 
@@ -1224,14 +1252,18 @@ export class PeerService extends EventEmitter {
       case 'share.lead': {
         // 지금 리더가 나에게 리더를 넘긴다. 직접 연결한 리더가 보낸 것만 받는다.
         const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
+        // 이미 넘겨받았는데 응답이 닿지 않아 넘겨 준 사람이 다시 보낸 것: 그대로 받아 준다.
+        if (s && direct && s.owner_peer === this.me().id && s.prev_owner === peer.id) return { ok: true };
         if (!s || s.owner_peer !== peer.id || !direct) return no('not_owner');
         this.d.db.transaction(() => {
-          this.d.db.prepare("UPDATE shares SET owner_peer = ?, suggest_mode = 'review' WHERE id = ?").run(this.me().id, s.id);
+          this.d.db.prepare("UPDATE shares SET owner_peer = ?, prev_owner = ?, suggest_mode = 'review' WHERE id = ?").run(this.me().id, peer.id, s.id);
           // 넘겨 준 사람은 참여자로 남는다.
           this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state) VALUES (?, ?, 'member') ON CONFLICT(share_id, peer_id) DO UPDATE SET state = 'member'").run(s.id, peer.id);
         })();
         this.emit('changed');
         this.emit('leader', { projectId: s.project_id, from: this.label(peer.id) });
+        // 참여자 목록을 내 것으로 나눠 준다 (넘겨 준 사람이 다른 참여자에게 알린 뒤에 닿도록 조금 뒤에).
+        setTimeout(() => { try { const now = this.shareRow(s.id); if (now && this.isMine(now)) void this.broadcastMembers(now).catch(() => undefined); } catch { /* 그사이 꺼졌다 */ } }, 2000).unref?.();
         return { ok: true };
       }
       case 'share.leader': {
@@ -1244,6 +1276,16 @@ export class PeerService extends EventEmitter {
         if (p.leader === this.me().id) return no('bad_share');
         this.d.db.prepare('UPDATE shares SET owner_peer = ? WHERE id = ?').run(p.leader, s.id);
         this.emit('changed');
+        // 새 리더에게 참여자 목록을 달라고 한다 (이 알림보다 먼저 온 목록은 받지 않았을 수 있다).
+        const leader = p.leader;
+        setTimeout(() => { try { void this.sendShare(s.id, leader, { type: 'share.sync', shareId: s.id }).catch(() => undefined); } catch { /* 그사이 꺼졌다 */ } }, 0).unref?.();
+        return { ok: true };
+      }
+      case 'share.sync': {
+        // 참여자가 참여자 목록을 다시 달라고 한다. 내가 리더일 때 그 사람에게만 보낸다.
+        const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
+        if (!s || !this.isMine(s) || !this.isMember(s.id, peer.id, used)) return no('not_member');
+        void this.broadcastMembers(s, [peer.id]);
         return { ok: true };
       }
       case 'share.members': {

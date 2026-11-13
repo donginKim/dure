@@ -36,8 +36,32 @@ pnpm install
 say "앱을 만듭니다 ($arch)"
 pnpm exec electron-vite build
 rm -rf "$out"
-# --dir: 설치 파일(dmg)은 만들지 않고 앱만 만든다. "-" 는 임시 서명이다 (Apple 실리콘에서는 서명이 전혀 없으면 실행되지 않는다).
-pnpm exec electron-builder --mac "--$arch" --dir -c.mac.identity=- -c.mac.hardenedRuntime=false
+# 서명: 이 Mac 의 키체인에 코드 서명 인증서가 있으면 그것으로 서명한다. 서명이 매번 같아야 macOS 가 같은 앱으로 본다:
+# 업데이트할 때마다 "로컬 네트워크" 같은 권한과 키체인 허용이 풀리지 않는다.
+# 인증서가 없으면 임시 서명("-")으로 만든다 (Apple 실리콘에서는 서명이 전혀 없으면 실행되지 않는다). 이때는 만들 때마다 서명이 달라진다.
+# DURE_SIGN_IDENTITY 로 쓸 인증서의 이름을 정할 수 있다 ("-" 면 임시 서명).
+identity="${DURE_SIGN_IDENTITY:-}"
+if [ -z "$identity" ]; then
+  # "Developer ID Application: 이름 (팀)" 이 먼저, 없으면 "Apple Development: ..."
+  for kind in "Developer ID Application" "Apple Development"; do
+    identity="$(security find-identity -v -p codesigning 2>/dev/null | sed -n "s/.*\"\($kind: [^\"]*\)\".*/\1/p" | head -1)"
+    [ -n "$identity" ] && break
+  done
+fi
+signed_with=""
+build() { pnpm exec electron-builder --mac "--$arch" --dir "-c.mac.identity=$1" -c.mac.hardenedRuntime=false; }
+# --dir: 설치 파일(dmg)은 만들지 않고 앱만 만든다.
+if [ -n "$identity" ] && [ "$identity" != "-" ]; then
+  say "서명: $identity"
+  # electron-builder 는 "Developer ID Application: " 같은 앞말을 뺀 이름을 받는다.
+  if build "${identity#*: }" && codesign --verify --deep --strict "$out/Dure.app" 2>/dev/null; then
+    signed_with="$identity"
+  else
+    printf '\n주의: 인증서로 서명하지 못해 임시 서명으로 만듭니다 (키체인이 서명을 허용하지 않았을 수 있습니다).\n'
+    rm -rf "$out"
+  fi
+fi
+[ -n "$signed_with" ] || build -
 [ -d "$out/Dure.app" ] || die "앱이 만들어지지 않았습니다 ($out/Dure.app)."
 
 say "$dest 에 넣습니다"
@@ -53,6 +77,10 @@ node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ sourceDir
 
 shell="${SHELL:-/bin/zsh}"
 "$shell" -lic "command -v claude" >/dev/null 2>&1 || printf '\n주의: Claude Code (claude 명령) 가 없습니다. 설치하고 로그인해야 에이전트가 뜹니다: https://claude.com/claude-code\n'
+
+if [ -z "$signed_with" ]; then
+  printf '\n알림: 임시 서명으로 만들었습니다. 업데이트할 때마다 macOS 가 새 앱으로 봅니다: "다른 사람과 연결" 이 닿지 않으면\n      시스템 설정 > 개인정보 보호 및 보안 > 로컬 네트워크 에서 Dure 를 껐다 켜고, Dure 를 다시 여세요.\n'
+fi
 
 say "설치했습니다: $dest/Dure.app"
 if [ "${DURE_NO_OPEN:-}" != "1" ]; then open "$dest/Dure.app"; fi

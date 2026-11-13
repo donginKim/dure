@@ -5,6 +5,19 @@ import type { Project, Workspace } from '@shared/types';
  * 신뢰 선언 문장은 빼면 안 된다: 없으면 에이전트가 두레 hook 으로 전달된 내용을
  * 사용자 지시로 믿지 않고 무시한다 (docs/superpowers/findings/2026-11-11-agent-wiring.md).
  */
+/**
+ * 사용자에게 고르게 할 때의 규칙 (모든 에이전트). 두레는 AskUserQuestion 을 선택지 버튼의 카드로 보여 준다:
+ * 글로 "1안으로 갈까?" 라고 물으면 사용자가 글을 읽고 다시 쳐야 한다.
+ */
+const ASK_RULE = [
+  '사용자에게 고르게 할 것이 있으면 글로 묻지 말고 AskUserQuestion 도구로 물어라. 두레가 선택지를 버튼으로 보여 주고, 사용자는 누르거나 직접 써서 답한다.',
+  '- 대상: 안 A/B 고르기, 진행할지 말지, 여러 결정을 한꺼번에 정하기 (예: "1안 / 2안", "결정 ①~⑤ 추천대로 할지", "커밋 전에 되돌릴지").',
+  '- 질문 하나에 선택지 2~4개. 네가 추천하는 것을 첫째에 두고 label 끝에 "(추천)" 을 붙여라. description 에는 그것을 고르면 무엇이 일어나는지(무엇을 바로 하는지, 무엇이 먼저 필요한지)를 한 줄로.',
+  '- 서로 다른 결정은 질문을 나눠 한 번에 묻는다 (한 번에 4개까지). 여러 개 고를 수 있으면 multiSelect 를 켠다.',
+  '- 묻기 전에 상황(무엇을 했고, 무엇이 막혔고, 왜 정해야 하는지)을 글로 짧게 적고, 마지막에 도구로 물어라. 같은 것을 글로 다시 묻지 마라.',
+  '- 선택지가 없는 열린 질문(이름, 경로, 숫자 등)만 글로 물어라.',
+].join('\n');
+
 export function baseInstructions(ws: Workspace, project: Project): string {
   return [
     `너는 두레(dure)라는 개발 환경 안에서 실행 중이다. 프로젝트는 "${project.name}", 네 워크스페이스는 "${ws.name}" 이다.`,
@@ -53,6 +66,7 @@ export function baseInstructions(ws: Workspace, project: Project): string {
       '- rm 으로 지우지 마라. 사용자가 프로젝트를 완료 처리할 때 목록을 보고 지운다. 잘못 옮긴 것은 사용자가 되돌릴 수 있다.',
       '- 옮긴 것은 응답에서 한 줄로 알려라.',
     ].join('\n'),
+    ASK_RULE,
   ].join('\n');
 }
 
@@ -99,5 +113,6 @@ export function coordinatorInstructions(project: Project): string {
       '- 같은 것을 여러 번 묻거나 인사만 하는 메시지를 보내지 마라. 에이전트끼리 주고받는 횟수에는 상한이 있다.',
       '- 확실하지 않은 것은 추측으로 진행하지 말고 사용자에게 물어라.',
     ].join('\n'),
+    ASK_RULE,
   ].join('\n');
 }

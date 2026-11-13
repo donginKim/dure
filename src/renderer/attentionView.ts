@@ -3,6 +3,8 @@ import type { Selection } from './tree';
 
 /** 그 항목을 처리하는 화면. 워크스페이스의 것은 그 워크스페이스, 프로젝트의 것은 프로젝트, 사람에 관한 것은 "사람". */
 export function attentionTarget(i: Pick<AttentionItem, 'kind' | 'projectId' | 'workspaceId'>, coordinatorIds: Set<string>): Selection {
+  // 여러 건을 합친 알림을 눌렀다: 확인할 것 목록으로.
+  if ((i.kind as string) === 'list') return { type: 'attention' };
   if (i.kind === 'pair' || i.kind === 'invite') return { type: 'people' };
   // 조율 에이전트는 프로젝트 화면의 "조율" 탭에 있다.
   if (i.workspaceId && !coordinatorIds.has(i.workspaceId)) return { type: 'workspace', id: i.workspaceId, projectId: i.projectId ?? undefined };

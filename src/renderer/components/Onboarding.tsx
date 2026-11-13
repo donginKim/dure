@@ -36,7 +36,9 @@ export function Onboarding({ tree, repos, onCreate, onOpenProject, force, onClos
   const hasRepo = repos.length > 0;
   const hasWork = tree.some((n) => n.workspaces.some((w) => w.role !== 'coordinator'));
   const ready = Boolean(doctor?.claude && doctor.git && doctor.loggedIn !== false);
-  if (!force && closed && hasProject) return null;
+  // 네 단계를 다 했으면 따로 닫지 않아도 접힌다 ("시작 안내" 버튼으로 다시 연다).
+  const allDone = ready && hasProject && hasRepo && hasWork;
+  if (!force && hasProject && (closed || allDone)) return null;
   const first = tree[0]?.project.id;
   const close = (): void => { try { window.localStorage.setItem(HIDE_KEY, '1'); } catch { /* 못 기억해도 된다 */ } setClosed(true); onClose?.(); };
   const create = (): void => {

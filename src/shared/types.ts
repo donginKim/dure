@@ -411,6 +411,8 @@ export interface Settings {
   defaultAgent: AgentKind;
   /** 새 Claude Code 워크스페이스의 기본 방식 */
   defaultEngine: AgentEngine;
+  /** 화면 모양: 어둡게, 밝게, macOS 를 따라 */
+  theme: 'dark' | 'light' | 'system';
   /** 새 워크스페이스의 기본 권한 모드 */
   defaultPermissionMode: PermissionMode;
   /** 작업 폴더(worktree)를 만드는 상위 폴더. 빈 값이면 기본 위치 */

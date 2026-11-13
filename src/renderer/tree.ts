@@ -20,8 +20,8 @@ export const STATUS_LABEL: Record<WorkspaceStatus, string> = {
   stopped: '꺼짐',
   starting: '시작 중',
   idle: '쉬는 중',
-  working: '작업 중',
-  waiting_user: '사용자 기다림',
+  working: '일하는 중',
+  waiting_user: '답 기다림',
 };
 
 /** 저장소 id → 그 저장소로 만든 워크스페이스 수 */

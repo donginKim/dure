@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Help } from './Help';
 import type { Peer, Project, RemoteWorkspace, Share, ShareInvite, SharingAudience, Workspace, WorkspaceSharing } from '@shared/types';
 import { AUDIENCE_LABEL } from '../peersView';
 import { PeerInbox } from './PeerInbox';
@@ -126,7 +127,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
             </select>
           </div>
         )}
-        {share.observer && <div className="help">이 프로젝트는 보기만 합니다. 현황판만 받고, 일을 받거나 제안하거나 메시지를 주고받지 않습니다. 모아 보려면 왼쪽의 <b>팀 현황</b> 을 여세요.</div>}
+        {share.observer && <Help>이 프로젝트는 보기만 합니다. 현황판만 받고, 일을 받거나 제안하거나 메시지를 주고받지 않습니다. 모아 보려면 왼쪽의 <b>팀 현황</b> 을 여세요.</Help>}
         {share.mine && (
           <div className="share-rule">
             <div className="grow">
@@ -139,7 +140,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
             </select>
           </div>
         )}
-        {!share.mine && !share.observer && <div className="help">이 프로젝트에서 일을 나누거나 바꾸려면 조율 탭에서 계획안을 만들어 "{share.members.find((m) => m.owner)?.name ?? '리더'}" 에게 제안으로 보냅니다. 그 사람이 승인하면 반영됩니다.</div>}
+        {!share.mine && !share.observer && <Help>이 프로젝트에서 일을 나누거나 바꾸려면 조율 탭에서 계획안을 만들어 "{share.members.find((m) => m.owner)?.name ?? '리더'}" 에게 제안으로 보냅니다. 그 사람이 승인하면 반영됩니다.</Help>}
       </div>
 
       <div className="section">

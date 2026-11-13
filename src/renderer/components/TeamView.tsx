@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Empty } from './Empty';
 import type { ProjectDashboard } from '@shared/types';
 import type { Selection, TreeNode } from '../tree';
 import { BoardSection } from './BoardSection';
@@ -23,9 +24,7 @@ export function TeamView({ tree, onSelect }: { tree: TreeNode[]; onSelect: (s: S
       <div className="section-head"><h1>팀 현황</h1></div>
       <div className="sub">다른 사람이 리더인 함께하는 프로젝트들의 현황입니다. 각 팀 리더의 두레가 보내 준 마지막 것이라, 리더의 PC 가 꺼져 있으면 멈춰 있습니다. 코드는 오지 않고 진행과 작업 보고(커밋 수, 확인 결과)만 옵니다.</div>
       {dash && shared.length === 0 && (
-        <div className="rows-empty">
-          아직 없습니다. 팀장이 함께하는 프로젝트의 "함께하는 사람" 에서 나를 <b>보기만</b> 으로 초대하면, 사람 화면에서 받은 초대를 "보기로 참여" 해 여기에 모입니다.
-        </div>
+        <Empty hint={<>팀장이 함께하는 프로젝트의 "함께하는 사람" 에서 나를 <b>보기만</b> 으로 초대하면, 받은 초대를 "보기로 참여" 해 여기에 모입니다.</>} actions={<button className="btn" onClick={() => onSelect({ type: 'people' })}>사람 화면 열기</button>}>아직 없습니다.</Empty>
       )}
       {shared.map((d) => (
         <div key={d.projectId} className="team-block">

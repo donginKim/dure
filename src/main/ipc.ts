@@ -158,6 +158,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       changed('repos');
     },
     'workspaces.list': (projectId: string) => core.workspaces.listAll(projectId),
+    'workspaces.doing': () => core.doing.all(),
     'workspaces.create': (input: CreateWorkspaceInput) => core.service.create(input),
     'workspaces.remove': (id: string, options: { deleteWorktree: boolean }) => core.service.remove(id, { deleteWorktree: Boolean(options?.deleteWorktree) }),
     'workspaces.uncommitted': (id: string) => core.service.uncommittedCount(id),
@@ -342,24 +343,41 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     const n = core.attention.list().length;
     app.dock?.setBadge(n > 0 ? String(n) : '');
   };
-  const onAttentionAdded = (items: AttentionItem[]): void => {
-    if (!core.settings.get().notifications || !Notification.isSupported()) return;
+  // 알림: 몇 초 사이에 연달아 생긴 것은 하나로 합친다. 새 알림을 띄우면 앞의 것은 거둔다 (알림 센터에 쌓이지 않게).
+  let pendingNotes: AttentionItem[] = [];
+  let noteTimer: NodeJS.Timeout | undefined;
+  let lastNote: Notification | undefined;
+  const flushNotes = (): void => {
+    noteTimer = undefined;
+    const items = pendingNotes; pendingNotes = [];
+    if (items.length === 0 || !core.settings.get().notifications || !Notification.isSupported()) return;
     const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
     if (win?.isFocused()) return;
-    // 한꺼번에 여럿 생기면 하나로 묶는다.
     const first = items[0]!;
+    const projects = [...new Set(items.map((i) => i.projectName).filter(Boolean))];
+    const total = core.attention.list().length;
     const note = new Notification({
-      title: items.length > 1 ? `두레 · 확인할 것 ${items.length}건` : `두레${first.projectName ? ` · ${first.projectName}` : ''}`,
-      body: items.length > 1 ? items.slice(0, 3).map((i) => i.title).join('\n') : `${first.title}${first.detail ? `\n${first.detail}` : ''}`,
+      title: items.length > 1 ? `두레 · 새로 ${items.length}건${projects.length === 1 ? ` · ${projects[0]}` : ''}` : `두레${first.projectName ? ` · ${first.projectName}` : ''}`,
+      body: items.length > 1
+        ? [...items.slice(0, 3).map((i) => `· ${i.title}`), ...(items.length > 3 ? [`외 ${items.length - 3}건`] : []), ...(total > items.length ? [`확인할 것 모두 ${total}건`] : [])].join('\n')
+        : `${first.title}${first.detail ? `\n${first.detail}` : ''}`,
     });
     note.on('click', () => {
       const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed());
       if (!w) return;
       if (w.isMinimized()) w.restore();
       w.show(); w.focus();
-      w.webContents.send(IPC_EVENTS.attentionOpen, first);
+      // 하나면 그것을, 여럿이면 확인할 것 목록을 연다.
+      w.webContents.send(IPC_EVENTS.attentionOpen, items.length === 1 ? first : { ...first, kind: 'list' });
     });
+    try { lastNote?.close(); } catch { /* 이미 닫혔다 */ }
+    lastNote = note;
     note.show();
+  };
+  const onAttentionAdded = (items: AttentionItem[]): void => {
+    pendingNotes.push(...items.filter((i) => !pendingNotes.some((p) => p.id === i.id)));
+    // 처음 것은 3초 기다려 뒤따르는 것을 모은다.
+    if (!noteTimer) { noteTimer = setTimeout(flushNotes, 3000); noteTimer.unref?.(); }
   };
   const onBrowserChanged = (): void => changed('browser');
   const onPeersChanged = (): void => changed('peers');
@@ -373,6 +391,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.pty.on('data', onData);
   core.pty.on('exit', onExit);
   core.service.on('changed', onWorkspaceChanged);
+  core.doing.on('changed', onWorkspaceChanged);
   core.todos.on('changed', onTodosChanged);
   core.todos.on('delivered', onTodosChanged);
   core.messages.on('changed', onMessagesChanged);
@@ -408,6 +427,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.pty.off('data', onData);
     core.pty.off('exit', onExit);
     core.service.off('changed', onWorkspaceChanged);
+    core.doing.off('changed', onWorkspaceChanged);
     core.todos.off('changed', onTodosChanged);
     core.todos.off('delivered', onTodosChanged);
     core.messages.off('changed', onMessagesChanged);
@@ -428,6 +448,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.autoShip.off('changed', onShipChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
+    clearTimeout(noteTimer);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);
     core.assignments.off('changed', onPeersChanged);

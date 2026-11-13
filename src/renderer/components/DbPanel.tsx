@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Empty } from './Empty';
 import type { DbAccess, DbColumn, DbConnection, DbKind, DbResult, DbTable, Workspace } from '@shared/types';
 import { ACCESS_HELP, ACCESS_LABEL, cellText, DEFAULT_PORT, emptyForm, formOf, formProblem, KIND_LABEL, previewSql, QUERY_HINT, QUERY_PLACEHOLDER, toInput, type DbForm } from '../dbView';
 import { DbRequests } from './DbRequests';
@@ -211,10 +212,10 @@ export function DbPanel({ projectId, workspaces, readOnly }: { projectId: string
       <div className="section">
         <div className="section-head">
           <h2>DB 연결 <span className="plan-hint">이 프로젝트의 모든 워크스페이스가 같이 씁니다. 조회 전용입니다</span></h2>
-          {!readOnly && <button className="btn" onClick={() => setDialog({ editing: null })}>연결 등록</button>}
+          {!readOnly && (conns?.length ?? 0) > 0 && <button className="btn" onClick={() => setDialog({ editing: null })}>연결 등록</button>}
         </div>
         <div className="rows">
-          {conns && conns.length === 0 && <div className="rows-empty">등록된 DB 연결이 없습니다. 연결을 등록하면 여기서 표와 데이터를 보고, 에이전트도 두레를 통해 조회할 수 있습니다. 에이전트에게 비밀번호는 넘어가지 않습니다.</div>}
+          {conns && conns.length === 0 && <Empty hint="여기서 표와 데이터를 보고, 에이전트도 두레를 통해 조회합니다. 비밀번호는 에이전트에게 넘어가지 않습니다." actions={!readOnly && <button className="btn primary" onClick={() => setDialog({ editing: null })}>연결 등록</button>}>등록된 DB 연결이 없습니다.</Empty>}
           {(conns ?? []).map((c) => (
             <div key={c.id} className={`row db-conn${active?.id === c.id ? ' on' : ''}`} onClick={() => setActiveId(c.id)}>
               <div className="grow">

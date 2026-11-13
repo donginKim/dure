@@ -17,3 +17,7 @@ test('프로젝트마다 묶고, 사람에 관한 것은 맨 위에 둔다', () 
   const g = groupAttention([item({ id: '1' }), item({ id: '2', projectId: 'p2', projectName: '나' }), item({ id: '3', kind: 'pair', projectId: null, projectName: '' }), item({ id: '4' })]);
   expect(g.map((x) => [x.projectId, x.items.map((i) => i.id)])).toEqual([[null, ['3']], ['p1', ['1', '4']], ['p2', ['2']]]);
 });
+
+test('여러 건을 합친 알림을 누르면 확인할 것 목록으로 간다', () => {
+  expect(attentionTarget({ kind: 'list' as never, projectId: 'p', workspaceId: 'w' }, new Set())).toEqual({ type: 'attention' });
+});

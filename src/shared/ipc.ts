@@ -105,6 +105,8 @@ export interface DureApi {
     setEngine(id: string, engine: AgentEngine): Promise<void>;
     /** 모델을 바꾼다 (빈 글이면 설정의 모델). 채팅 방식으로 도는 중이면 바로(now), 아니면 다음에 시작할 때(next) */
     setModel(id: string, model: string): Promise<{ applied: 'now' | 'next' }>;
+    /** 막혔다는 표시를 거둔다 (그대로 두기) */
+    dismissStuck(id: string): Promise<void>;
     /** 표시 이름을 바꾼다 (브랜치와 작업 폴더는 그대로). 직접 지은 이름은 에이전트가 바꾸지 못한다 */
     rename(id: string, name: string): Promise<Workspace>;
     /** 에이전트가 작업에 맞게 이름을 바꿔도 되는가 */
@@ -355,7 +357,7 @@ export const IPC_CHANNELS = [
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
-  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.rename', 'workspaces.setAutoName',
+  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.dismissStuck', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
   'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.setAfter', 'todos.pending', 'todos.nudge',

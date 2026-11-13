@@ -3,7 +3,7 @@ import { USER_NAME } from '@shared/messages';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice, type LimitInfo } from '@shared/types';
+import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice, type LimitInfo, type StuckInfo } from '@shared/types';
 import { baseInstructions, coordinatorInstructions } from './agents/instructions';
 import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
@@ -223,6 +223,8 @@ export class WorkspaceService extends EventEmitter {
 
   /** 에이전트를 끈다 (터미널 방식이든 채팅 방식이든). */
   stopAgent(id: string): void {
+    this.clearStuck(id);
+    this.lastMove.delete(id);
     if (this.engine?.has(id)) this.stopping.add(id);
     this.engine?.stop(id);
     for (const t of this.d.pty.list(id)) if (t.kind === 'agent') this.d.pty.kill(t.id);
@@ -237,6 +239,74 @@ export class WorkspaceService extends EventEmitter {
     if (this.isAgentRunning(id)) throw new Error('에이전트를 끈 뒤에 바꿀 수 있습니다.');
     this.d.workspaces.update(id, { engine });
     this.emit('changed', id);
+  }
+
+  // ---- 막힘 알아채기 ----
+  private readonly stuck = new Map<string, StuckInfo>();
+  /** 마지막으로 되풀이된 도구 오류 (워크스페이스마다) */
+  private readonly lastError = new Map<string, { sig: string; count: number; since: number; detail: string }>();
+  private readonly lastMove = new Map<string, number>();
+  private quietTimer: NodeJS.Timeout | undefined;
+  /** 같은 도구 오류를 몇 번 되풀이하면 막힌 것으로 보는가 */
+  static readonly REPEAT = 3;
+
+  /** 에이전트가 움직였다 (글, 도구 결과). 오래 조용했다는 표시를 거둔다. */
+  noteActivity(id: string): void {
+    this.lastMove.set(id, Date.now());
+    if (this.stuck.get(id)?.reason === 'quiet') { this.stuck.delete(id); this.emit('changed', id); }
+  }
+
+  /** 도구 결과. 같은 오류를 되풀이하면 막힌 것으로 본다. 성공하면 거둔다. */
+  noteToolResult(id: string, error: boolean, text: string): void {
+    this.noteActivity(id);
+    if (!error) {
+      this.lastError.delete(id);
+      if (this.stuck.get(id)?.reason === 'repeat') { this.stuck.delete(id); this.emit('changed', id); }
+      return;
+    }
+    // 숫자(줄 번호, 시각, 포트)만 다른 것은 같은 오류로 본다.
+    const sig = text.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 240);
+    const prev = this.lastError.get(id);
+    const cur = prev && prev.sig === sig ? { ...prev, count: prev.count + 1 } : { sig, count: 1, since: Date.now(), detail: text.trim().slice(0, 300) };
+    this.lastError.set(id, cur);
+    if (cur.count >= WorkspaceService.REPEAT) {
+      const was = this.stuck.get(id);
+      this.stuck.set(id, { reason: 'repeat', since: cur.since, count: cur.count, detail: cur.detail });
+      if (!was || was.reason !== 'repeat') this.emit('changed', id);
+    }
+  }
+
+  stuckOf(id: string): StuckInfo | null { return this.stuck.get(id) ?? null; }
+
+  /** 사용자가 "그대로 두기" 를 눌렀다. */
+  dismissStuck(id: string): void { this.clearStuck(id); }
+
+  /** 막힌 것 같은 워크스페이스들 (확인할 것에 올린다). */
+  stuckIn(projectId: string): { workspaceId: string; info: StuckInfo }[] {
+    return this.d.workspaces.list(projectId).flatMap((w) => { const s = this.stuck.get(w.id); return s ? [{ workspaceId: w.id, info: s }] : []; });
+  }
+
+  private clearStuck(id: string): void {
+    this.lastError.delete(id);
+    this.lastMove.set(id, Date.now());
+    if (this.stuck.delete(id)) this.emit('changed', id);
+  }
+
+  /** 일하는 중인데 오래 움직임이 없는 에이전트를 찾는다 (주기적으로). quietMs: 이만큼 조용하면 막힌 것으로 본다 */
+  watchQuiet(quietMs: number, everyMs = 60_000): void {
+    clearInterval(this.quietTimer);
+    this.quietTimer = setInterval(() => this.checkQuiet(quietMs), everyMs);
+    this.quietTimer.unref?.();
+  }
+
+  checkQuiet(quietMs: number): void {
+    const now = Date.now();
+    for (const [id, at] of this.lastMove) {
+      const ws = this.d.workspaces.get(id);
+      // 사용자의 답을 기다리는 것은 막힌 것이 아니다.
+      if (!ws || ws.status !== 'working' || !this.engine?.has(id) || this.stuck.has(id)) continue;
+      if (now - at >= quietMs) { this.stuck.set(id, { reason: 'quiet', since: at, count: 0, detail: '' }); this.emit('changed', id); }
+    }
   }
 
   // ---- 사용 한도 ----
@@ -437,6 +507,7 @@ export class WorkspaceService extends EventEmitter {
   /** 코어를 닫을 때 부른다. 이후의 터미널 종료는 상태 저장소를 건드리지 않는다. */
   detach(): void {
     this.detached = true;
+    clearInterval(this.quietTimer);
     for (const stop of [...this.trustWatchers.values()]) stop();
     this.d.pty.off('exit', this.onTerminalExit);
   }
@@ -853,6 +924,8 @@ export class WorkspaceService extends EventEmitter {
 
   /** 사용자가 채팅 입력창에서 보낸 글을 에이전트의 터미널에 써 넣는다. */
   async sendUserInput(id: string, text: string, rawImages: unknown = []): Promise<void> {
+    // 사용자가 말을 걸었다: 막혔다는 표시는 거둔다 (새 지시를 받았다).
+    this.clearStuck(id);
     // eslint-disable-next-line no-control-regex
     const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
     const images = cleanImages(rawImages);

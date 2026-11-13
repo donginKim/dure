@@ -89,6 +89,11 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
   }
   if (text === 'limit-text') { out({ type: 'result', subtype: 'success', is_error: true, result: "You've hit your limit · resets 3pm" }); return; }
   if (text === 'unlimit') { out({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } }); hook('Stop'); out({ type: 'result', subtype: 'success' }); return; }
+  if (text === 'loop') {
+    for (let i = 0; i < 3; i++) out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't' + i, is_error: true, content: 'Error: Cannot find module ./db at line ' + (10 + i) }] } });
+    return; // 끝나지 않고 일하는 중으로 남는다
+  }
+  if (text === 'ok-tool') { out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'ok', content: 'done' }] } }); hook('Stop'); out({ type: 'result', subtype: 'success' }); return; }
   if (text === 'finish') { out({ type: 'assistant', message: { content: [{ type: 'text', text: '안녕하세요' }] } }); hook('Stop'); out({ type: 'result', subtype: 'success' }); return; }
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'echo:' + text }] } });
   hook('Stop'); out({ type: 'result', subtype: 'success' });
@@ -645,4 +650,51 @@ test('사용 한도: 걸리면 채팅 보기와 확인할 것에 올리고, 다�
   await until(() => status(ws.id) === 'idle');
   await core.service.sendUserInput(ws.id, 'unlimit');
   await until(() => core.chatView(ws.id).limit === null);
+});
+
+test('막힘 알아채기: 같은 도구 오류를 되풀이하면 올리고, 성공하거나 사용자가 말하면 거둔다', async () => {
+  const ws = await started('stuck');
+  await core.service.sendUserInput(ws.id, 'loop');
+  await until(() => core.chatView(ws.id).stuck !== null);
+  expect(core.chatView(ws.id).stuck).toMatchObject({ reason: 'repeat', count: 3 });
+  expect(core.chatView(ws.id).stuck!.detail).toContain('Cannot find module ./db');
+  await until(() => core.attention.list().some((i) => i.kind === 'stuck'));
+  expect(core.attention.list().find((i) => i.kind === 'stuck')!.detail).toContain('같은 오류를 3번 되풀이합니다');
+  // 사용자가 말을 걸면 거둔다
+  await core.service.sendUserInput(ws.id, 'ok-tool');
+  expect(core.chatView(ws.id).stuck).toBeNull();
+  await until(() => status(ws.id) === 'idle');
+  // 다른 오류가 섞이면 되풀이로 보지 않는다
+  core.service.noteToolResult(ws.id, true, 'Error A');
+  core.service.noteToolResult(ws.id, true, 'Error B');
+  core.service.noteToolResult(ws.id, true, 'Error A');
+  expect(core.service.stuckOf(ws.id)).toBeNull();
+  // 숫자만 다른 것은 같은 오류다. 성공하면 거둔다
+  for (const n of [1, 2, 3]) core.service.noteToolResult(ws.id, true, `timeout after ${n}000ms`);
+  expect(core.service.stuckOf(ws.id)?.reason).toBe('repeat');
+  core.service.noteToolResult(ws.id, false, 'ok');
+  expect(core.service.stuckOf(ws.id)).toBeNull();
+  // 그대로 두기
+  for (const n of [1, 2, 3]) core.service.noteToolResult(ws.id, true, `x${n}`);
+  core.service.dismissStuck(ws.id);
+  expect(core.service.stuckOf(ws.id)).toBeNull();
+});
+
+test('막힘 알아채기: 일하는 중인데 오래 움직임이 없으면 올린다. 답을 기다리는 것은 막힌 것이 아니다', async () => {
+  const ws = await started('quiet');
+  await core.service.sendUserInput(ws.id, 'long');
+  await until(() => status(ws.id) === 'working');
+  core.service.checkQuiet(60_000);
+  expect(core.service.stuckOf(ws.id)).toBeNull();
+  await new Promise((r) => setTimeout(r, 60));
+  core.service.checkQuiet(30);
+  expect(core.service.stuckOf(ws.id)).toMatchObject({ reason: 'quiet' });
+  // 움직이면 거둔다
+  core.service.noteActivity(ws.id);
+  expect(core.service.stuckOf(ws.id)).toBeNull();
+  // 승인을 기다리는 동안은 막힌 것으로 보지 않는다
+  core.service.noteWaiting(ws.id, true);
+  await new Promise((r) => setTimeout(r, 60));
+  core.service.checkQuiet(30);
+  expect(core.service.stuckOf(ws.id)).toBeNull();
 });

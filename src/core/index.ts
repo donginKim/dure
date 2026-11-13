@@ -124,6 +124,8 @@ export interface CoreOptions {
   /** 시험에서 가짜 슬랙으로 바꾼다 */
   slackFetch?: ConstructorParameters<typeof SlackService>[0]['fetch'];
   dbWaitMs?: number;
+  /** 일하는 중에 이만큼 움직임이 없으면 막힌 것으로 본다 (ms). 시험에서 줄인다 */
+  stuckQuietMs?: number;
   /** 리뷰 에이전트를 돌리는 쪽 (시험에서 바꾼다) */
   reviewRunner?: ReviewRunner;
   /** 확인 명령을 돌리는 쪽 (시험에서 바꾼다) */
@@ -303,11 +305,14 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       // 쉬게 됐으니 기다리던 메시지가 있으면 지금 전달한다 (채팅 방식은 쉬는 중이면 바로 받을 수 있다).
       kick(id);
     },
-    onActivity: (id) => chat.refreshSoon(id, [0, 300, 1200]),
+    onActivity: (id) => { chat.refreshSoon(id, [0, 300, 1200]); service.noteActivity(id); },
+    onToolResult: (id, error, text) => service.noteToolResult(id, error, text),
     onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
     onLimit: (id, info) => service.noteLimit(id, info),
   });
   service.attachEngine(engine);
+  // 막힘 알아채기: 일하는 중인데 이만큼 움직임이 없으면 확인할 것에 올린다.
+  service.watchQuiet(o.stuckQuietMs ?? 10 * 60_000, Math.min(60_000, o.stuckQuietMs ?? 60_000));
   // 받아 둔 모델 목록은 저장해 두고, 다음에 켰을 때 곧바로 보인다.
   engine.seedModels(settings.savedModels());
   engine.on('models', (models: ModelChoice[]) => { try { settings.saveModels(models); } catch { /* 닫는 중 */ } });
@@ -327,6 +332,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     plan: (id) => coordinator.pending(id), db: (id) => dbs.pending(id), slack: (id) => slack.pending(id), browser: (id) => browser.pending(id),
     held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), briefs: (id) => assignments.briefs(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
     limited: (id) => service.limited(id),
+    stuck: (id) => service.stuckIn(id),
   });
   for (const src of [service, coordinator, dbs, slack, browser, peers, assignments]) src.on('changed', () => attention.poke());
   attention.poke();
@@ -446,6 +452,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         engine: ws?.engine ?? 'terminal',
         lastError: service.exitError(workspaceId) ?? null,
         limit: service.limitOf(workspaceId),
+        stuck: service.stuckOf(workspaceId),
         canSend: service.canSendInput(workspaceId),
       };
     },

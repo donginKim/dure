@@ -320,7 +320,15 @@ export type ChatView = ChatSnapshot & {
   lastError: string | null;
   /** 사용 한도 (채팅 방식). 걸렸거나 가까우면 있다 */
   limit: LimitInfo | null;
+  /** 에이전트가 막힌 것 같다 (채팅 방식). 없으면 null */
+  stuck: StuckInfo | null;
 };
+
+/**
+ * 에이전트가 막힌 것 같을 때. repeat: 같은 도구 오류를 되풀이한다. quiet: 일하는 중인데 오래 아무 움직임이 없다.
+ * detail: 되풀이한 오류의 앞부분 (에이전트가 받은 글이다)
+ */
+export interface StuckInfo { reason: 'repeat' | 'quiet'; since: number; count: number; detail: string }
 
 /**
  * 에이전트의 사용 한도. rejected: 걸려서 멈췄다 (다른 모델로 바꾸면 이어 갈 수 있을 때가 있다). warning: 가까워졌다.
@@ -790,7 +798,7 @@ export interface NoteSummary { id: string; title: string; preview: string; updat
  * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
  * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
  */
-export type AttentionKind = 'agent' | 'limit' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
+export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
 export interface AttentionItem {
   /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
   id: string; kind: AttentionKind;

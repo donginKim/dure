@@ -60,6 +60,8 @@ export interface EngineHooks {
   /** 대화 기록이 바뀌었을 것이다 (에이전트의 글·도구 결과가 나왔다) */
   onActivity(workspaceId: string): void;
   onExit(workspaceId: string, code: number | null, stderr: string): void;
+  /** 도구 결과가 왔다 (error: 실패했다. text: 결과의 앞부분). 막힘을 알아채는 데 쓴다 */
+  onToolResult?(workspaceId: string, error: boolean, text: string): void;
   /** 사용 한도가 바뀌었다 (status: allowed 면 풀렸다) */
   onLimit?(workspaceId: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null }): void;
 }
@@ -197,6 +199,14 @@ export class ChatEngine extends EventEmitter {
       case 'assistant':
       case 'user':
         if (e.parent_tool_use_id) return;
+        // 도구 결과: 실패를 되풀이하는지 본다.
+        if (e.type === 'user' && isObj(e.message) && Array.isArray(e.message.content)) {
+          for (const b of e.message.content) {
+            if (!isObj(b) || b.type !== 'tool_result') continue;
+            const body = typeof b.content === 'string' ? b.content : Array.isArray(b.content) ? b.content.map((c) => (isObj(c) ? str(c.text) : '')).join('\n') : '';
+            this.hooks.onToolResult?.(workspaceId, b.is_error === true, body.slice(0, 600));
+          }
+        }
         // 한 덩어리가 끝나 기록에 남았다. 쓰는 중이던 글은 기록에서 읽은 것으로 바뀐다.
         if (e.type === 'assistant') l.streaming = null;
         this.hooks.onActivity(workspaceId);

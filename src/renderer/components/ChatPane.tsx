@@ -1,3 +1,4 @@
+import { StuckBanner } from './StuckBanner';
 import { LimitBanner } from './LimitBanner';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type ChatImage, type ChatItem, type ChatQuestion, type ChatStep, type ChatView, type Message, type SlashCommand, type Workspace } from '@shared/types';
@@ -177,7 +178,7 @@ function QuestionCard({ question, onAnswer, onDismiss }: { question: ChatQuestio
   );
 }
 
-const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [], canSend: false, engine: 'chat', streaming: null, question: null, lastError: null, limit: null };
+const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, workingSince: null, pendingPermission: null, queued: [], canSend: false, engine: 'chat', streaming: null, question: null, lastError: null, limit: null, stuck: null };
 
 /**
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.
@@ -585,6 +586,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
               <div className="peek-term"><TerminalPane key={agentTerminalId} terminalId={agentTerminalId} /></div>
             </div>
           )}
+          {view.stuck && !readOnly && hasAgent && <StuckBanner workspace={workspace} stuck={view.stuck} onError={setError} />}
           {view.limit && !readOnly && <LimitBanner workspace={workspace} limit={view.limit} hasAgent={hasAgent} onError={setError} />}
           {composer}
         </div>

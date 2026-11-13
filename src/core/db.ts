@@ -425,6 +425,10 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX figures_by_workspace ON figures (workspace_id, created_at);
   `,
+  `
+  -- 자동 반영 (off / commit / main). 프로젝트마다 사용자가 정한다
+  ALTER TABLE projects ADD COLUMN auto_ship TEXT NOT NULL DEFAULT 'off';
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

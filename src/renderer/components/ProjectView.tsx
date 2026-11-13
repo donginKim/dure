@@ -14,6 +14,7 @@ import { BoardSection } from './BoardSection';
 import { VerifyCommand } from './VerifyParts';
 import { MergeSection } from './MergeSection';
 import { AgreementsSection } from './AgreementsSection';
+import { AutoShipSection } from './AutoShipSection';
 import { remoteGroups } from '../boardView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -213,6 +214,8 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       </div>
 
       <AgreementsSection projectId={project.id} readOnly={done} />
+
+      <AutoShipSection project={project} readOnly={done} hasVerify={repos.some((r) => r.verifyCommand)} />
 
       <MergeSection projectId={project.id} readOnly={done} />
 

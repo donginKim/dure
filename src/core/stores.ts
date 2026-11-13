@@ -2,7 +2,7 @@ import { basename } from 'node:path';
 import type Database from 'better-sqlite3';
 import type { Project, Repo, Workspace } from '@shared/types';
 
-interface ProjectRow { id: string; name: string; created_at: number; status: string; completed_at: number | null }
+interface ProjectRow { id: string; name: string; created_at: number; status: string; completed_at: number | null; auto_ship?: string }
 interface RepoRow { id: string; project_id: string; name: string; path: string; verify_command?: string }
 interface WorkspaceRow {
   id: string; project_id: string; repo_id: string; name: string; name_locked: number; summary: string;
@@ -10,7 +10,7 @@ interface WorkspaceRow {
   status: string; token: string; created_at: number; engine: string; session_id: string | null; role: string; model?: string;
 }
 
-const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at, status: r.status === 'done' ? 'done' : 'active', completedAt: r.completed_at });
+const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at, status: r.status === 'done' ? 'done' : 'active', completedAt: r.completed_at, autoShip: r.auto_ship === 'commit' || r.auto_ship === 'main' ? r.auto_ship : 'off' });
 const toRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, name: r.name, path: r.path, verifyCommand: r.verify_command ?? '' });
 // 토큰은 일부러 옮기지 않는다. 화면으로 나가는 객체에 들어가면 안 된다.
 const toWorkspace = (r: WorkspaceRow): Workspace => ({
@@ -24,7 +24,7 @@ export class ProjectStore {
   constructor(private readonly db: Database.Database) {}
 
   create(name: string): Project {
-    const p: Project = { id: crypto.randomUUID(), name, createdAt: Date.now(), status: 'active', completedAt: null };
+    const p: Project = { id: crypto.randomUUID(), name, createdAt: Date.now(), status: 'active', completedAt: null, autoShip: 'off' };
     this.db.prepare('INSERT INTO projects (id, name, created_at) VALUES (?, ?, ?)').run(p.id, p.name, p.createdAt);
     return p;
   }
@@ -39,6 +39,13 @@ export class ProjectStore {
   }
 
   /** 완료 처리하거나 다시 연다. */
+  setAutoShip(id: string, mode: Project['autoShip']): Project {
+    this.db.prepare('UPDATE projects SET auto_ship = ? WHERE id = ?').run(mode === 'commit' || mode === 'main' ? mode : 'off', id);
+    const p = this.get(id);
+    if (!p) throw new Error(`프로젝트가 없습니다: ${id}`);
+    return p;
+  }
+
   setStatus(id: string, status: Project['status']): Project {
     this.db.prepare('UPDATE projects SET status = ?, completed_at = ? WHERE id = ?').run(status, status === 'done' ? Date.now() : null, id);
     const p = this.get(id);

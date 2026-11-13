@@ -47,6 +47,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       changed('projects');
     },
     'projects.reopen': (id: string) => { const p = core.reopenProject(id); changed('projects'); return p; },
+    'projects.setAutoShip': (id: string, mode: string) => { assertOpen(String(id)); const p = core.projects.setAutoShip(String(id), mode === 'commit' || mode === 'main' ? mode : 'off'); changed('projects'); return p; },
+    'projects.shipLog': (id: string) => core.autoShip.events(String(id)),
     'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId), people: core.peers.share(projectId)?.mine === false ? core.peers.people(projectId) : core.peers.assignable(projectId), ...(core.coordinator.team(projectId)?.mine === false ? { suggestTo: core.coordinator.team(projectId)!.leaderName } : {}) }),
     'coordinator.approve': (proposalId: string, decision: PlanDecision) => core.coordinator.approve(proposalId, decision),
     'coordinator.pickSpec': async () => {
@@ -382,6 +384,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.agreements.on('changed', onAgreementsChanged);
   const onFiguresChanged = (): void => changed('figures');
   core.figures.on('changed', onFiguresChanged);
+  const onShipChanged = (): void => changed('commit');
+  core.autoShip.on('changed', onShipChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -412,6 +416,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.merges.off('changed', onReviewChanged);
     core.agreements.off('changed', onAgreementsChanged);
     core.figures.off('changed', onFiguresChanged);
+    core.autoShip.off('changed', onShipChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

@@ -22,6 +22,8 @@ export interface AttentionSources {
   limited?(projectId: string): { workspaceId: string; info: { kind: string; resetsAt: number | null } }[];
   /** 막힌 것 같은 워크스페이스 */
   agreements?(projectId: string): { id: string; title: string; author: string }[];
+  /** 자동 반영이 멈춘 워크스페이스 (가장 최근 기록이 실패) */
+  ships?(projectId: string): { id: string; workspaceId: string; workspaceName: string; message: string }[];
   stuck?(projectId: string): { workspaceId: string; info: { reason: 'repeat' | 'quiet'; since: number; count: number; detail: string } }[];
 }
 
@@ -55,6 +57,7 @@ export class AttentionService extends EventEmitter {
         const when = at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} 에 풀립니다` : '언제 풀리는지 모릅니다';
         add('limit', `${r.workspaceId}:${r.info.resetsAt ?? ''}`, r.workspaceId, `${name(r.workspaceId)}가 사용 한도에 걸려 멈췄습니다`, `${when} · 다른 모델로 바꿔 이어 갈 수 있습니다`);
       }
+      for (const e of safe(() => this.s.ships?.(p.id) ?? [])) add('ship', e.id, e.workspaceId, `"${e.workspaceName}" 의 자동 반영이 멈췄습니다`, e.message);
       for (const a of safe(() => this.s.agreements?.(p.id) ?? [])) add('agreement', a.id, null, `${a.author} 이(가) 약속을 제안했습니다`, a.title);
       for (const r of safe(() => this.s.stuck?.(p.id) ?? [])) {
         const min = Math.max(1, Math.round((Date.now() - r.info.since) / 60_000));

@@ -184,7 +184,7 @@ test('지침에 커밋·push 문단이 있다', () => {
 });
 
 test('모든 에이전트에게: 고를 것이 있으면 글이 아니라 질문 도구(AskUserQuestion)로 선택지를 주고 추천을 첫째에 둔다', () => {
-  const project = { id: 'p', name: '쇼핑몰', createdAt: 0, status: 'active' as const, completedAt: null };
+  const project = { id: 'p', name: '쇼핑몰', createdAt: 0, status: 'active' as const, completedAt: null, autoShip: 'off' as const };
   const ws = { id: 'w', projectId: 'p', role: 'worker' as const, repoId: 'r', name: '백엔드', nameLocked: false, summary: '', branch: 'b', baseBranch: 'main', worktreePath: '/w', agentKind: 'claude' as const, permissionMode: 'ask' as const, engine: 'chat' as const, model: '', status: 'stopped' as const, createdAt: 0 };
   for (const text of [baseInstructions(ws, project), coordinatorInstructions(project)]) {
     expect(text).toContain('AskUserQuestion 도구로 물어라');

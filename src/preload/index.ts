@@ -26,6 +26,8 @@ const api: DureApi = {
     create: (name) => call('projects.create', name),
     remove: (id) => call('projects.remove', id),
     reopen: (id) => call('projects.reopen', id),
+    setAutoShip: (id, mode) => call('projects.setAutoShip', id, mode),
+    shipLog: (id) => call('projects.shipLog', id),
   },
   coordinator: {
     get: (projectId) => call('coordinator.get', projectId),

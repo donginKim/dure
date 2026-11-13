@@ -21,7 +21,15 @@ export interface Project {
   status: ProjectStatus;
   /** 완료 처리한 시각. 진행 중이면 null */
   completedAt: number | null;
+  /**
+   * 자동 반영. off: 사람이 커밋하고 옮긴다. commit: 조건이 맞으면 워크스페이스 브랜치에 저절로 커밋한다.
+   * main: 그다음 기준 브랜치(main 등)까지 저절로 옮긴다. push 는 늘 사람이 한다
+   */
+  autoShip: AutoShipMode;
 }
+export type AutoShipMode = 'off' | 'commit' | 'main';
+/** 자동 반영의 한 단계 기록 */
+export interface ShipEvent { id: string; projectId: string; workspaceId: string; workspaceName: string; at: number; stage: 'verify' | 'review' | 'secret' | 'commit' | 'merge' | 'advance' | 'done'; ok: boolean; message: string }
 
 export interface Repo {
   id: string;
@@ -819,7 +827,7 @@ export interface NoteSummary { id: string; title: string; preview: string; updat
  * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
  * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
  */
-export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'agreement' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
+export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'agreement' | 'ship' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
 export interface AttentionItem {
   /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
   id: string; kind: AttentionKind;

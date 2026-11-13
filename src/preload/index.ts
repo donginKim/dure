@@ -29,6 +29,7 @@ const api: DureApi = {
     setAutoShip: (id, mode) => call('projects.setAutoShip', id, mode),
     shipLog: (id) => call('projects.shipLog', id),
     budget: (id) => call('projects.budget', id),
+    dashboard: () => call('projects.dashboard'),
     setBudget: (id, daily, total) => call('projects.setBudget', id, daily, total),
     allowToday: (id) => call('projects.allowToday', id),
   },

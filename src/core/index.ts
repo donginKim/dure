@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus, Todo, Agreement } from '@shared/types';
+import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
@@ -106,6 +106,8 @@ export interface Core {
   autoShip: AutoShipService;
   budget: BudgetService;
   activity: ActivityService;
+  /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
+  dashboard(): ProjectDashboard[];
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -422,6 +424,26 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   let disposed = false;
   return {
     projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    dashboard() {
+      const att = new Map<string, number>();
+      for (const a of attention.list()) if (a.projectId) att.set(a.projectId, (att.get(a.projectId) ?? 0) + 1);
+      return projects.list().filter((p) => p.status !== 'done').map((p): ProjectDashboard => {
+        const all = todos.listProject(p.id).filter((t) => t.status !== 'cancelled');
+        const ws = workspaces.list(p.id);
+        const b = budget.status(p.id);
+        const ship = autoShip.events(p.id)[0];
+        const share = peers.share(p.id);
+        return {
+          projectId: p.id,
+          todos: { total: all.length, done: all.filter((t) => t.status === 'done').length, doing: all.filter((t) => t.status === 'doing').length },
+          agents: { working: ws.filter((w) => w.status === 'working').length, waiting: ws.filter((w) => w.status === 'waiting_user').length, total: ws.length },
+          attention: att.get(p.id) ?? 0,
+          budget: { today: b.today, dailyLimit: b.dailyLimit, state: b.state },
+          lastShip: ship ? { at: ship.at, stage: ship.stage, ok: ship.ok, workspaceName: ship.workspaceName } : null,
+          share: share ? { mine: share.mine, people: share.members.length - 1, online: share.members.filter((m) => !m.me && m.online).length } : null,
+        };
+      });
+    },
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

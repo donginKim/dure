@@ -36,6 +36,22 @@ export interface Project {
  * state: ok, warning (80% 넘음), over (넘어서 멈췄다). overrideUntil: 사용자가 "오늘만 더 쓰기" 를 누른 때까지는 멈추지 않는다
  */
 export interface BudgetStatus { projectId: string; today: number; total: number; dailyLimit: number; totalLimit: number; state: 'ok' | 'warning' | 'over'; overrideUntil: number }
+/** 여러 프로젝트 대시보드: 프로젝트 하나의 한눈 요약 */
+export interface ProjectDashboard {
+  projectId: string;
+  /** TODO (취소 뺀 것): 전체, 끝난 것, 하는 중 */
+  todos: { total: number; done: number; doing: number };
+  /** 워크스페이스: 일하는 중, 내 답을 기다리는 중, 전체 */
+  agents: { working: number; waiting: number; total: number };
+  /** 확인할 것의 수 */
+  attention: number;
+  /** 오늘 쓴 토큰과 예산 */
+  budget: { today: number; dailyLimit: number; state: 'ok' | 'warning' | 'over' };
+  /** 마지막 자동 반영 기록 */
+  lastShip: { at: number; stage: string; ok: boolean; workspaceName: string } | null;
+  /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
+  share: { mine: boolean; people: number; online: number } | null;
+}
 export type AutoShipMode = 'off' | 'commit' | 'main';
 /** 자동 반영의 한 단계 기록 */
 export interface ShipEvent { id: string; projectId: string; workspaceId: string; workspaceName: string; at: number; stage: 'verify' | 'review' | 'secret' | 'commit' | 'merge' | 'advance' | 'done'; ok: boolean; message: string }

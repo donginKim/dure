@@ -33,18 +33,24 @@ export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNo
         </div>
       )}
       <div className="cards-grid">
-        {tree.map(({ project, workspaces }) => {
+        {[...tree].sort((a, b) => needs(dash[b.project.id]) - needs(dash[a.project.id])).map(({ project, workspaces }) => {
           const projectRepos = repos.filter((r) => r.projectId === project.id);
-          const running = workspaces.filter((w) => w.status !== 'stopped').length;
           const d = dash[project.id];
+          const waiting = d?.agents.waiting ?? 0;
+          const attention = d?.attention ?? 0;
+          // 나를 기다리는 것 → 일하는 중 → 쉬는 중 → 꺼짐 순으로
+          const ordered = [...workspaces].sort((a, b) => ORDER[a.status] - ORDER[b.status]);
           return (
-            <div className="pcard" key={project.id} onClick={() => onSelect({ type: 'project', id: project.id })}>
-              <div className="pcard-title"><span className="folder" />{project.name}</div>
-              <div className="pcard-meta">저장소 {projectRepos.length}개 · 워크스페이스 {workspaces.length}개{running > 0 ? ` · 실행 중 ${running}개` : ''}</div>
+            <div className={`pcard${waiting + attention > 0 ? ' needs-me' : ''}`} key={project.id} onClick={() => onSelect({ type: 'project', id: project.id })}>
+              <div className="pcard-title">
+                <span className="folder" /><span className="grow">{project.name}</span>
+                {waiting > 0 && <span className="badge warn" title="에이전트가 내 답을 기다립니다">답 기다림 {waiting}</span>}
+                {attention > waiting && <span className="badge warn" title="확인할 것">확인 {attention}</span>}
+              </div>
               {d && <Summary d={d} />}
               <div className="pcard-list">
                 {projectRepos.length === 0 && <button className="btn" onClick={(e) => { e.stopPropagation(); onSelect({ type: 'project', id: project.id }); }}>저장소 추가하러 가기</button>}
-                {workspaces.slice(0, 4).map((w) => (
+                {ordered.slice(0, 4).map((w) => (
                   <div
                     className="pcard-ws"
                     key={w.id}
@@ -52,12 +58,13 @@ export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNo
                   >
                     <span className={`dot ${w.status}`} />
                     <span className="grow">{w.name}</span>
-                    <span className="muted">{STATUS_LABEL[w.status]}</span>
+                    <span className={`ws-state ${w.status}`}>{STATUS_LABEL[w.status]}</span>
                   </div>
                 ))}
-                {workspaces.length > 4 && <div className="muted">외 {workspaces.length - 4}개</div>}
+                {ordered.length > 4 && <div className="muted">외 {ordered.length - 4}개</div>}
                 {projectRepos.length > 0 && workspaces.length === 0 && <div className="muted">워크스페이스 없음</div>}
               </div>
+              <div className="pcard-meta">저장소 {projectRepos.length} · 워크스페이스 {workspaces.length}</div>
             </div>
           );
         })}
@@ -66,6 +73,9 @@ export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNo
   );
 }
 
+const ORDER: Record<string, number> = { waiting_user: 0, working: 1, starting: 2, idle: 3, stopped: 4 };
+/** 나를 기다리는 정도: 카드를 이 순서로 놓는다 */
+const needs = (d: ProjectDashboard | undefined): number => (d ? (d.agents.waiting + d.attention) * 100 + d.agents.working : 0);
 const tokens = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 const ago = (at: number): string => { const m = Math.round((Date.now() - at) / 60_000); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
 const STAGE: Record<string, string> = { verify: '확인 명령', review: '리뷰', secret: '비밀 값 검사', commit: '커밋', merge: '합치기', advance: 'main 반영', done: '완료' };
@@ -82,9 +92,7 @@ function Summary({ d }: { d: ProjectDashboard }) {
         </div>
       )}
       <div className="pcard-badges">
-        {d.agents.working > 0 && <span className="badge">일하는 중 {d.agents.working}</span>}
-        {d.agents.waiting > 0 && <span className="badge warn">답 기다림 {d.agents.waiting}</span>}
-        {d.attention > 0 && <span className="badge warn">확인할 것 {d.attention}</span>}
+        {d.agents.working > 0 && <span className="badge info">일하는 중 {d.agents.working}</span>}
         {(d.budget.today > 0 || d.budget.state !== 'ok') && (
           <span className={`badge${d.budget.state === 'over' ? ' danger' : d.budget.state === 'warning' ? ' warn' : ''}`} title="오늘 쓴 토큰 (입력·캐시 쓰기·출력)">
             오늘 {tokens(d.budget.today)}{d.budget.dailyLimit > 0 ? ` / ${tokens(d.budget.dailyLimit)}` : ''}

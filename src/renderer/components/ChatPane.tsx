@@ -520,7 +520,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
           ref={input}
           value={draft}
           rows={Math.min(8, Math.max(1, draft.split('\n').length))}
-          placeholder={status === 'working' ? '작업 중에 보내면 에이전트가 다음 단계에서 읽습니다' : `에이전트에게 시킬 일을 쓰세요${commands.length ? ' · / 로 명령 고르기' : ''}${mentionable.length ? ' · @ 로 사람 고르기' : ''}`}
+          placeholder={status === 'working' ? '일하는 중에 보내면 에이전트가 다음 단계에서 읽습니다' : `에이전트에게 시킬 일을 쓰세요${commands.length ? ' · / 로 명령 고르기' : ''}${mentionable.length ? ' · @ 로 사람 고르기' : ''}`}
           onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={onKey}
@@ -538,7 +538,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       {working && (
         <div className="chat-status">
           <span className="spin" />
-          <span>{elapsed(now - view.workingSince!)} 작업 중</span>
+          <span>{elapsed(now - view.workingSince!)} 일하는 중</span>
         </div>
       )}
       <div className="chat-main">

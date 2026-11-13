@@ -136,14 +136,27 @@ export class TodoService extends EventEmitter {
     if (!p || p.projectId !== projectId || p.workspaceId !== null) throw new Error('그런 프로젝트 항목이 없습니다.');
   }
 
-  /** 딸린 항목이 바뀌었다: 프로젝트 항목의 상태를 맞춘다. 취소해 둔 프로젝트 항목은 건드리지 않는다. */
-  private settle(parentId: string | null): void {
-    if (!parentId) return;
+  /** 내 PC 밖에 있는 딸린 항목 (다른 사람에게 나눠 준 일). 배정 쪽이 알려 준다 */
+  private extra: ((projectId: string, parentId: string) => Pick<Todo, 'status'>[]) | undefined;
+  setExtraChildren(fn: (projectId: string, parentId: string) => Pick<Todo, 'status'>[]): void { this.extra = fn; }
+
+  /** 딸린 항목이 바뀌었다: 프로젝트 항목의 상태를 맞춘다. 취소해 둔 프로젝트 항목은 건드리지 않는다. 바꿨으면 true */
+  private settle(parentId: string | null): boolean {
+    if (!parentId) return false;
     const p = this.get(parentId);
-    if (!p || p.status === 'cancelled') return;
-    const next = rollup(this.children(parentId));
-    if (!next || next === p.status) return;
+    if (!p || p.status === 'cancelled') return false;
+    const next = rollup([...this.children(parentId), ...(this.extra?.(p.projectId, parentId) ?? [])]);
+    if (!next || next === p.status) return false;
     this.db.prepare("UPDATE todos SET status = ?, rev = rev + 1, updated_by = 'agent', updated_at = ? WHERE id = ?").run(next, Date.now(), parentId);
+    return true;
+  }
+
+  /** 프로젝트 항목 전부를 딸린 항목에 맞춘다 (다른 사람에게 나눠 준 일의 진행이 바뀌었을 때). */
+  settleProject(projectId: string): void {
+    const ids = (this.db.prepare('SELECT id FROM todos WHERE project_id = ? AND workspace_id IS NULL').all(projectId) as { id: string }[]).map((r) => r.id);
+    let changed = false;
+    this.db.transaction(() => { for (const id of ids) changed = this.settle(id) || changed; })();
+    if (changed) this.emit('changed', projectId);
   }
 
   /** 워크스페이스 항목을 프로젝트 항목 아래에 달거나 (parentId), 뗀다 (null). */

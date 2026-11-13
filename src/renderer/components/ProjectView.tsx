@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
+import type { AssignmentOut, Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
 import { groupTodos } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
 import { CleanupList, CompleteDialog } from './CleanupPanel';
@@ -10,6 +10,8 @@ import { SharePanel } from './SharePanel';
 import { ConversationList, type ConversationData } from './ConversationPanel';
 import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
 import { Ticks, TodoList } from './TodoPanel';
+import { BoardSection } from './BoardSection';
+import { remoteGroups } from '../boardView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
@@ -37,6 +39,16 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
   const [completing, setCompleting] = useState(false);
   // 완료된 프로젝트는 기록만 본다.
   const done = project.status === 'done';
+  // 다른 사람에게 나눠 준 일: TODO 에 그 사람의 묶음으로 보이고, 프로젝트 항목 아래에 딸린 일로 잡힌다.
+  const [outgoing, setOutgoing] = useState<AssignmentOut[]>([]);
+  useEffect(() => {
+    const load = (): void => { window.dure.assignments.outgoing(project.id).then(setOutgoing).catch(() => setOutgoing([])); };
+    load();
+    return window.dure.onChanged((topic) => { if (topic === 'peers') load(); });
+  }, [project.id]);
+  const remote = remoteGroups(project.id, outgoing);
+  const allTodos = [...todos, ...remote.todos];
+  const allWorkspaces = [...workspaces, ...remote.workspaces] as Workspace[];
 
   // 등록된 저장소가 지금도 유효한지 확인해 줄마다 보여준다.
   const repoIds = repos.map((r) => r.id).join(',');
@@ -93,6 +105,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       {tab === 'db' && <DbPanel projectId={project.id} workspaces={everyone} readOnly={done} />}
       {tab === 'status' && (
     <div className="page">
+      <BoardSection projectId={project.id} />
       {done && (
         <div className="done-banner">
           <div>
@@ -198,16 +211,20 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       <div className="section">
         <div className="section-head"><h2>TODO</h2></div>
         <div className="todo-groups">
-          {groupTodos(todos, workspaces).map((g) => (
-            <div className="todo-group" key={g.key}>
-              <div className="todo-group-head">
-                {g.workspaceId === null ? <span className="folder" /> : <span className={`dot ${workspaces.find((w) => w.id === g.workspaceId)?.status ?? ''}`} />}
-                <span className="t">{g.title}</span>
+          {groupTodos(allTodos, allWorkspaces).map((g) => {
+            const far = g.workspaceId !== null && g.workspaceId.startsWith('remote:');
+            return (
+              <div className="todo-group" key={g.key}>
+                <div className="todo-group-head">
+                  {g.workspaceId === null ? <span className="folder" /> : <span className={`dot ${workspaces.find((w) => w.id === g.workspaceId)?.status ?? ''}`} />}
+                  <span className="t">{g.title}</span>
+                  {far && <span className="tag" title="다른 사람에게 나눠 준 일입니다. 그 사람의 두레에 있어 여기서는 보기만 합니다">{remote.notes[g.workspaceId!] ?? '나눠 준 일'}</span>}
+                </div>
+                <Ticks items={g.items} />
+                <TodoList projectId={project.id} workspaceId={g.workspaceId} items={g.items} readOnly={done || far} links={{ all: allTodos, workspaces: allWorkspaces }} />
               </div>
-              <Ticks items={g.items} />
-              <TodoList projectId={project.id} workspaceId={g.workspaceId} items={g.items} readOnly={done} links={{ all: todos, workspaces }} />
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div className="help">프로젝트 항목은 프로젝트에서 이뤄야 하는 큰 일입니다. 워크스페이스 항목을 그 아래에 달면 (항목에 마우스를 올려 고릅니다), 딸린 일이 다 끝났을 때 프로젝트 항목이 저절로 완료됩니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</div>
       </div>

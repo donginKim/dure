@@ -186,6 +186,7 @@ const api: DureApi = {
     briefs: (projectId) => call('assignments.briefs', projectId),
     takeBrief: (id) => call('assignments.takeBrief', id),
     dropBrief: (id) => call('assignments.dropBrief', id),
+    board: (projectId) => call('assignments.board', projectId),
   },
   peers: {
     status: () => call('peers.status'),

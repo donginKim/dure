@@ -80,6 +80,8 @@ export class CoordinatorService extends EventEmitter {
       people(projectId: string): { peerId: string; name: string }[];
       send(projectId: string, peerId: string, a: { summary: string; items: { name: string; role: string; todos: PlanTodo[] }[] }): Promise<string>;
       cancel(assignmentId: string): Promise<void>;
+      /** 보낸 배정의 TODO 를 내 프로젝트 TODO 에 잇는다 (parents: 프로젝트 TODO 의 제목 → id) */
+      link?(assignmentIds: string[], parents: Map<string, string>): void;
       /** 함께하는 사람들에게 기획서 정리를 보낸다 (skip: 이미 배정으로 받은 사람) */
       brief?(projectId: string, summary: string, skip: string[]): Promise<{ sent: string[]; failed: string[] }>;
     };
@@ -350,6 +352,12 @@ export class CoordinatorService extends EventEmitter {
     return this.pending(projectId)!;
   }
 
+  /** 가장 최근에 승인된 계획안의 기획서 정리. 없으면 빈 글. */
+  approvedSummary(projectId: string): string {
+    const r = this.d.db.prepare("SELECT * FROM proposals WHERE project_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 1").get(projectId) as Row | undefined;
+    return r ? toProposal(r).summary : '';
+  }
+
   /** 조율 에이전트에게 두레의 알림으로 알린다 (꺼져 있으면 이 알림으로 뜬다). */
   private tell(projectId: string, body: string): void {
     const coordinator = this.d.workspaces.coordinator(projectId);
@@ -426,6 +434,8 @@ export class CoordinatorService extends EventEmitter {
           parents.set(t.title, made.id);
         }
         for (const it of items) for (const t of it.todos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: targets.get(it.name)!.id, title: t.title, detail: t.detail, assignee: t.assignee, parentId: (t.under && parents.get(t.under)) || null }, 'agent').id);
+        // 다른 사람에게 나눠 준 일도 프로젝트 TODO 에 딸린다: 그 사람의 진행이 프로젝트 TODO 의 진행에 잡힌다.
+        if (sent.length) this.d.assign?.link?.(sent, parents);
       } catch (e) {
         // 보낸 배정도 거둔다.
         for (const id of sent) await this.d.assign!.cancel(id).catch(() => undefined);

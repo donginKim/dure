@@ -262,3 +262,71 @@ test('기획서 정리 보내기를 끄면 보내지 않는다', async () => {
   await pm.core.coordinator.approve(p.id, { items: [], projectTodos: p.projectTodos });
   expect(des.core.assignments.briefs(des.projectId)).toEqual([]);
 });
+
+test('현황판: 리더의 큰 일과 담당표가 모두에게 간다. 나눠 준 일이 끝나면 리더의 프로젝트 TODO 가 완료된다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  pm.core.coordinator.ensure(pm.projectId);
+  const p = await pm.core.coordinator.propose(pm.projectId, {
+    summary: '# 로그인\n이메일 로그인', project_todos: ['로그인 기능', { title: '배포 승인', assignee: 'user' }],
+    workspaces: [
+      W('일정 관리', { repo: 'repo-기획', todos: [{ title: '일정표', under: '로그인 기능' }] }),
+      W('로그인 API', { owner: '개발', role: '인증 API', todos: [{ title: 'POST /login', under: '로그인 기능' }, '문서'] }),
+    ],
+  });
+  await pm.core.coordinator.approve(p.id, { items: p.items, projectTodos: p.projectTodos });
+  const goal = pm.core.todos.listProject(pm.projectId).find((t) => t.title === '로그인 기능')!;
+  // 나눠 준 TODO 가 내 프로젝트 TODO 에 이어진다 (내 기록에만). 받는 쪽에는 goal 이 가지 않는다
+  expect(pm.core.assignments.outgoing(pm.projectId)[0]!.items[0]!.todos.map((t) => [t.title, t.goal])).toEqual([['POST /login', goal.id], ['문서', undefined]]);
+  expect(JSON.stringify(dev.core.assignments.incoming()[0])).not.toContain(goal.id);
+  // 리더의 현황판 (지금의 것)
+  const mine = pm.core.assignments.board(pm.projectId)!;
+  expect(mine.mine).toBe(true);
+  expect(mine.goals).toEqual([{ title: '로그인 기능', status: 'todo', assignee: 'agent', done: 0, total: 2 }, { title: '배포 승인', status: 'todo', assignee: 'user', done: 0, total: 0 }]);
+  expect(mine.people.map((x) => [x.name, x.me, x.leader, x.works.map((w) => [w.name, w.state, `${w.done}/${w.total}`])])).toEqual([
+    ['기획', true, true, [['일정 관리', 'active', '0/1']]], ['개발', false, false, [['로그인 API', 'waiting', '0/2']]], ['디자인', false, false, []],
+  ]);
+  // 일을 받지 않은 사람도 받는다: 누가 무엇을 맡았는지 안다. TODO 의 제목은 가지 않는다
+  await pm.core.assignments.boardNow();
+  const seen = des.core.assignments.board(des.projectId)!;
+  expect(seen).toMatchObject({ mine: false, leaderName: '기획', summary: '# 로그인\n이메일 로그인' });
+  expect(seen.people.map((x) => [x.name, x.me, x.leader, x.works.map((w) => w.name)])).toEqual([['기획', false, true, ['일정 관리']], ['개발', false, false, ['로그인 API']], ['디자인', true, false, []]]);
+  expect(JSON.stringify(seen)).not.toContain('POST /login');
+  const cd = des.core.coordinator.ensure(des.projectId);
+  const overview = await call(des.core, cd.id, 'project_overview');
+  expect(overview).toContain('\\"overall\\"');
+  expect(overview).toContain('로그인 API');
+  expect(overview).toContain('디자인 (네 사용자)');
+  // 리더의 조율 에이전트에게는 overall 이 없다 (자기 것이 원본이다)
+  expect(await call(pm.core, pm.core.workspaces.coordinator(pm.projectId)!.id, 'project_overview')).not.toContain('\\"overall\\"');
+  // 개발자가 수락하고 일을 끝내면, 리더의 프로젝트 TODO 가 따라 바뀐다
+  const [ws] = await dev.core.assignments.accept(dev.core.assignments.incoming()[0]!.id, [{ repoId: dev.repo.id }]);
+  const t = dev.core.todos.listProject(dev.projectId).find((x) => x.title === 'POST /login')!;
+  dev.core.todos.update(t.id, { status: 'done' }, { actor: 'agent', rev: t.rev });
+  await until(() => pm.core.todos.get(goal.id)!.status === 'doing');
+  const own = pm.core.todos.listProject(pm.projectId).find((x) => x.title === '일정표')!;
+  pm.core.todos.update(own.id, { status: 'done' }, { actor: 'user' });
+  expect(pm.core.todos.get(goal.id)!.status).toBe('done');
+  await pm.core.assignments.boardNow();
+  await until(() => des.core.assignments.board(des.projectId)!.goals[0]!.status === 'done');
+  expect(des.core.assignments.board(des.projectId)!.people[1]!.works).toMatchObject([{ name: ws!.name, state: 'active', done: 1, total: 2 }]);
+});
+
+test('현황판은 프로젝트를 연 사람의 것만 받는다. 남이 보낸 내용은 다듬어 받는다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  // 참여자(개발)가 꾸민 현황판을 다른 참여자(디자인)에게 보낸다: 받지 않는다
+  await expect(dev.core.peers.sendMember(dev.projectId, des.id, { type: 'board', board: { summary: '가짜', goals: [{ title: '가짜 일', status: 'done' }], people: [] } })).rejects.toThrow('프로젝트를 연 사람만');
+  expect(des.core.assignments.board(des.projectId)).toBeNull();
+  // 리더가 보낸 것이라도 모양과 크기를 다시 본다
+  await pm.core.peers.sendMember(pm.projectId, des.id, { type: 'board', board: {
+    summary: 'x'.repeat(9000), goals: [{ title: '일\u0007\n둘째 줄', status: '이상한 값', done: 99, total: 3 }, { title: '' }, ...Array.from({ length: 200 }, (_, i) => ({ title: `g${i}` }))],
+    people: [{ peerId: 'not-an-id', name: '가짜' }, { peerId: dev.id, name: '바꾼@이름', works: [{ name: 'a"b@c', role: 'r', done: -3, total: 'x', state: '??' }] }],
+  } });
+  const b = des.core.assignments.board(des.projectId)!;
+  expect(b.summary.length).toBe(4000);
+  expect(b.goals.length).toBe(79); // 앞의 80개만 보고, 그중 제목이 없는 것을 뺀다
+  expect(b.goals[0]).toEqual({ title: '일 둘째 줄', status: 'todo', assignee: 'agent', done: 3, total: 3 });
+  // 사람의 이름은 내가 아는 이름을 쓴다 (리더가 적어 준 이름으로 바뀌지 않는다)
+  expect(b.people).toEqual([{ peerId: dev.id, name: '개발', me: false, leader: false, works: [{ name: 'abc', role: 'r', status: '', done: 0, total: 0, state: 'active' }] }]);
+});

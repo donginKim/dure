@@ -338,6 +338,15 @@ const MIGRATIONS: string[] = [
   ALTER TABLE todos ADD COLUMN parent_id TEXT;
   CREATE INDEX todos_by_parent ON todos (parent_id);
   `,
+  `
+  -- 받은 현황판: 함께하는 프로젝트를 연 사람이 보낸 큰 일과 담당표. 프로젝트마다 가장 새 것 하나
+  CREATE TABLE boards_in (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    received_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

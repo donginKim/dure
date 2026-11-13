@@ -1,3 +1,4 @@
+import { ReviewSection } from './ReviewSection';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommitResult, CommitState, PrInfo, Workspace } from '@shared/types';
 import { fileLabel, forgetEdit, pathsToCommit, pushHint, recallEdit, rememberEdit, statusLabel } from '../commitView';
@@ -129,6 +130,7 @@ export function CommitDialog({ workspace, onClose }: { workspace: Workspace; onC
           <span className="grow">병합이 진행 중입니다. 일부 파일만 커밋할 수 없어 전체를 한 번에 커밋합니다.</span>
         </div>
       )}
+      <ReviewSection workspaceId={workspace.id} hasChanges={(state?.files.length ?? 0) > 0} />
       <div className="commit-msg-head">
         <span>커밋 메시지</span>
         {state?.draft && !edited && <span className="muted">에이전트가 작성 · {clock(state.draft.updatedAt)}</span>}

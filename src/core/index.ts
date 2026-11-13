@@ -6,6 +6,7 @@ import type { Repo, RepoStatus, Todo } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
+import { ReviewService, type ReviewRunner } from './review';
 import { VerifyService, type VerifyRunner } from './verify';
 import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
@@ -88,6 +89,7 @@ export interface Core {
   slashCommands(workspaceId: string): SlashCommand[];
   commitDrafts: CommitDraftStore;
   commit: CommitService;
+  review: ReviewService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -122,6 +124,8 @@ export interface CoreOptions {
   /** 시험에서 가짜 슬랙으로 바꾼다 */
   slackFetch?: ConstructorParameters<typeof SlackService>[0]['fetch'];
   dbWaitMs?: number;
+  /** 리뷰 에이전트를 돌리는 쪽 (시험에서 바꾼다) */
+  reviewRunner?: ReviewRunner;
   /** 확인 명령을 돌리는 쪽 (시험에서 바꾼다) */
   verifyRunner?: VerifyRunner;
   /** 한 사람의 계획 제안을 받는 최소 간격 (ms). 시험에서 줄인다 */
@@ -328,10 +332,29 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   attention.poke();
 
   const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
+  // 리뷰 에이전트: 커밋 초안이 올라오면 다른 에이전트가 변경을 읽고 문제를 찾는다.
+  const review = new ReviewService({
+    db, workspaces, git, env: o.baseEnv, runner: o.reviewRunner,
+    changes: async (id) => {
+      const st = await commit.state(id);
+      return Promise.all(st.files.map(async (f) => { const d = await commit.diff(id, f.path).catch(() => ({ text: '', binary: false, truncated: false })); return { path: f.path, status: f.status, ...d }; }));
+    },
+    executable: () => service.claudeExecutable(),
+    model: () => settings.get().reviewModel || settings.get().claudeModel,
+  });
+  const reviewTimers = new Map<string, NodeJS.Timeout>();
+  commitDrafts.on('changed', (id: string) => {
+    if (!settings.get().reviewOnDraft || !commitDrafts.get(id)) return;
+    // 초안을 잇달아 고치면 마지막 것만 리뷰한다.
+    clearTimeout(reviewTimers.get(id));
+    const t = setTimeout(() => { reviewTimers.delete(id); void review.review(id).catch(() => undefined); }, 3000);
+    t.unref?.();
+    reviewTimers.set(id, t);
+  });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

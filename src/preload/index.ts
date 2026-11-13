@@ -115,6 +115,11 @@ const api: DureApi = {
     run: (workspaceId, input) => call('commit.run', workspaceId, input),
     push: (workspaceId) => call('commit.push', workspaceId),
   },
+  review: {
+    status: (workspaceId) => call('review.status', workspaceId),
+    run: (workspaceId) => call('review.run', workspaceId),
+    sendToAgent: (workspaceId, picked) => call('review.sendToAgent', workspaceId, picked),
+  },
   chat: {
     get: (workspaceId) => call('chat.get', workspaceId),
     step: (workspaceId, stepId) => call('chat.step', workspaceId, stepId),

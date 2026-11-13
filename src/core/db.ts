@@ -382,6 +382,18 @@ const MIGRATIONS: string[] = [
   -- 워크스페이스마다의 모델 (비어 있으면 설정의 모델). 에이전트가 도는 중에도 바꿀 수 있다
   ALTER TABLE workspaces ADD COLUMN model TEXT NOT NULL DEFAULT '';
   `,
+  `
+  -- 커밋 전의 리뷰 (리뷰 에이전트가 찾은 것). 워크스페이스마다 마지막 하나
+  CREATE TABLE reviews (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    state TEXT NOT NULL,
+    tree TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    findings TEXT NOT NULL DEFAULT '[]',
+    error TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

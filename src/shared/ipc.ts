@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, ReviewState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -159,6 +159,14 @@ export interface DureApi {
     run(workspaceId: string, input: { files: string[]; message: string }): Promise<CommitResult>;
     /** git 이 낸 글을 돌려준다 */
     push(workspaceId: string): Promise<string>;
+  };
+  /** 커밋 전의 리뷰 (리뷰 에이전트) */
+  review: {
+    status(workspaceId: string): Promise<ReviewState | null>;
+    /** 지금 리뷰를 받는다 (작업 폴더가 바뀌지 않았어도 다시) */
+    run(workspaceId: string): Promise<ReviewState>;
+    /** 리뷰가 찾은 것을 그 워크스페이스의 에이전트에게 보내 고치게 한다. picked: 보낼 것의 번호 (없으면 전부) */
+    sendToAgent(workspaceId: string, picked?: number[]): Promise<void>;
   };
   /** 채팅 보기. 에이전트는 터미널에서 돌고, 여기서 보내는 것은 그 터미널에 써 넣는 것이다 */
   chat: {
@@ -359,7 +367,7 @@ export const IPC_CHANNELS = [
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',
-  'commit.state', 'commit.diff', 'commit.run', 'commit.push',
+  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;

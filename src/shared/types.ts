@@ -186,6 +186,11 @@ export interface CommitDraft {
   updatedAt: number;
 }
 
+/** 리뷰 에이전트가 찾은 것 하나 */
+export interface ReviewFinding { severity: '높음' | '중간' | '낮음'; file: string; line: number | null; title: string; detail: string }
+/** 커밋 전의 리뷰. stale: 리뷰한 뒤에 작업 폴더가 바뀌었다 */
+export interface ReviewState { state: 'running' | 'done' | 'failed'; summary: string; findings: ReviewFinding[]; error: string; at: number; stale: boolean }
+
 export interface CommitResult {
   hash: string;
   subject: string;
@@ -371,6 +376,10 @@ export interface Settings {
   autoStartOnMessage: boolean;
   /** 커밋·push 뒤에 에이전트에게 알린다 */
   notifyAgentOnCommit: boolean;
+  /** 에이전트가 커밋 초안을 올리면 리뷰 에이전트가 변경을 읽고 문제를 찾는다 (Claude 사용량이 든다) */
+  reviewOnDraft: boolean;
+  /** 리뷰 에이전트의 모델. 빈 글이면 Claude Code 의 모델 설정을 따른다 */
+  reviewModel: string;
   /** 에이전트가 메모를 찾아 읽을 수 있다 (읽기만) */
   notesForAgents: boolean;
   /** 에이전트가 새 메모를 쓰고 메모에 덧붙일 수 있다 (고치거나 지우지는 못한다) */

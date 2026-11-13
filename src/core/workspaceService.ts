@@ -135,6 +135,9 @@ export class WorkspaceService extends EventEmitter {
     return this.d.settings?.() ?? DEFAULT_SETTINGS;
   }
 
+  /** Claude Code 실행 파일 (리뷰 에이전트가 쓴다). */
+  claudeExecutable(): string { return this.agentExecutable('claude', this.settings()); }
+
   /** 에이전트 실행 파일. 설정에 경로가 있으면 그것(실행할 수 있어야 한다), 없으면 PATH 에서 찾는다. */
   private agentExecutable(kind: AgentKind, settings: Settings): string {
     const custom = kind === 'claude' ? settings.claudePath : settings.codexPath;

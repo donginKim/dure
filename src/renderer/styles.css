@@ -877,3 +877,16 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .limit-band { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel-2); font-size: 12.5px; line-height: 1.5; }
 .limit-band.rejected { border-color: var(--danger, #c25b5b); }
 .limit-band.warning { border-color: var(--accent); color: var(--muted); }
+
+/* 커밋 창의 리뷰 */
+.review { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); font-size: 12.5px; }
+.review-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-note { margin-top: 6px; }
+.review-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.review-item { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; line-height: 1.5; }
+.review-sev { flex: none; font-size: 11px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); }
+.sev-높음 .review-sev { color: var(--danger, #c25b5b); border-color: var(--danger, #c25b5b); }
+.sev-중간 .review-sev { color: var(--accent); border-color: var(--accent); }
+.review-title { font-weight: 600; margin-right: 6px; }
+.review-where { font-size: 11px; color: var(--muted); }
+.review-detail { display: block; color: var(--muted); white-space: pre-wrap; }

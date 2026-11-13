@@ -245,6 +245,16 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'browser.decide': (requestId: string, allow: boolean) => core.browser.decide(String(requestId), allow === true),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
+    'review.status': (workspaceId: string) => core.review.status(String(workspaceId)),
+    'review.run': (workspaceId: string) => core.review.review(String(workspaceId), { force: true }),
+    'review.sendToAgent': async (workspaceId: string, picked?: number[]) => {
+      const ws = core.workspaces.get(String(workspaceId));
+      if (!ws) throw new Error('워크스페이스가 없습니다.');
+      assertOpen(ws.projectId);
+      const s = await core.review.status(ws.id);
+      if (!s || s.state !== 'done' || s.findings.length === 0) throw new Error('보낼 리뷰 결과가 없습니다.');
+      core.messages.send({ projectId: ws.projectId, from: { kind: 'system' }, toWorkspaceId: ws.id, title: '리뷰', body: core.review.fixRequest(s, Array.isArray(picked) ? picked.map(Number) : undefined) });
+    },
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
     'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
     'settings.get': () => core.settings.get(),
@@ -353,6 +363,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.checkpoints.on('changed', onCheckpointsChanged);
   core.worktime.on('changed', onWorktimeChanged);
   core.verify.on('changed', onTodosChanged);
+  const onReviewChanged = (): void => changed('commit');
+  core.review.on('changed', onReviewChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -379,6 +391,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.checkpoints.off('changed', onCheckpointsChanged);
     core.worktime.off('changed', onWorktimeChanged);
     core.verify.off('changed', onTodosChanged);
+    core.review.off('changed', onReviewChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

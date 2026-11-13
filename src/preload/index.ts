@@ -94,6 +94,7 @@ const api: DureApi = {
     remove: (id) => call('todos.remove', id),
     move: (id, direction) => call('todos.move', id, direction),
     setParent: (id, parentId) => call('todos.setParent', id, parentId),
+    setAfter: (id, afterIds) => call('todos.setAfter', id, afterIds),
     pending: (projectId) => call('todos.pending', projectId),
     nudge: (workspaceId) => call('todos.nudge', workspaceId),
   },

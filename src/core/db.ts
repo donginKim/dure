@@ -369,6 +369,15 @@ const MIGRATIONS: string[] = [
     at INTEGER NOT NULL
   );
   `,
+  `
+  -- 일의 순서: todo_id 는 after_id 가 끝난 뒤에 시작한다
+  CREATE TABLE todo_deps (
+    todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+    after_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+    PRIMARY KEY (todo_id, after_id)
+  );
+  CREATE INDEX todo_deps_after ON todo_deps (after_id);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

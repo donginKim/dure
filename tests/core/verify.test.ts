@@ -148,3 +148,18 @@ test('verifyLine', () => {
   expect(verifyLine({ ...s, state: 'failed' }, 0)).toContain('확인 실패 · 방금');
   expect(verifyLine({ ...s, state: 'none' }, 0)).toContain('아직 확인한 적이 없습니다');
 });
+
+test('일의 순서: 앞의 일이 남았으면 도구가 까닭과 앞의 일을 알려 주고, todo_list 에 기다림이 보인다', async () => {
+  const back = await core.service.create({ projectId, repoId: repo.id, name: 'API', baseBranch: 'main', agentKind: 'claude' });
+  const api = core.todos.add({ projectId, workspaceId: back.id, title: 'POST /login' }, 'agent');
+  const ui = core.todos.add({ projectId, workspaceId: ws.id, title: 'API 붙이기', after: [api.id] }, 'agent');
+  const r = await call(ws.id, 'todo_update', { id: ui.id, rev: ui.rev, status: 'doing' });
+  expect(r).toContain('아직 시작할 수 없다');
+  expect(r).toContain('POST /login');
+  expect(r).toContain('워크스페이스 \\"API\\"');
+  const list = await call(ws.id, 'todo_list');
+  expect(list).toContain('\\"waiting\\":true');
+  core.todos.update(api.id, { status: 'done' }, { actor: 'user' });
+  expect(await call(ws.id, 'todo_list')).not.toContain('\\"waiting\\":true');
+  expect(await call(ws.id, 'todo_update', { id: ui.id, rev: ui.rev, status: 'doing' })).toContain('\\"status\\":\\"doing\\"');
+});

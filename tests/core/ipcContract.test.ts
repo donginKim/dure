@@ -10,7 +10,7 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
     'terminals.buffer', 'terminals.kill', 'terminals.list', 'terminals.openShell', 'terminals.resize',
     'terminals.startAgent', 'terminals.write',
     'workspaces.create', 'workspaces.list', 'workspaces.remove', 'workspaces.uncommitted',
-    'todos.add', 'todos.list', 'todos.move', 'todos.nudge', 'todos.pending', 'todos.remove', 'todos.setParent', 'todos.update',
+    'todos.add', 'todos.list', 'todos.move', 'todos.nudge', 'todos.pending', 'todos.remove', 'todos.setAfter', 'todos.setParent', 'todos.update',
     'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
     'messages.resume', 'messages.delivery', 'workspaces.interrupt', 'artifacts.list', 'artifacts.get',
     'browser.register', 'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.board', 'assignments.dropBrief',

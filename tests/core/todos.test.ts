@@ -1,6 +1,6 @@
 import { openDatabase } from '@core/db';
 import { ProjectStore, RepoStore, WorkspaceStore } from '@core/stores';
-import { pendingMessage, rollup, TodoConflictError, TodoService } from '@core/todos';
+import { pendingMessage, rollup, TodoConflictError, TodoService, TodoWaitingError } from '@core/todos';
 
 function setup() {
   const db = openDatabase(':memory:');
@@ -324,5 +324,66 @@ describe('프로젝트 항목과 거기에 딸린 워크스페이스 항목', ()
     todos.setParent(b.id, other.id);
     todos.update(b.id, { status: 'done' }, { actor: 'user' });
     expect(todos.get(other.id)!.status).toBe('cancelled');
+  });
+});
+
+describe('일의 순서 (앞의 일)', () => {
+  test('앞의 일이 끝나기 전에는 에이전트가 시작하거나 완료할 수 없다. 사용자는 넘어설 수 있다', () => {
+    const { todos, p, front, back } = setup();
+    const api = todos.add({ projectId: p.id, workspaceId: back.id, title: 'API' }, 'agent');
+    const ui = todos.add({ projectId: p.id, workspaceId: front.id, title: '화면', after: [api.id] }, 'agent');
+    expect(ui.after).toEqual([api.id]);
+    expect(todos.blockers(ui).map((t) => t.title)).toEqual(['API']);
+    expect(() => todos.update(ui.id, { status: 'doing' }, { actor: 'agent', rev: ui.rev })).toThrow(TodoWaitingError);
+    expect(() => todos.update(ui.id, { status: 'done' }, { actor: 'agent', rev: ui.rev })).toThrow('앞의 일이 끝나지 않았습니다');
+    // 제목 바꾸기, 취소는 된다
+    expect(todos.update(ui.id, { title: '로그인 화면' }, { actor: 'agent', rev: ui.rev }).title).toBe('로그인 화면');
+    // 사용자는 순서를 넘어설 수 있다
+    const u2 = todos.add({ projectId: p.id, workspaceId: front.id, title: '다른 화면', after: [api.id] }, 'agent');
+    expect(todos.update(u2.id, { status: 'doing' }, { actor: 'user' }).status).toBe('doing');
+  });
+
+  test('앞의 일이 다 끝나면 알린다. 취소되거나 지워져도 풀린다. 하나라도 남으면 알리지 않는다', () => {
+    const { todos, p, front, back } = setup();
+    const seen: string[] = [];
+    todos.on('unblocked', (t: { title: string }, done: { title: string }) => seen.push(`${t.title}<-${done.title}`));
+    const a = todos.add({ projectId: p.id, workspaceId: back.id, title: 'A' }, 'agent');
+    const b = todos.add({ projectId: p.id, workspaceId: back.id, title: 'B' }, 'agent');
+    const ui = todos.add({ projectId: p.id, workspaceId: front.id, title: '화면', after: [a.id, b.id] }, 'agent');
+    todos.update(a.id, { status: 'done' }, { actor: 'agent', rev: a.rev });
+    expect(seen).toEqual([]);
+    todos.update(b.id, { status: 'cancelled' }, { actor: 'user' });
+    expect(seen).toEqual(['화면<-B']);
+    expect(todos.blockers(todos.get(ui.id)!)).toEqual([]);
+    expect(todos.update(ui.id, { status: 'doing' }, { actor: 'agent', rev: todos.get(ui.id)!.rev }).status).toBe('doing');
+    // 지워진 앞의 일
+    const c = todos.add({ projectId: p.id, workspaceId: back.id, title: 'C' }, 'agent');
+    const d = todos.add({ projectId: p.id, workspaceId: front.id, title: 'D', after: [c.id] }, 'agent');
+    todos.remove(c.id, { actor: 'user' });
+    expect(seen).toEqual(['화면<-B', 'D<-C']);
+    expect(todos.get(d.id)!.after).toEqual([]);
+    // 다시 열렸다가 다시 끝나도 이미 끝난 뒤의 일에는 알리지 않는다
+    todos.update(a.id, { status: 'todo' }, { actor: 'user' });
+    todos.update(ui.id, { status: 'done' }, { actor: 'user' });
+    todos.update(a.id, { status: 'done' }, { actor: 'user' });
+    expect(seen.length).toBe(2);
+  });
+
+  test('앞의 일 정하기: 같은 프로젝트의 워크스페이스 항목만, 돌고 도는 순서는 받지 않는다', () => {
+    const { todos, projects, p, front, back } = setup();
+    const a = todos.add({ projectId: p.id, workspaceId: back.id, title: 'A' }, 'agent');
+    const b = todos.add({ projectId: p.id, workspaceId: front.id, title: 'B', after: [a.id] }, 'agent');
+    const c = todos.add({ projectId: p.id, workspaceId: front.id, title: 'C' }, 'agent');
+    expect(todos.setAfter(c.id, [b.id, b.id]).after).toEqual([b.id]);
+    expect(() => todos.setAfter(a.id, [c.id])).toThrow('돌고 돕니다');
+    expect(() => todos.setAfter(a.id, [a.id])).toThrow('자기 자신');
+    const big = todos.add({ projectId: p.id, title: '큰 일' }, 'agent');
+    expect(() => todos.setAfter(a.id, [big.id])).toThrow('둘 수 없는 항목');
+    expect(() => todos.setAfter(big.id, [a.id])).toThrow('프로젝트 항목에는');
+    const far = todos.add({ projectId: projects.create('다른').id, title: 'x' }, 'agent');
+    expect(() => todos.setAfter(a.id, [far.id])).toThrow('둘 수 없는 항목');
+    expect(todos.setAfter(c.id, []).after).toEqual([]);
+    // 사용자가 정하면 에이전트에게 전해진다
+    expect(todos.takePending(front.id).some((l) => l.includes('순서 풀림'))).toBe(true);
   });
 });

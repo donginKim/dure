@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Todo } from '@shared/types';
-import { TodoConflictError } from '../../todos';
+import { settled } from '@shared/todo';
+import { TodoConflictError, TodoWaitingError } from '../../todos';
 import type { ToolBundle } from '../server';
 
 const STATUS = z.enum(['todo', 'doing', 'done', 'cancelled']);
@@ -38,6 +39,14 @@ export const todoTools: ToolBundle = (server, ctx, deps) => {
     try {
       return ok(run());
     } catch (e) {
+      if (e instanceof TodoWaitingError) {
+        const names = new Map(deps.workspaces.list(ctx.project.id).map((w) => [w.id, w.name]));
+        return fail([
+          `아직 시작할 수 없다: "${e.todo.title}" 은(는) 아래의 일이 끝난 뒤에 하는 일이다.`,
+          ...e.waiting.map((w) => `- "${w.title}" (${w.workspaceId === ctx.workspace.id ? '이 워크스페이스' : `워크스페이스 "${names.get(w.workspaceId ?? '') ?? ''}"`}, ${w.status === 'doing' ? '진행 중' : '아직 시작 전'})`),
+          '앞의 일이 끝나면 두레가 알려 준다. 그때까지 이 항목은 건드리지 말고, 기다릴 필요가 없는 다른 항목을 하거나 턴을 끝내라. 순서가 잘못됐다고 보면 사용자에게 알려라 (순서는 사용자가 바꾼다).',
+        ].join('\n'));
+      }
       if (e instanceof TodoConflictError) {
         return fail(`사용자가 이 항목을 먼저 바꿨다. 현재 값: ${JSON.stringify(view(e.current))}. todo_list 로 다시 읽고 판단하라.`);
       }
@@ -55,8 +64,18 @@ export const todoTools: ToolBundle = (server, ctx, deps) => {
       const titleOf = new Map(all.map((t) => [t.id, t.title]));
       const names = new Map(deps.workspaces.list(ctx.project.id).map((w) => [w.id, w.name]));
       // 프로젝트 항목에는 딸린 워크스페이스 항목을, 워크스페이스 항목에는 딸린 프로젝트 항목의 제목을 붙인다.
+      const byId = new Map(all.map((t) => [t.id, t]));
       const withLinks = (t: Todo) => ({
         ...view(t),
+        // 일의 순서: 앞의 일이 끝나지 않았으면 시작할 수 없다.
+        ...(t.after.length ? (() => {
+          const before = t.after.map((id) => byId.get(id)).filter((x): x is Todo => x !== undefined);
+          const left = before.filter((x) => !settled(x));
+          return {
+            after: before.map((x) => ({ title: x.title, workspace: names.get(x.workspaceId ?? '') ?? '', status: x.status })),
+            ...(left.length && !settled(t) ? { waiting: true, waitingNote: '앞의 일(after)이 끝나지 않아 아직 시작할 수 없다. 끝나면 두레가 알려 준다. 그때까지 doing 이나 done 으로 바꿀 수 없다.' } : {}),
+          };
+        })() : {}),
         ...(t.parentId && titleOf.has(t.parentId) ? { under: titleOf.get(t.parentId) } : {}),
         ...(t.workspaceId === null && all.some((c) => c.parentId === t.id) ? {
           note: '딸린 항목(children)이 다 끝나면 두레가 이 항목을 완료로 바꾼다. 상태를 직접 고칠 필요가 없다.',

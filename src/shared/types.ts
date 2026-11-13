@@ -79,6 +79,11 @@ export interface Todo {
    * 딸린 것이 다 끝나면 저절로 완료되고, 하나라도 시작되면 진행 중이 된다.
    */
   parentId: string | null;
+  /**
+   * 앞의 일: 이 항목보다 먼저 끝나야 하는 항목들의 id (워크스페이스 항목끼리. 다른 워크스페이스의 것도 된다).
+   * 앞의 일이 끝나지(완료·취소) 않았으면 에이전트는 이 항목을 시작하거나 완료할 수 없다. 다 끝나면 두레가 그 워크스페이스에 알린다.
+   */
+  after: string[];
   title: string;
   detail: string;
   status: TodoStatus;
@@ -453,6 +458,8 @@ export interface PlanTodo {
   assignee: TodoAssignee;
   /** 워크스페이스 TODO 에만: 이 일이 딸릴 프로젝트 TODO 의 제목. 비어 있으면 어디에도 딸리지 않는다 */
   under?: string;
+  /** 워크스페이스 TODO 에만: 이 일보다 먼저 끝나야 하는 TODO 의 제목들 (이 계획안의 내 PC 에 만드는 워크스페이스의 TODO. 다른 워크스페이스의 것도 된다) */
+  after?: string[];
   /** 나눠 준 쪽의 기록에만: 이 일이 딸린 내 프로젝트 TODO 의 id (승인할 때 두레가 적는다. 상대에게 보내지 않는다) */
   goal?: string;
 }

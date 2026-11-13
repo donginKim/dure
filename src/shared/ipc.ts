@@ -130,6 +130,8 @@ export interface DureApi {
     move(id: string, direction: 'up' | 'down'): Promise<void>;
     /** 워크스페이스 항목을 프로젝트 항목 아래에 달거나 (parentId), 뗀다 (null) */
     setParent(id: string, parentId: string | null): Promise<Todo>;
+    /** 앞의 일을 정한다 (먼저 끝나야 하는 항목들. 빈 목록이면 없앤다) */
+    setAfter(id: string, afterIds: string[]): Promise<Todo>;
     /** 워크스페이스 id → 에이전트에게 아직 전달되지 않은 변경 수, 그리고 바로 알릴 수 있는지 */
     pending(projectId: string): Promise<Record<string, { count: number; canNudge: boolean }>>;
     nudge(workspaceId: string): Promise<void>;
@@ -346,7 +348,7 @@ export const IPC_CHANNELS = [
   'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
-  'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.pending', 'todos.nudge',
+  'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.setAfter', 'todos.pending', 'todos.nudge',
   'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',

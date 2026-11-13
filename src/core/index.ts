@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus } from '@shared/types';
+import type { Repo, RepoStatus, Todo } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
@@ -157,6 +157,17 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const usage = new UsageStore(db, workspaces);
   const checkpoints = new CheckpointService({ db, workspaces, git });
   const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
+  // 일의 순서: 앞의 일이 다 끝난 항목이 생기면 그 워크스페이스에 알린다 (꺼져 있으면 이 알림으로 뜬다).
+  todos.on('unblocked', (todo: Todo, done: Todo) => {
+    if (!todo.workspaceId || todo.assignee !== 'agent' || service.isProjectClosed(todo.projectId)) return;
+    const from = done.workspaceId && done.workspaceId !== todo.workspaceId ? workspaces.get(done.workspaceId)?.name : undefined;
+    try {
+      messages.send({
+        projectId: todo.projectId, from: { kind: 'system' }, toWorkspaceId: todo.workspaceId, title: '순서',
+        body: `앞의 일이 끝났다${from ? ` (워크스페이스 "${from}")` : ''}: "${done.title}". 이제 "${todo.title}" 을(를) 시작할 수 있다. todo_list 로 확인하고 진행하라.${from ? ' 그 일의 결과(API 형식 등)가 필요하면 그 워크스페이스가 올린 자료를 읽거나 message_send 로 물어라.' : ''}`,
+      });
+    } catch { /* 알림 실패가 상태 변경을 막으면 안 된다 */ }
+  });
   // 끝난 일의 확인: 에이전트가 TODO 를 완료로 바꿀 때 저장소의 확인 명령을 돌린다.
   const verify = new VerifyService({ db, repos, workspaces, git, env: o.baseEnv, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, runner: o.verifyRunner });
   const worktime = new WorkTimeService({ db, settings: () => settings.get(), probe: o.networkProbe ?? undefined });

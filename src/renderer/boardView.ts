@@ -37,7 +37,7 @@ export function remoteGroups(projectId: string, outgoing: AssignmentOut[]): { wo
     if (note) notes[id] = note;
     w.todos.forEach((t, k) => {
       todos.push({
-        id: `${id}:${k}`, projectId, workspaceId: id, parentId: t.goal ?? null, title: t.title, detail: '',
+        id: `${id}:${k}`, projectId, workspaceId: id, parentId: t.goal ?? null, after: [], title: t.title, detail: '',
         status: STATUSES.includes(t.status as TodoStatus) ? t.status as TodoStatus : 'todo', assignee: t.assignee === 'user' ? 'user' : 'agent',
         position: k + 1, rev: 0, updatedBy: 'agent', createdAt: 0, updatedAt: 0,
       });

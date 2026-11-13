@@ -199,6 +199,31 @@ describe('계획안', () => {
     expect(all.find((t) => t.title === '배포 승인')!.status).toBe('todo');
   });
 
+  test('계획안의 after 로 워크스페이스 사이의 순서를 건다. 앞의 일이 끝나면 그 워크스페이스에 알린다', async () => {
+    core.coordinator.ensure(projectId);
+    // 없는 TODO, 돌고 도는 순서는 받지 않는다
+    await expect(core.coordinator.propose(projectId, { summary: 's', workspaces: [W('화면', 'shop-front', { todos: [{ title: 'API 붙이기', after: ['없는 일'] }] })] })).rejects.toThrow('"없는 일" 라는 TODO 가 이 계획안에 없다');
+    await expect(core.coordinator.propose(projectId, { summary: 's', workspaces: [W('a', 'shop-front', { todos: [{ title: 'x', after: ['y'] }, { title: 'y', after: ['x'] }] })] })).rejects.toThrow('돌고 돈다');
+    const p = await core.coordinator.propose(projectId, {
+      summary: 's',
+      workspaces: [
+        W('로그인 화면', 'shop-front', { todos: ['폼 만들기', { title: 'API 붙이기', after: ['POST /login'] }] }),
+        W('로그인 API', 'shop-back', { todos: ['POST /login'] }),
+      ],
+    });
+    const res = await core.coordinator.approve(p.id, { items: p.items, projectTodos: [] });
+    const all = core.todos.listProject(projectId);
+    const api = all.find((t) => t.title === 'POST /login')!;
+    const hook = all.find((t) => t.title === 'API 붙이기')!;
+    expect(hook.after).toEqual([api.id]);
+    expect(all.find((t) => t.title === '폼 만들기')!.after).toEqual([]);
+    const front = res.created.find((w) => w.name === '로그인 화면')!;
+    // 앞의 일이 끝나면 화면 워크스페이스에 알린다
+    core.todos.update(api.id, { status: 'done' }, { actor: 'user' });
+    const told = core.messages.undelivered(front.id).map((m) => m.body).join('\n');
+    expect(told).toContain('앞의 일이 끝났다 (워크스페이스 "로그인 API"): "POST /login". 이제 "API 붙이기" 을(를) 시작할 수 있다');
+  });
+
   test('승인하면 사용자가 고친 최종 계획대로 워크스페이스와 TODO 를 만들고, 조율 에이전트에게 알린다', async () => {
     core.settings.update({ defaultPermissionMode: 'bypass' });
     const c = core.coordinator.ensure(projectId);

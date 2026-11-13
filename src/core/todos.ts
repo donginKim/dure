@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
+import { settled, waitingFor } from '@shared/todo';
 import type { Actor, Todo, TodoAssignee, TodoPatch, TodoStatus } from '@shared/types';
 
 export type { TodoPatch };
@@ -12,16 +13,32 @@ export class TodoConflictError extends Error {
   }
 }
 
+/** 앞의 일이 끝나지 않아 에이전트가 시작하거나 완료할 수 없을 때. */
+export class TodoWaitingError extends Error {
+  constructor(readonly todo: Todo, readonly waiting: Todo[]) {
+    super('앞의 일이 끝나지 않았습니다.');
+    this.name = 'TodoWaitingError';
+  }
+}
+
 /** 누가 바꾸는가. 에이전트는 자기가 마지막으로 읽은 rev 를 함께 낸다. */
 export type By = { actor: 'user' } | { actor: 'agent'; rev: number };
 
+/** 한 항목에 둘 수 있는 앞의 일의 수 */
+const MAX_AFTER = 10;
+
 interface Row {
-  id: string; project_id: string; workspace_id: string | null; parent_id: string | null; title: string; detail: string; status: string;
+  id: string; project_id: string; workspace_id: string | null; parent_id: string | null; title: string;
+  /** 앞의 일의 id 들 (쉼표로 이은 것. 조회할 때 붙인다) */
+  after?: string | null; detail: string; status: string;
   assignee: string; position: number; rev: number; updated_by: string; created_at: number; updated_at: number;
 }
 
+/** 항목을 읽는 문장의 앞부분: 앞의 일의 id 를 함께 가져온다 */
+const SELECT = 'SELECT todos.*, (SELECT group_concat(after_id) FROM todo_deps WHERE todo_id = todos.id) AS after FROM todos';
+
 const toTodo = (r: Row): Todo => ({
-  id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, parentId: r.parent_id ?? null, title: r.title, detail: r.detail,
+  id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, parentId: r.parent_id ?? null, after: r.after ? r.after.split(',') : [], title: r.title, detail: r.detail,
   status: r.status as TodoStatus, assignee: r.assignee as TodoAssignee, position: r.position, rev: r.rev,
   updatedBy: r.updated_by as Actor, createdAt: r.created_at, updatedAt: r.updated_at,
 });
@@ -82,7 +99,8 @@ function statusLine(status: TodoStatus, title: string): string {
  * TODO 의 원본. 사용자와 에이전트가 함께 고친다.
  * - 사용자 수정이 이긴다: 에이전트의 수정·삭제는 rev 가 맞아야 통과한다.
  * - 사용자가 워크스페이스 범위 항목을 바꾸면 그 워크스페이스의 "미전달 변경" 으로 쌓인다.
- * 이벤트: 'changed' (projectId), 'delivered' (workspaceId: 미전달 변경을 가져감)
+ * 이벤트: 'changed' (projectId), 'delivered' (workspaceId: 미전달 변경을 가져감),
+ *   'unblocked' (todo, done: 앞의 일이 다 끝나 이제 시작할 수 있는 항목과, 방금 끝난 앞의 일)
  */
 export class TodoService extends EventEmitter {
   constructor(private readonly db: Database.Database) {
@@ -91,21 +109,21 @@ export class TodoService extends EventEmitter {
 
   private scope(projectId: string, workspaceId: string | null): Todo[] {
     const rows = workspaceId === null
-      ? this.db.prepare('SELECT * FROM todos WHERE project_id = ? AND workspace_id IS NULL ORDER BY position, rowid').all(projectId)
-      : this.db.prepare('SELECT * FROM todos WHERE workspace_id = ? ORDER BY position, rowid').all(workspaceId);
+      ? this.db.prepare(`${SELECT} WHERE project_id = ? AND workspace_id IS NULL ORDER BY position, rowid`).all(projectId)
+      : this.db.prepare(`${SELECT} WHERE workspace_id = ? ORDER BY position, rowid`).all(workspaceId);
     return (rows as Row[]).map(toTodo);
   }
 
   listProject(projectId: string): Todo[] {
-    return (this.db.prepare('SELECT * FROM todos WHERE project_id = ? ORDER BY position, rowid').all(projectId) as Row[]).map(toTodo);
+    return (this.db.prepare(`${SELECT} WHERE project_id = ? ORDER BY position, rowid`).all(projectId) as Row[]).map(toTodo);
   }
 
   listWorkspace(workspaceId: string): Todo[] {
-    return (this.db.prepare('SELECT * FROM todos WHERE workspace_id = ? ORDER BY position, rowid').all(workspaceId) as Row[]).map(toTodo);
+    return (this.db.prepare(`${SELECT} WHERE workspace_id = ? ORDER BY position, rowid`).all(workspaceId) as Row[]).map(toTodo);
   }
 
   get(id: string): Todo | undefined {
-    const r = this.db.prepare('SELECT * FROM todos WHERE id = ?').get(id) as Row | undefined;
+    const r = this.db.prepare(`${SELECT} WHERE id = ?`).get(id) as Row | undefined;
     return r && toTodo(r);
   }
 
@@ -126,7 +144,7 @@ export class TodoService extends EventEmitter {
 
   /** 프로젝트 항목에 딸린 워크스페이스 항목들. */
   children(parentId: string): Todo[] {
-    return (this.db.prepare('SELECT * FROM todos WHERE parent_id = ? ORDER BY position, rowid').all(parentId) as Row[]).map(toTodo);
+    return (this.db.prepare(`${SELECT} WHERE parent_id = ? ORDER BY position, rowid`).all(parentId) as Row[]).map(toTodo);
   }
 
   /** 딸릴 수 있는 프로젝트 항목인지 본다: 같은 프로젝트의 프로젝트 범위 항목이어야 한다. */
@@ -178,12 +196,71 @@ export class TodoService extends EventEmitter {
     return this.mustGet(id);
   }
 
+  // ---- 일의 순서 ----
+
+  /** 이 항목이 끝나기를 기다리는 항목들. */
+  private dependents(id: string): Todo[] {
+    return (this.db.prepare(`${SELECT} WHERE id IN (SELECT todo_id FROM todo_deps WHERE after_id = ?)`).all(id) as Row[]).map(toTodo);
+  }
+
+  /** 앞의 일로 둘 수 있는지 본다: 같은 프로젝트의 워크스페이스 항목이어야 하고, 돌고 도는 순서가 되면 안 된다. */
+  private checkAfter(todo: Pick<Todo, 'id' | 'projectId' | 'workspaceId'>, afterIds: string[]): void {
+    if (afterIds.length === 0) return;
+    if (todo.workspaceId === null) throw new Error('프로젝트 항목에는 앞의 일을 둘 수 없습니다 (프로젝트 항목은 딸린 일로 진행을 봅니다).');
+    if (afterIds.length > MAX_AFTER) throw new Error(`앞의 일은 ${MAX_AFTER}개까지 둘 수 있습니다.`);
+    for (const id of afterIds) {
+      if (id === todo.id) throw new Error('자기 자신을 앞의 일로 둘 수 없습니다.');
+      const a = this.get(id);
+      if (!a || a.projectId !== todo.projectId || a.workspaceId === null) throw new Error('앞의 일로 둘 수 없는 항목입니다 (같은 프로젝트의 워크스페이스 항목만 됩니다).');
+    }
+    // 앞의 일을 거슬러 올라가다 이 항목이 나오면 돌고 도는 순서다: 아무도 시작할 수 없게 된다.
+    const seen = new Set<string>();
+    const stack = [...afterIds];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (id === todo.id) throw new Error('순서가 돌고 돕니다: 그 항목은 이미 이 항목이 끝나기를 기다립니다.');
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(this.db.prepare('SELECT after_id FROM todo_deps WHERE todo_id = ?').all(id) as { after_id: string }[]).map((r) => r.after_id));
+    }
+  }
+
+  /** 앞의 일을 정한다 (전체를 바꾼다. 빈 목록이면 없앤다). */
+  setAfter(id: string, afterIds: string[], actor: Actor = 'user'): Todo {
+    const current = this.mustGet(id);
+    const ids = [...new Set((Array.isArray(afterIds) ? afterIds : []).map(String))];
+    this.checkAfter(current, ids);
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM todo_deps WHERE todo_id = ?').run(id);
+      const add = this.db.prepare('INSERT INTO todo_deps (todo_id, after_id) VALUES (?, ?)');
+      for (const a of ids) add.run(id, a);
+      this.db.prepare('UPDATE todos SET updated_at = ? WHERE id = ?').run(Date.now(), id);
+      const names = ids.map((a) => `"${this.get(a)?.title ?? ''}"`).join(', ');
+      this.notePending(current, actor, [ids.length ? `순서 정해짐: "${current.title}" 은(는) ${names} 이(가) 끝난 뒤에 시작한다` : `순서 풀림: "${current.title}" 은(는) 이제 바로 시작할 수 있다`]);
+    })();
+    this.emit('changed', current.projectId);
+    return this.mustGet(id);
+  }
+
+  /** 아직 끝나지 않은 앞의 일. */
+  blockers(todo: Todo): Todo[] {
+    return todo.after.length ? waitingFor(todo, this.listProject(todo.projectId)) : [];
+  }
+
+  /** 방금 끝난(또는 지워진) 항목을 기다리던 것 가운데, 이제 앞의 일이 다 끝난 것을 알린다. */
+  private release(done: Todo, waiting: Todo[]): void {
+    for (const w of waiting) {
+      const now = this.get(w.id);
+      if (now && !settled(now) && this.blockers(now).length === 0) this.emit('unblocked', now, done);
+    }
+  }
+
   private checkRev(current: Todo, by: By): void {
     if (by.actor === 'agent' && by.rev !== current.rev) throw new TodoConflictError(current);
   }
 
   add(
-    i: { projectId: string; workspaceId?: string | null; title: string; detail?: string; assignee?: TodoAssignee; status?: TodoStatus; parentId?: string | null },
+    i: { projectId: string; workspaceId?: string | null; title: string; detail?: string; assignee?: TodoAssignee; status?: TodoStatus; parentId?: string | null; after?: string[] },
     actor: Actor,
   ): Todo {
     const title = clean(i.title).trim();
@@ -196,11 +273,15 @@ export class TodoService extends EventEmitter {
     const now = Date.now();
     const id = crypto.randomUUID();
     const assignee = i.assignee ?? 'agent';
+    const after = [...new Set(i.after ?? [])];
+    this.checkAfter({ id, projectId: i.projectId, workspaceId }, after);
     this.db.transaction(() => {
       this.db.prepare(
         `INSERT INTO todos (id, project_id, workspace_id, parent_id, title, detail, status, assignee, position, rev, updated_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
       ).run(id, i.projectId, workspaceId, parentId, title, clean(i.detail ?? ''), i.status ?? 'todo', assignee, position, actor, now, now);
+      const dep = this.db.prepare('INSERT INTO todo_deps (todo_id, after_id) VALUES (?, ?)');
+      for (const a of after) dep.run(id, a);
       this.notePending({ workspaceId, projectId: i.projectId }, actor, [`추가됨: "${title}"${assignee === 'user' ? ' (사용자 몫)' : ''}`]);
       this.settle(parentId);
     })();
@@ -223,6 +304,11 @@ export class TodoService extends EventEmitter {
       next.detail = clean(patch.detail);
     }
     if (patch.status !== undefined && patch.status !== current.status) {
+      // 일의 순서: 앞의 일이 끝나지 않았으면 에이전트는 시작하거나 완료할 수 없다. 사용자는 순서를 넘어설 수 있다.
+      if (by.actor === 'agent' && (patch.status === 'doing' || patch.status === 'done')) {
+        const wait = this.blockers(current);
+        if (wait.length) throw new TodoWaitingError(current, wait);
+      }
       lines.push(statusLine(patch.status, next.title));
       next.status = patch.status;
     }
@@ -240,12 +326,16 @@ export class TodoService extends EventEmitter {
       if (next.status !== current.status) this.settle(current.parentId);
     })();
     this.emit('changed', current.projectId);
+    // 끝났으면 이것을 기다리던 일에 알린다.
+    if (!settled(current) && settled(next)) this.release(this.mustGet(id), this.dependents(id));
     return this.mustGet(id);
   }
 
   remove(id: string, by: By): void {
     const current = this.mustGet(id);
     this.checkRev(current, by);
+    // 지워지면 이것을 기다리던 일은 더 기다릴 것이 없다.
+    const waiting = settled(current) ? [] : this.dependents(id);
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM todos WHERE id = ?').run(id);
       // 프로젝트 항목을 지우면 딸려 있던 항목은 남고, 어디에도 딸리지 않게 된다.
@@ -254,6 +344,7 @@ export class TodoService extends EventEmitter {
       this.settle(current.parentId);
     })();
     this.emit('changed', current.projectId);
+    this.release(current, waiting);
   }
 
   /** 같은 범위의 이웃과 자리를 바꾼다. 사용자만 쓴다. */

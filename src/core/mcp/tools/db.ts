@@ -38,7 +38,7 @@ export const dbTools: ToolBundle = (server, ctx, deps) => {
     'db_columns',
     {
       description: '표 하나의 칸 목록(이름, 형식, NULL 허용, 기본값, 키)을 돌려준다.',
-      inputSchema: { connection: z.string(), table: z.string(), schema: z.string().optional().describe('PostgreSQL 의 스키마 (db_tables 가 돌려준 값). 비우면 public') },
+      inputSchema: { connection: z.string(), table: z.string(), schema: z.string().optional().describe('PostgreSQL 이나 Oracle 의 스키마 (db_tables 가 돌려준 값). 비우면 PostgreSQL 은 public, Oracle 은 접속한 계정의 스키마') },
     },
     async ({ connection, table, schema }) => {
       try {

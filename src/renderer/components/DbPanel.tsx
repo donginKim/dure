@@ -27,12 +27,12 @@ function ConnectionDialog({ projectId, editing, onClose }: { projectId: string; 
           <div className="field"><label>연결 이름</label><input type="text" autoFocus value={f.name} placeholder="예: 로컬 개발 DB" onChange={(e) => set({ name: e.target.value })} /><div className="hint">에이전트는 이 이름으로 연결을 가리킵니다</div></div>
           <div className="field"><label>종류</label>
             <select value={f.kind} onChange={(e) => { const kind = e.target.value as DbKind; set({ kind, port: f.port === String(DEFAULT_PORT[f.kind]) ? String(DEFAULT_PORT[kind]) : f.port }); }}>
-              <option value="postgres">{KIND_LABEL.postgres}</option><option value="mysql">{KIND_LABEL.mysql}</option>
+              <option value="postgres">{KIND_LABEL.postgres}</option><option value="mysql">{KIND_LABEL.mysql}</option><option value="oracle">{KIND_LABEL.oracle}</option>
             </select>
           </div>
           <div className="field"><label>호스트</label><input type="text" value={f.host} onChange={(e) => set({ host: e.target.value })} /></div>
           <div className="field"><label>포트</label><input type="text" value={f.port} onChange={(e) => set({ port: e.target.value })} /></div>
-          <div className="field"><label>데이터베이스{f.kind === 'mysql' && ' (비워도 됩니다)'}</label><input type="text" value={f.database} onChange={(e) => set({ database: e.target.value })} /></div>
+          <div className="field"><label>{f.kind === 'oracle' ? '서비스 이름' : '데이터베이스'}{f.kind === 'mysql' && ' (비워도 됩니다)'}</label><input type="text" value={f.database} onChange={(e) => set({ database: e.target.value })} /></div>
           <div className="field"><label>사용자</label><input type="text" value={f.user} onChange={(e) => set({ user: e.target.value })} /></div>
           <div className="field db-wide"><label>비밀번호</label>
             <input type="password" value={f.password} disabled={clearPassword} placeholder={editing?.hasPassword ? '저장된 비밀번호를 그대로 씁니다. 바꾸려면 새로 적으세요' : ''} onChange={(e) => set({ password: e.target.value })} />
@@ -104,7 +104,7 @@ function Browser({ conn }: { conn: DbConnection }) {
           {tables && shown.length === 0 && <div className="muted">{tables.length === 0 ? '표가 없습니다.' : '찾는 표가 없습니다.'}</div>}
           {shown.map((t) => (
             <button key={`${t.schema}.${t.name}`} className={`db-table${picked?.schema === t.schema && picked.name === t.name ? ' on' : ''}`} title="누르면 스키마를 보고, 조회 칸에 문장을 넣습니다" onClick={() => pick(t)}>
-              <span className="db-table-name">{conn.kind === 'postgres' && t.schema !== 'public' ? `${t.schema}.` : ''}{t.name}</span>
+              <span className="db-table-name">{(conn.kind === 'postgres' && t.schema !== 'public') || (conn.kind === 'oracle' && t.schema.toUpperCase() !== conn.user.toUpperCase()) ? `${t.schema}.` : ''}{t.name}</span>
               {t.type === 'view' && <span className="tag">뷰</span>}
             </button>
           ))}

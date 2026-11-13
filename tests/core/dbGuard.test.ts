@@ -102,3 +102,44 @@ test.each([
 test('EXPLAIN ANALYSE (영국식 철자) 도 거절한다', () => {
   expect(() => ok('explain analyse select 1')).toThrow('EXPLAIN ANALYZE');
 });
+
+describe('Oracle', () => {
+  const ok = (sql: string) => checkReadOnly(sql, 'oracle');
+  test('SELECT 와 WITH 만 받는다', () => {
+    expect(ok('select * from items;')).toBe('select * from items');
+    expect(ok('WITH t AS (SELECT 1 n FROM dual) SELECT n FROM t')).toContain('WITH t');
+    expect(ok("select 'drop table x; delete' from dual -- delete from items")).toContain('select');
+    expect(ok('select /*+ index(i) */ "Mixed Case" from items i')).toContain('Mixed Case');
+    for (const sql of ['delete from items', 'insert into t values (1)', 'merge into t using s on (1=1) when matched then update set a = 1', 'begin null; end;', 'declare n number; begin null; end;',
+      'call p()', 'explain plan for select 1 from dual', 'alter session set current_schema = x', 'create table t (n number)', 'truncate table t', 'grant select on t to u', 'show user', 'describe items']) {
+      // PL/SQL 덩어리는 안에 ; 가 있어 "하나만" 에서, 나머지는 첫 낱말에서 걸린다
+      expect(() => ok(sql), sql).toThrow(/조회 전용입니다|하나만/);
+    }
+    expect(() => ok('select 1 from dual; delete from items')).toThrow('하나만');
+  });
+
+  test('읽기 전용 트랜잭션으로 막히지 않는 길을 막는다', () => {
+    // 문장 안의 PL/SQL, 행 잠금, 순서 올리기, DB 링크
+    expect(() => ok('with function f return number is begin return 1; end; select f from dual')).toThrow('WITH FUNCTION');
+    expect(() => ok('WITH\n  PROCEDURE p IS BEGIN NULL; END; SELECT 1 FROM dual')).toThrow('WITH FUNCTION');
+    expect(() => ok('select * from items for update')).toThrow('FOR UPDATE');
+    expect(() => ok('select * from items FOR  UPDATE nowait')).toThrow('FOR UPDATE');
+    expect(() => ok('select seq1.NEXTVAL from dual')).toThrow('nextval');
+    expect(() => ok('select * from items@remote')).toThrow('DB 링크');
+    // 글자열 안의 @ 는 받는다
+    expect(ok("select 'a@b.com' from dual")).toContain('a@b.com');
+    // 서버의 파일·네트워크·작업에 닿는 꾸러미, 비밀번호가 든 표
+    for (const sql of ["select utl_http.request('http://x') from dual", "select DBMS_XMLGEN.getxml('select 1 from dual') from dual", "select sys.dbms_scheduler.x from dual",
+      "select httpuritype('http://x').getclob() from dual", 'select name, password from sys.user$', 'select * from sys.link$']) {
+      expect(() => ok(sql), sql).toThrow('실행할 수 없습니다');
+    }
+    // q'[...]' 는 닫는 곳의 규칙이 달라 받지 않는다 (글자열 안에 문장을 숨기지 못하게)
+    expect(() => ok("select q'[ ' ]' || x || q'[ ' ]' from dual")).toThrow("q'...'");
+    expect(() => ok("select Nq'{a}' from dual")).toThrow("q'...'");
+    // 이름이 q 로 끝나는 것 뒤의 글자열은 받는다
+    expect(ok("select * from faq where a = 'x'")).toContain('faq');
+    // 닫히지 않은 따옴표와 주석
+    expect(() => ok("select 'abc from dual")).toThrow('닫히지 않았습니다');
+    expect(() => ok('select 1 /* from dual')).toThrow('닫히지 않았습니다');
+  });
+});

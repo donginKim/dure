@@ -37,12 +37,13 @@ const AGENT_MAX_CHARS = 60_000;
 const WAIT_MS = 40_000;
 const KEEP_REQUESTS = 50;
 
-const KINDS: DbKind[] = ['postgres', 'mysql'];
+const KINDS: DbKind[] = ['postgres', 'mysql', 'oracle'];
+const kindOf = (k: string): DbKind => (k === 'mysql' ? 'mysql' : k === 'oracle' ? 'oracle' : 'postgres');
 const ACCESS: DbAccess[] = ['ask', 'auto', 'off'];
 // eslint-disable-next-line no-control-regex
 const oneLine = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, max);
 const toConnection = (r: Row): DbConnection => ({
-  id: r.id, projectId: r.project_id, name: r.name, kind: r.kind === 'mysql' ? 'mysql' : 'postgres', host: r.host, port: r.port,
+  id: r.id, projectId: r.project_id, name: r.name, kind: kindOf(r.kind), host: r.host, port: r.port,
   database: r.database, user: r.user, ssl: r.ssl === 1, agentAccess: ACCESS.includes(r.agent_access as DbAccess) ? r.agent_access as DbAccess : 'ask',
   hasPassword: r.secret !== '', createdAt: r.created_at,
 });
@@ -117,7 +118,7 @@ export class DbService extends EventEmitter {
   }
 
   private target(r: Row): DbTarget {
-    return { kind: r.kind === 'mysql' ? 'mysql' : 'postgres', host: r.host, port: r.port, database: r.database, user: r.user, ssl: r.ssl === 1, password: r.secret ? this.d.secrets.decrypt(r.secret) : '' };
+    return { kind: kindOf(r.kind), host: r.host, port: r.port, database: r.database, user: r.user, ssl: r.ssl === 1, password: r.secret ? this.d.secrets.decrypt(r.secret) : '' };
   }
 
   private clean(i: DbConnectionInput): Omit<DbConnectionInput, 'id' | 'password' | 'projectId'> {
@@ -132,6 +133,7 @@ export class DbService extends EventEmitter {
     if (!user) throw new Error('사용자 이름을 적으세요.');
     const database = oneLine(i.database, 128);
     if (i.kind === 'postgres' && !database) throw new Error('데이터베이스 이름을 적으세요.');
+    if (i.kind === 'oracle' && !database) throw new Error('서비스 이름을 적으세요 (예: ORCLPDB1).');
     if (!ACCESS.includes(i.agentAccess)) throw new Error('에이전트 사용 방식이 올바르지 않습니다.');
     return { name, kind: i.kind, host, port, database, user, ssl: i.ssl === true, agentAccess: i.agentAccess };
   }
@@ -186,7 +188,7 @@ export class DbService extends EventEmitter {
   /** 사용자가 패널에서 조회한다. */
   query(id: string, sql: string): Promise<DbResult> {
     const r = this.row(id);
-    const kind: DbKind = r.kind === 'mysql' ? 'mysql' : 'postgres';
+    const kind: DbKind = kindOf(r.kind);
     return this.runner.run(this.target(r), checkReadOnly(sql, kind), [], USER_LIMITS);
   }
 
@@ -246,7 +248,7 @@ export class DbService extends EventEmitter {
     const ws = this.d.workspaces.get(workspaceId);
     if (!ws) throw new Error('워크스페이스가 없다.');
     const r = this.forAgent(ws.projectId, name);
-    const kind: DbKind = r.kind === 'mysql' ? 'mysql' : 'postgres';
+    const kind: DbKind = kindOf(r.kind);
     if (typeof sql === 'string' && sql.length > AGENT_MAX_SQL) throw new Error(`문장이 너무 길다 (${AGENT_MAX_SQL}자까지). 나눠서 조회하라.`);
     const checked = checkReadOnly(sql, kind);
     // 읽기 전용 계정이 아니면 "바로 조회" 여도 승인을 받는다: 읽기 전용 트랜잭션으로 막히지 않는 길이 있다.
@@ -327,7 +329,7 @@ export class DbService extends EventEmitter {
     q.status = 'approved'; q.running = true;
     this.emit('changed', q.projectId);
     try {
-      const result = await this.runAgent(now, checkReadOnly(q.sql, now.kind === 'mysql' ? 'mysql' : 'postgres'));
+      const result = await this.runAgent(now, checkReadOnly(q.sql, kindOf(now.kind)));
       // "앞으로 묻지 않기" 는 실행이 된 뒤에만 반영한다.
       if (o.always && now.agent_access === 'ask') this.d.db.prepare("UPDATE db_connections SET agent_access = 'auto' WHERE id = ? AND agent_access = 'ask'").run(now.id);
       this.settle(q, 'approved', undefined, result);

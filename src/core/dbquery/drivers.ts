@@ -1,4 +1,5 @@
 import mysql from 'mysql2';
+import oracledb, { type Connection as OracleConnection } from 'oracledb';
 import pg from 'pg';
 import type { DbCell, DbColumn, DbKind, DbResult, DbTable } from '@shared/types';
 
@@ -168,9 +169,103 @@ function runMysql(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): P
   });
 }
 
-export function runReadOnly(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): Promise<DbResult> {
-  return t.kind === 'postgres' ? runPostgres(t, sql, params, lim) : runMysql(t, sql, params, lim);
+/** Oracle 이 준 값 하나를 보낼 수 있는 값으로. LOB 은 앞부분만 읽는다 (통째로 받으면 크기를 알 수 없다). */
+async function oracleCell(v: unknown): Promise<DbCell> {
+  const lob = v as { getData?: (offset: number, amount: number) => Promise<unknown>; destroy?: () => void; length?: number } | null;
+  if (lob && typeof lob === 'object' && typeof lob.getData === 'function') {
+    try {
+      const head = await lob.getData(1, MAX_CELL + 1);
+      const total = Number(lob.length) || 0;
+      if (typeof head === 'string') return head.length > MAX_CELL ? `${head.slice(0, MAX_CELL)}… (${total || '더 긴'}자)` : head;
+      return cell(head);
+    } catch {
+      return '(LOB 을 읽지 못했습니다)';
+    } finally {
+      try { lob.destroy?.(); } catch { /* 이미 닫힘 */ }
+    }
+  }
+  return cell(v);
 }
+
+/**
+ * Oracle 에서 문장 하나를 조회 전용으로 실행한다 (순수 JS 방식이라 Oracle 클라이언트를 설치하지 않아도 된다).
+ * - 읽기 전용 트랜잭션 안에서 실행하고 끝나면 되돌린다. Oracle 의 읽기 전용 트랜잭션은 DDL 과 PL/SQL 을 막지 못하므로,
+ *   문장 검사(guard)가 SELECT 와 WITH 만 받는 것이 첫 겹이다. 드라이버는 문장을 하나만 보낸다.
+ * - 행을 묶음으로 받다가 상한(행 수, 크기)을 넘으면 멈춘다. LOB 은 앞부분만 읽는다.
+ * - 숫자는 글자로 받아, 자릿수가 많은 값이 깨지지 않게 한다.
+ */
+async function runOracle(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): Promise<DbResult> {
+  const started = Date.now();
+  let conn: OracleConnection | undefined;
+  let abort: (e: Error) => void = () => undefined;
+  const overall = new Promise<never>((_, reject) => { abort = reject; });
+  overall.catch(() => undefined);
+  const stopNow = (): void => { void conn?.break().catch(() => undefined); };
+  let gaveUp = false;
+  const whole = setTimeout(() => { gaveUp = true; stopNow(); abort(new Error(`조회가 ${Math.round(lim.timeoutMs / 1000)}초 안에 끝나지 않아 멈췄습니다.`)); }, CONNECT_MS + lim.timeoutMs + 3000);
+  try {
+    const opening = oracledb.getConnection({
+      user: t.user, password: t.password,
+      connectString: `${t.ssl ? 'tcps' : 'tcp'}://${t.host.includes(':') ? `[${t.host}]` : t.host}:${t.port}/${t.database}`,
+      connectTimeout: Math.ceil(CONNECT_MS / 1000), transportConnectTimeout: Math.ceil(CONNECT_MS / 1000),
+    });
+    // 제한 시간이 지난 뒤에 접속이 끝나면 그 연결을 닫는다.
+    opening.then((c) => { if (gaveUp) void c.close().catch(() => undefined); }, () => undefined);
+    const c = await Promise.race([opening, overall]);
+    conn = c;
+    c.callTimeout = Math.max(1, Math.floor(lim.timeoutMs));
+    await Promise.race([c.execute('SET TRANSACTION READ ONLY'), overall]);
+    // 숫자는 글자로 받는다 (자릿수가 많은 값이 깨지지 않게). 시간대가 없는 날짜는 DB 에 적힌 그대로 보인다 (이 PC 의 시간대로 밀리지 않게).
+    const two = (n: number): string => String(n).padStart(2, '0');
+    const wall = (v: unknown): unknown => (v instanceof Date && !Number.isNaN(v.getTime())
+      ? `${v.getFullYear()}-${two(v.getMonth() + 1)}-${two(v.getDate())} ${two(v.getHours())}:${two(v.getMinutes())}:${two(v.getSeconds())}${v.getMilliseconds() ? `.${String(v.getMilliseconds()).padStart(3, '0')}` : ''}`
+      : v);
+    const numbers = (md: { dbType?: unknown }): { type?: unknown; converter: (v: unknown) => unknown } | undefined => (md.dbType === oracledb.DB_TYPE_NUMBER
+      ? { type: oracledb.STRING, converter: (v) => (typeof v === 'string' && /^-?\d{1,15}$/.test(v) ? Number(v) : v) }
+      : md.dbType === oracledb.DB_TYPE_DATE || md.dbType === oracledb.DB_TYPE_TIMESTAMP ? { converter: wall } : undefined);
+    const r = await Promise.race([c.execute(sql, params, { resultSet: true, outFormat: oracledb.OUT_FORMAT_ARRAY, fetchArraySize: 100, autoCommit: false, fetchTypeHandler: numbers }), overall]);
+    const columns = (r.metaData ?? []).map((m) => m.name);
+    const rows: DbCell[][] = [];
+    let truncated = false;
+    let bytes = 0;
+    const rs = r.resultSet;
+    try {
+      while (rs) {
+        const batch = await Promise.race([rs.getRows(100), overall]);
+        if (batch.length === 0) break;
+        for (const row of batch) {
+          if (rows.length >= lim.maxRows) { truncated = true; break; }
+          const cells: DbCell[] = [];
+          for (const x of row as unknown[]) cells.push(await Promise.race([oracleCell(x), overall]));
+          for (const x of cells) if (typeof x === 'string') bytes += x.length;
+          if (bytes > (lim.maxBytes ?? DEFAULT_BYTES)) throw tooBig(lim);
+          rows.push(cells);
+        }
+        if (truncated) break;
+      }
+    } finally {
+      await rs?.close().catch(() => undefined);
+    }
+    return { columns, rows, truncated, ms: Date.now() - started };
+  } catch (e) {
+    throw fail(e);
+  } finally {
+    clearTimeout(whole);
+    const c = conn;
+    if (c) {
+      await Promise.race([c.rollback().catch(() => undefined), new Promise((r) => setTimeout(r, 1000))]);
+      void c.close().catch(() => undefined);
+    }
+  }
+}
+
+export function runReadOnly(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): Promise<DbResult> {
+  return t.kind === 'postgres' ? runPostgres(t, sql, params, lim) : t.kind === 'oracle' ? runOracle(t, sql, params, lim) : runMysql(t, sql, params, lim);
+}
+
+/** Oracle 이 스스로 만들어 두는 스키마 (표 목록에서 뺀다). */
+const ORACLE_SYSTEM = ['SYS', 'SYSTEM', 'XDB', 'MDSYS', 'CTXSYS', 'ORDSYS', 'ORDDATA', 'ORDPLUGINS', 'OLAPSYS', 'WMSYS', 'LBACSYS', 'DVSYS', 'DVF', 'OUTLN', 'DBSNMP', 'APPQOSSYS', 'GSMADMIN_INTERNAL', 'AUDSYS',
+  'OJVMSYS', 'DBSFWUSER', 'REMOTE_SCHEDULER_AGENT', 'SI_INFORMTN_SCHEMA', 'ANONYMOUS', 'EXFSYS', 'SYSMAN', 'FLOWS_FILES', 'GGSYS', 'SYS$UMF', 'VECSYS'].map((s) => `'${s}'`).join(', ');
 
 const SCHEMA_LIMITS: DbLimits = { maxRows: 3000, timeoutMs: 15_000 };
 
@@ -178,6 +273,9 @@ const SCHEMA_LIMITS: DbLimits = { maxRows: 3000, timeoutMs: 15_000 };
 export async function listTables(t: DbTarget): Promise<DbTable[]> {
   const sql = t.kind === 'postgres'
     ? "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name"
+    : t.kind === 'oracle'
+      ? `SELECT owner, table_name, 'TABLE' FROM all_tables WHERE owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%'
+         UNION ALL SELECT owner, view_name, 'VIEW' FROM all_views WHERE owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%' ORDER BY 1, 2`
     : 'SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name';
   const r = await runReadOnly(t, sql, [], SCHEMA_LIMITS);
   return r.rows.map((x) => ({ schema: String(x[0] ?? ''), name: String(x[1] ?? ''), type: String(x[2] ?? '').toUpperCase().includes('VIEW') ? 'view' : 'table' }));
@@ -191,6 +289,16 @@ export async function listColumns(t: DbTarget, schema: string, table: string): P
            JOIN information_schema.table_constraints tc ON tc.constraint_name = k.constraint_name AND tc.table_schema = k.table_schema AND tc.table_name = k.table_name
           WHERE k.table_schema = c.table_schema AND k.table_name = c.table_name AND k.column_name = c.column_name)
         FROM information_schema.columns c WHERE c.table_schema = $1 AND c.table_name = $2 ORDER BY c.ordinal_position`, [schema, table], SCHEMA_LIMITS)
+    : t.kind === 'oracle'
+      // 스키마를 비우면 접속한 계정의 것. 키는 P(기본 키), U(고유), R(다른 표를 가리킴)
+      ? await runReadOnly(t, `SELECT c.column_name,
+          c.data_type || CASE WHEN c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR', 'RAW') THEN '(' || c.data_length || ')'
+                              WHEN c.data_type = 'NUMBER' AND c.data_precision IS NOT NULL THEN '(' || c.data_precision || CASE WHEN c.data_scale > 0 THEN ',' || c.data_scale END || ')' END,
+          DECODE(c.nullable, 'Y', 'YES', 'NO'), c.data_default,
+          (SELECT LISTAGG(k.constraint_type, ', ') WITHIN GROUP (ORDER BY k.constraint_type)
+             FROM all_cons_columns cc JOIN all_constraints k ON k.owner = cc.owner AND k.constraint_name = cc.constraint_name
+            WHERE cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name AND k.constraint_type IN ('P', 'U', 'R'))
+          FROM all_tab_columns c WHERE c.owner = COALESCE(:1, USER) AND c.table_name = :2 ORDER BY c.column_id`, [schema, table], SCHEMA_LIMITS)
     : await runReadOnly(t, 'SELECT column_name, column_type, is_nullable, column_default, column_key FROM information_schema.columns WHERE table_schema = COALESCE(NULLIF(?, \'\'), DATABASE()) AND table_name = ? ORDER BY ordinal_position', [schema, table], SCHEMA_LIMITS);
   return r.rows.map((x) => ({ name: String(x[0] ?? ''), type: String(x[1] ?? ''), nullable: String(x[2] ?? '').toUpperCase() === 'YES', default: x[3] === null ? null : String(x[3]), key: String(x[4] ?? '') }));
 }
@@ -214,6 +322,17 @@ export async function riskyPrivileges(t: DbTarget): Promise<string[]> {
         ...(su !== true && files === true ? ['서버의 파일을 읽거나 쓸 수 있습니다'] : []),
         ...(su !== true && signal === true ? ['다른 세션을 끊을 수 있습니다'] : []),
         ...(su !== true && create === true ? ['이 데이터베이스에 스키마를 만들 수 있습니다 (읽기 전용 계정이 아닙니다)'] : []),
+      ];
+    }
+    if (t.kind === 'oracle') {
+      const r = await runReadOnly(t, "SELECT privilege FROM session_privs UNION ALL SELECT 'ROLE ' || role FROM session_roles", [], SCHEMA_LIMITS);
+      const privs = r.rows.map((x) => String(x[0] ?? '').toUpperCase());
+      const has = (re: RegExp): boolean => privs.some((p) => re.test(p));
+      return [
+        ...(has(/^ROLE DBA$|^SYSDBA$|^ALTER SYSTEM$|^ALTER DATABASE$/) ? ['관리자 권한이 있습니다 (서버 설정과 다른 세션에 닿을 수 있습니다)'] : []),
+        ...(has(/^(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE) ANY /) ? ['다른 계정의 표를 바꿀 수 있습니다 (ANY 권한)'] : []),
+        ...(has(/^EXECUTE ANY PROCEDURE$|^CREATE (ANY )?PROCEDURE$/) ? ['프로시저를 만들거나 아무 프로시저나 실행할 수 있습니다 (조회 안에서 부른 함수가 데이터를 바꿀 수 있습니다)'] : []),
+        ...(has(/^CREATE (TABLE|VIEW|SEQUENCE|TRIGGER)$/) ? ['표나 뷰를 만들 수 있습니다 (읽기 전용 계정이 아닙니다)'] : []),
       ];
     }
     const r = await runReadOnly(t, 'SHOW GRANTS', [], SCHEMA_LIMITS);

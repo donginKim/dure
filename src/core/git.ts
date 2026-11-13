@@ -44,6 +44,10 @@ export interface Git {
   snapshotTree(path: string): Promise<string>;
   /** 트리로 커밋 객체를 만든다 (브랜치에 붙이지 않는다). 사용자의 git 설정과 상관없이 만들어진다 */
   commitTree(path: string, tree: string, parent: string, message: string): Promise<string>;
+  /** 두 커밋을 작업 폴더 없이 합쳐 본다. 충돌이 없으면 합친 트리, 있으면 충돌한 파일들 (어느 쪽 파일도 건드리지 않는다) */
+  mergeTree(path: string, ours: string, theirs: string): Promise<{ tree: string; conflicts: string[] }>;
+  /** 부모가 여럿인 커밋 객체를 만든다 (브랜치에 붙이지 않는다) */
+  commitMerge(path: string, tree: string, parents: string[], message: string, date?: number): Promise<string>;
   /** 저장소의 공용 .git 폴더의 실제 경로 (worktree 들이 함께 쓰는 곳) */
   commonDir(path: string): Promise<string>;
   addWorktree(o: { repoPath: string; worktreePath: string; branch: string; baseBranch: string }): Promise<void>;
@@ -201,6 +205,23 @@ export function createGit(env?: Record<string, string>): Git {
     async commitTree(path, tree, parent, message) {
       const who = { GIT_AUTHOR_NAME: 'dure', GIT_AUTHOR_EMAIL: 'dure@localhost', GIT_COMMITTER_NAME: 'dure', GIT_COMMITTER_EMAIL: 'dure@localhost' };
       return (await runBoth(['-C', path, '-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', parent, '-m', message], { extraEnv: who })).trim();
+    },
+    mergeTree(path, ours, theirs) {
+      return new Promise((resolve, reject) => {
+        execFile('git', ['-C', path, 'merge-tree', '--write-tree', '--name-only', '--no-messages', ours, theirs], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, env }, (err, stdout, stderr) => {
+          const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+          // 종료 코드 1 은 "충돌이 있다" 다 (오류가 아니다): 첫 줄이 트리, 나머지가 충돌한 파일.
+          const code = (err as { code?: number } | null)?.code;
+          if (!err || (code === 1 && /^[0-9a-f]{40,64}$/.test(lines[0] ?? ''))) return resolve({ tree: lines[0] ?? '', conflicts: err ? [...new Set(lines.slice(1))] : [] });
+          reject(new GitError(`git merge-tree 실패: ${(stderr || err.message).trim()}`, (stderr || err.message).trim()));
+        });
+      });
+    },
+    async commitMerge(path, tree, parents, message, date) {
+      // 시각을 정해 주면 같은 입력에 늘 같은 커밋이 나온다 (다시 합쳐 봐도 같은 결과인지 비교할 수 있다).
+      const when: Record<string, string> = date !== undefined ? { GIT_AUTHOR_DATE: `@${Math.floor(date)} +0000`, GIT_COMMITTER_DATE: `@${Math.floor(date)} +0000` } : {};
+      const who: Record<string, string> = { GIT_AUTHOR_NAME: 'dure', GIT_AUTHOR_EMAIL: 'dure@localhost', GIT_COMMITTER_NAME: 'dure', GIT_COMMITTER_EMAIL: 'dure@localhost', ...when };
+      return (await runBoth(['-C', path, '-c', 'commit.gpgsign=false', 'commit-tree', tree, ...parents.flatMap((p) => ['-p', p]), '-m', message], { extraEnv: who })).trim();
     },
     async commonDir(path) {
       const dir = (await raw(['-C', path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();

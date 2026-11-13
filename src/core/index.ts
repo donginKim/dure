@@ -7,7 +7,8 @@ import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
 import { ReviewService, type ReviewRunner } from './review';
-import { VerifyService, type VerifyRunner } from './verify';
+import { MergeService } from './merge';
+import { shellRunner, VerifyService, type VerifyRunner } from './verify';
 import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
 import { coordinatorTools } from './mcp/tools/coordinator';
@@ -90,6 +91,7 @@ export interface Core {
   commitDrafts: CommitDraftStore;
   commit: CommitService;
   review: ReviewService;
+  merges: MergeService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -348,6 +350,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     executable: () => service.claudeExecutable(),
     model: () => settings.get().reviewModel || settings.get().claudeModel,
   });
+  // 합치기 도우미: 워크스페이스 브랜치들을 차례로 합쳐 보고, 합치기 브랜치를 만들어 확인한 뒤, 사용자가 누르면 기준 브랜치를 옮긴다.
+  const merges = new MergeService({
+    repos, workspaces, git, messages, todos: (id) => todos.listProject(id), worktreeRoot: o.worktreeRoot, env: o.baseEnv,
+    run: o.verifyRunner ?? shellRunner, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, isProjectClosed: (id) => service.isProjectClosed(id),
+  });
   const reviewTimers = new Map<string, NodeJS.Timeout>();
   commitDrafts.on('changed', (id: string) => {
     if (!settings.get().reviewOnDraft || !commitDrafts.get(id)) return;
@@ -360,7 +367,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

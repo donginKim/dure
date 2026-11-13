@@ -246,6 +246,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'browser.decide': (requestId: string, allow: boolean) => core.browser.decide(String(requestId), allow === true),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
+    'merge.plans': (projectId: string) => core.merges.plans(String(projectId)),
+    'merge.prepare': (projectId: string, repoId: string, base: string) => { assertOpen(String(projectId)); return core.merges.prepare(String(projectId), String(repoId), String(base)); },
+    'merge.advance': (projectId: string, repoId: string, base: string) => { assertOpen(String(projectId)); return core.merges.advance(String(projectId), String(repoId), String(base)); },
+    'merge.askToResolve': (projectId: string, repoId: string, base: string, workspaceId: string) => { assertOpen(String(projectId)); return core.merges.askToResolve(String(projectId), String(repoId), String(base), String(workspaceId)); },
     'review.status': (workspaceId: string) => core.review.status(String(workspaceId)),
     'review.run': (workspaceId: string) => core.review.review(String(workspaceId), { force: true }),
     'review.sendToAgent': async (workspaceId: string, picked?: number[]) => {
@@ -366,6 +370,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.verify.on('changed', onTodosChanged);
   const onReviewChanged = (): void => changed('commit');
   core.review.on('changed', onReviewChanged);
+  core.merges.on('changed', onReviewChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -393,6 +398,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.worktime.off('changed', onWorktimeChanged);
     core.verify.off('changed', onTodosChanged);
     core.review.off('changed', onReviewChanged);
+    core.merges.off('changed', onReviewChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

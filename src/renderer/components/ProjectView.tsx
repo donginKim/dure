@@ -12,6 +12,7 @@ import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
 import { Ticks, TodoList } from './TodoPanel';
 import { BoardSection } from './BoardSection';
 import { VerifyCommand } from './VerifyParts';
+import { MergeSection } from './MergeSection';
 import { remoteGroups } from '../boardView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -209,6 +210,8 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
           />
         </div>
       </div>
+
+      <MergeSection projectId={project.id} readOnly={done} />
 
       <div className="section">
         <div className="section-head"><h2>TODO</h2></div>

@@ -186,6 +186,19 @@ export interface CommitDraft {
   updatedAt: number;
 }
 
+/**
+ * 합치기 계획의 한 단계 (워크스페이스 하나). state: ok 충돌 없이 합쳐진다, conflict 충돌한다, merged 이미 기준 브랜치에 들어 있다,
+ * empty 합칠 커밋이 없다, missing 브랜치가 없다. with: 함께 충돌하는 앞의 워크스페이스. uncommitted: 커밋하지 않은 변경 (합치기에 들어가지 않는다)
+ */
+export interface MergeStep { workspaceId: string; name: string; branch: string; ahead: number; uncommitted: number; state: 'ok' | 'conflict' | 'merged' | 'empty' | 'missing'; conflicts: string[]; with: string[] }
+/** 한 저장소·기준 브랜치의 합치기 계획. ready: 합치기 브랜치가 지금의 결과와 같다 (기준 브랜치로 옮길 수 있다) */
+export interface MergePlan {
+  projectId: string; repoId: string; repoName: string; base: string; baseHead: string; steps: MergeStep[];
+  /** 충돌 없는 것을 다 합친 커밋. 합칠 것이 없으면 null */
+  result: string | null;
+  mergeBranch: string; mergeBranchHead: string | null; ready: boolean; verifyCommand: string;
+}
+
 /** 리뷰 에이전트가 찾은 것 하나 */
 export interface ReviewFinding { severity: '높음' | '중간' | '낮음'; file: string; line: number | null; title: string; detail: string }
 /** 커밋 전의 리뷰. stale: 리뷰한 뒤에 작업 폴더가 바뀌었다 */

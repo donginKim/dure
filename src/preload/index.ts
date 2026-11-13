@@ -116,6 +116,12 @@ const api: DureApi = {
     run: (workspaceId, input) => call('commit.run', workspaceId, input),
     push: (workspaceId) => call('commit.push', workspaceId),
   },
+  merge: {
+    plans: (projectId) => call('merge.plans', projectId),
+    prepare: (projectId, repoId, base) => call('merge.prepare', projectId, repoId, base),
+    advance: (projectId, repoId, base) => call('merge.advance', projectId, repoId, base),
+    askToResolve: (projectId, repoId, base, workspaceId) => call('merge.askToResolve', projectId, repoId, base, workspaceId),
+  },
   review: {
     status: (workspaceId) => call('review.status', workspaceId),
     run: (workspaceId) => call('review.run', workspaceId),

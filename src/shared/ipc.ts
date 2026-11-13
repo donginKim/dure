@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, ReviewState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -161,6 +161,17 @@ export interface DureApi {
     run(workspaceId: string, input: { files: string[]; message: string }): Promise<CommitResult>;
     /** git 이 낸 글을 돌려준다 */
     push(workspaceId: string): Promise<string>;
+  };
+  /** 합치기 도우미 */
+  merge: {
+    /** 저장소마다, 기준 브랜치마다의 합치기 계획 (차례로 합쳐 본 결과). 아무것도 바꾸지 않는다 */
+    plans(projectId: string): Promise<MergePlan[]>;
+    /** 합치기 브랜치를 만들고 (있으면 옮기고) 확인 명령을 돌린다. 기준 브랜치는 건드리지 않는다 */
+    prepare(projectId: string, repoId: string, base: string): Promise<{ plan: MergePlan; verify: { ok: boolean; output: string } | null }>;
+    /** 합치기 브랜치를 기준 브랜치로 옮긴다 (앞으로 감기만) */
+    advance(projectId: string, repoId: string, base: string): Promise<string>;
+    /** 충돌한 워크스페이스의 에이전트에게 풀라고 보낸다 */
+    askToResolve(projectId: string, repoId: string, base: string, workspaceId: string): Promise<void>;
   };
   /** 커밋 전의 리뷰 (리뷰 에이전트) */
   review: {
@@ -369,7 +380,7 @@ export const IPC_CHANNELS = [
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',
-  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent',
+  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent', 'merge.plans', 'merge.prepare', 'merge.advance', 'merge.askToResolve',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;

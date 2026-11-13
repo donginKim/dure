@@ -671,8 +671,14 @@ export class WorkspaceService extends EventEmitter {
   }
 
   /** 에이전트를 띄운다. 터미널 방식이면 그 터미널을, 채팅 방식이면 null 을 돌려준다. */
+  /** 예산: 넘었으면 까닭 (새로 일을 시키지 않는다) */
+  private budgetBlock: ((projectId: string) => string | null) | undefined;
+  attachBudget(fn: (projectId: string) => string | null): void { this.budgetBlock = fn; }
+  private checkBudget(projectId: string): void { const why = this.budgetBlock?.(projectId); if (why) throw new Error(why); }
+
   async startAgent(id: string, size: { cols: number; rows: number }, initialPrompt?: string): Promise<TerminalInfo | null> {
     const ws = this.mustGet(id);
+    this.checkBudget(ws.projectId);
     const running = this.d.pty.list(id).find((t) => t.kind === 'agent');
     if (running) return running;
     // 방금 끈 에이전트가 아직 끝나는 중이면 끝날 때까지 기다린다 (살아 있다고 보고 돌아가면 곧 꺼진다).
@@ -844,6 +850,7 @@ export class WorkspaceService extends EventEmitter {
    */
   async wake(id: string, text: string): Promise<void> {
     const ws = this.d.workspaces.get(id);
+    if (ws) this.checkBudget(ws.projectId);
     if (ws && this.engine?.has(id)) {
       // 채팅 방식: 터미널에 써 넣지 않고 메시지로 보낸다. 쉬는 중일 때만 한다 (작업 중에는 hook 응답에 실린다).
       if (!this.isConfirmedIdle(id) || this.removing.has(id)) throw new Error('에이전트가 쉬는 중일 때만 알릴 수 있습니다.');
@@ -935,6 +942,7 @@ export class WorkspaceService extends EventEmitter {
 
   /** 사용자가 채팅 입력창에서 보낸 글을 에이전트의 터미널에 써 넣는다. */
   async sendUserInput(id: string, text: string, rawImages: unknown = []): Promise<void> {
+    { const w = this.d.workspaces.get(id); if (w) this.checkBudget(w.projectId); }
     // 사용자가 말을 걸었다: 막혔다는 표시는 거둔다 (새 지시를 받았다).
     this.clearStuck(id);
     // eslint-disable-next-line no-control-regex

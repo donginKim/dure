@@ -28,6 +28,9 @@ const api: DureApi = {
     reopen: (id) => call('projects.reopen', id),
     setAutoShip: (id, mode) => call('projects.setAutoShip', id, mode),
     shipLog: (id) => call('projects.shipLog', id),
+    budget: (id) => call('projects.budget', id),
+    setBudget: (id, daily, total) => call('projects.setBudget', id, daily, total),
+    allowToday: (id) => call('projects.allowToday', id),
   },
   coordinator: {
     get: (projectId) => call('coordinator.get', projectId),

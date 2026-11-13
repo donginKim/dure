@@ -947,3 +947,14 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .waiting-asks .permit { margin: 8px 0 0; border: 0; padding: 0; background: none; }
 .waiting-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .waiting-pill { margin: 8px 16px 0; align-self: flex-start; }
+
+/* 예산 */
+.budget { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; background: var(--panel); font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+.budget.over { border-color: var(--danger, #c25b5b); }
+.budget.warning { border-color: var(--accent); }
+.budget-head { display: flex; align-items: center; gap: 8px; }
+.budget-label { display: flex; justify-content: space-between; }
+.usage-bar.near span { background: var(--accent); }
+.usage-bar.over span { background: var(--danger, #c25b5b); }
+.budget-edit { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.budget-edit input { width: 80px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; text-align: right; }

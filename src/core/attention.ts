@@ -23,6 +23,7 @@ export interface AttentionSources {
   /** 막힌 것 같은 워크스페이스 */
   agreements?(projectId: string): { id: string; title: string; author: string }[];
   /** 자동 반영이 멈춘 워크스페이스 (가장 최근 기록이 실패) */
+  budget?(projectId: string): { today: number; total: number; dailyLimit: number; totalLimit: number; state: string }[];
   ships?(projectId: string): { id: string; workspaceId: string; workspaceName: string; message: string }[];
   stuck?(projectId: string): { workspaceId: string; info: { reason: 'repeat' | 'quiet'; since: number; count: number; detail: string } }[];
 }
@@ -56,6 +57,11 @@ export class AttentionService extends EventEmitter {
         const at = r.info.resetsAt ? new Date(r.info.resetsAt * 1000) : null;
         const when = at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} 에 풀립니다` : '언제 풀리는지 모릅니다';
         add('limit', `${r.workspaceId}:${r.info.resetsAt ?? ''}`, r.workspaceId, `${name(r.workspaceId)}가 사용 한도에 걸려 멈췄습니다`, `${when} · 다른 모델로 바꿔 이어 갈 수 있습니다`);
+      }
+      for (const b of safe(() => this.s.budget?.(p.id) ?? [])) {
+        const pct = (n: number, l: number): string => (l > 0 ? `${Math.round((n / l) * 100)}%` : '');
+        const what = [b.dailyLimit > 0 ? `오늘 ${pct(b.today, b.dailyLimit)}` : '', b.totalLimit > 0 ? `전체 ${pct(b.total, b.totalLimit)}` : ''].filter(Boolean).join(' · ');
+        add('budget', `${p.id}:${b.state}`, null, b.state === 'over' ? '예산을 넘어 에이전트를 멈췄습니다' : '예산의 80% 를 넘었습니다', `${what} · 현황 탭의 사용량에서 상한을 올리거나 오늘만 더 쓸 수 있습니다`);
       }
       for (const e of safe(() => this.s.ships?.(p.id) ?? [])) add('ship', e.id, e.workspaceId, `"${e.workspaceName}" 의 자동 반영이 멈췄습니다`, e.message);
       for (const a of safe(() => this.s.agreements?.(p.id) ?? [])) add('agreement', a.id, null, `${a.author} 이(가) 약속을 제안했습니다`, a.title);

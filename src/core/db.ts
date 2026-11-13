@@ -433,6 +433,11 @@ const MIGRATIONS: string[] = [
   -- 리뷰어의 답이 정해진 모양 그대로였는가 (자동 반영은 이것만 믿는다)
   ALTER TABLE reviews ADD COLUMN strict INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- 프로젝트의 예산 (토큰, 0 이면 없다)
+  ALTER TABLE projects ADD COLUMN budget_daily INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE projects ADD COLUMN budget_total INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

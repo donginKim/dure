@@ -49,7 +49,9 @@ function TodoEditor({ todos, onChange, agentLabel, parents }: { todos: PlanTodo[
  * 계획안 검토 화면. 조율 에이전트가 기획서를 분석해 올린 것을 보여 준다: 기획서 정리, 만들 워크스페이스, TODO.
  * 여기서 고치고 승인해야 만들어진다. 승인하면 두레가 본 그대로 만든다.
  */
-function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal: Proposal; repos: Repo[]; newRepoDir: string; people: CoordinatorInfo['people']; onBack: () => void }) {
+function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: { proposal: Proposal; repos: Repo[]; newRepoDir: string; people: CoordinatorInfo['people'];
+  /** 다른 사람이 연 프로젝트: 승인하면 만들지 않고 그 사람(리더)에게 제안으로 보낸다 */
+  suggestTo?: string; onBack: () => void }) {
   const [plan, setPlan] = useState<PlanDraft>(() => toDraft(proposal));
   const nextKey = useRef(0);
   const [branches, setBranches] = useState<Record<string, string[]>>({});
@@ -114,7 +116,11 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
           <div className="plan-head">
             <div>
               <div className="plan-title">계획안 검토</div>
-              <div className="plan-sub">조율 에이전트가 기획서를 분석해 올린 계획입니다. <b>아직 아무것도 만들어지지 않았습니다.</b> 고칠 것을 고친 뒤 승인하면, 여기 보이는 그대로 만들어집니다.</div>
+              {proposal.suggestedBy
+                ? <div className="plan-sub"><b>{proposal.suggestedBy.name}</b> 이(가) 제안한 계획입니다 (다른 사람이 쓴 것입니다). <b>아직 아무것도 만들어지지 않았습니다.</b> 내 PC 에 만들 워크스페이스는 저장소를 골라야 합니다. 고칠 것을 고친 뒤 승인하면 반영되고, 승인이나 거절은 그 사람에게 알려집니다.</div>
+                : suggestTo
+                  ? <div className="plan-sub">이 프로젝트는 <b>{suggestTo}</b> 이(가) 열었습니다. 여기서 승인해도 만들어지지 않고, <b>{suggestTo} 에게 제안으로 갑니다.</b> 그 사람이 승인하면 각자에게 배정으로 가고 (내 몫도 배정으로 옵니다), 수락할 때 저장소를 고릅니다.</div>
+                  : <div className="plan-sub">조율 에이전트가 기획서를 분석해 올린 계획입니다. <b>아직 아무것도 만들어지지 않았습니다.</b> 고칠 것을 고친 뒤 승인하면, 여기 보이는 그대로 만들어집니다.</div>}
             </div>
             <button className="btn ghost" onClick={onBack} title="계획안은 그대로 두고 대화로 돌아갑니다">대화로 돌아가기</button>
           </div>
@@ -238,9 +244,9 @@ function PlanReview({ proposal, repos, newRepoDir, people, onBack }: { proposal:
             </>
           ) : (
             <>
-              <span className="plan-count">{problem ?? `승인하면 ${counts.added ? `저장소 ${counts.added}개가 등록되고, ` : ''}${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다${counts.handed ? `. 워크스페이스 ${counts.handed}개는 다른 사람에게 나눠 줍니다` : ''}`}</span>
+              <span className="plan-count">{problem ?? (suggestTo ? `${suggestTo} 이(가) 승인해야 반영됩니다. 지금은 아무것도 만들어지지 않습니다` : null) ?? `승인하면 ${counts.added ? `저장소 ${counts.added}개가 등록되고, ` : ''}${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다${counts.handed ? `. 워크스페이스 ${counts.handed}개는 다른 사람에게 나눠 줍니다` : ''}`}</span>
               <button className="btn" disabled={busy} onClick={() => setRejecting(true)}>거절</button>
-              <button className="btn primary" disabled={busy || problem !== null} onClick={() => void approve()}>{busy ? '만드는 중…' : approveLabel(decision)}</button>
+              <button className="btn primary" disabled={busy || problem !== null} onClick={() => void approve()}>{busy ? (suggestTo ? '보내는 중…' : '만드는 중…') : suggestTo ? `${suggestTo} 에게 제안 보내기` : approveLabel(decision)}</button>
             </>
           )}
         </div>
@@ -311,7 +317,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
       {!(proposal && reviewing) && <AssignPanel projectId={project.id} repos={repos} readOnly={readOnly} />}
       {!readOnly && !(proposal && reviewing) && <PeerInbox projectId={project.id} workspaces={everyone} only="person" />}
       {proposal && reviewing
-        ? <PlanReview key={proposal.id} proposal={proposal} repos={repos} newRepoDir={info.newRepoDir} people={info.people} onBack={() => setReviewing(false)} />
+        ? <PlanReview key={proposal.id} proposal={proposal} repos={repos} newRepoDir={info.newRepoDir} people={info.people} suggestTo={info.suggestTo} onBack={() => setReviewing(false)} />
         : (
           <ChatPane
             workspace={ws} workspaces={everyone} conversation={conversation} hasAgent={hasAgent} readOnly={readOnly}

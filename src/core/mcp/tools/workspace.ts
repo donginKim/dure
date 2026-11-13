@@ -53,7 +53,9 @@ export const workspaceTools: ToolBundle = (server, ctx, deps) => {
     async () => {
       const repos = deps.repos.list(ctx.project.id);
       const others = deps.peers.remoteWorkspaces(ctx.project.id);
-      const people = deps.peers.assignable(ctx.project.id);
+      const share = deps.peers.share(ctx.project.id);
+      // 내가 연 프로젝트면 나눠 줄 수 있는 사람들. 참여한 프로젝트면 함께하는 사람 모두 (계획안은 리더에게 제안으로 간다).
+      const people = share?.mine === false ? deps.peers.people(ctx.project.id) : deps.peers.assignable(ctx.project.id);
       const askable = deps.peers.people(ctx.project.id);
       const workspaces = deps.workspaces.listAll(ctx.project.id);
       // 함께하는 프로젝트에서 리더가 아닌 쪽: 리더가 보내 준 현황판 (큰 일과 담당표).
@@ -76,6 +78,7 @@ export const workspaceTools: ToolBundle = (server, ctx, deps) => {
             ...(coordinator ? { howToAddRepos: '저장소 등록은 plan_propose 로 한다 (사용자에게 등록을 부탁하지 마라, 등록된 저장소가 없어도 계획안을 올려라). 사용자의 PC 에 이미 있는 git 저장소 폴더는 add_repos 에 절대 경로를, 새로 만들 저장소는 new_repos 에 이름을 넣고, 워크스페이스의 repo 에 그 이름을 적는다. 사용자가 승인하면 두레가 등록한다.' } : {}),
             // 조율 에이전트: 일을 나눠 줄 수 있는 사람 (plan_propose 의 owner 에 name 을 쓴다).
             ...(coordinator && people.length ? { people: people.map((p) => ({ name: p.name, online: p.online })) } : {}),
+            ...(coordinator && share?.mine === false ? { planNote: '이 프로젝트는 다른 사람이 열었다 (네 사용자는 참여자다). 네가 plan_propose 로 올린 계획안은 사용자가 보고 "리더에게 제안" 으로 보낸다: 프로젝트를 연 사람이 승인해야 반영되고, 그때 각자에게 배정으로 간다. 네 사용자가 맡을 워크스페이스는 owner 를 비우고, 다른 사람이 맡을 것은 owner 에 people 의 이름을 적어라. 저장소는 맡는 사람이 고르니 new_repos 와 add_repos 는 쓰지 마라.' } : {}),
             // 함께하는 사람들. 공개한 워크스페이스가 없어도 message_send 의 to 에 "@이름" 을 넣어 그 사람에게 직접 물을 수 있다.
             ...(askable.length ? { askPeople: askable.map((p) => ({ name: `@${p.name}`, online: p.online, note: '사람이다 (에이전트가 아니다). 그 사람의 화면에 질문으로 뜨고, 그 사람이 읽고 답한다. 꼭 필요한 것만 짧고 분명하게 물어라' })) } : {}),
             // 다른 사람의 두레에 있는 워크스페이스 (함께하는 프로젝트에서 그 사람이 공개한 것). message_send 의 to 에 name 을 그대로 쓴다.

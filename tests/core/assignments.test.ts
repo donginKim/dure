@@ -330,3 +330,91 @@ test('현황판은 프로젝트를 연 사람의 것만 받는다. 남이 보낸
   // 사람의 이름은 내가 아는 이름을 쓴다 (리더가 적어 준 이름으로 바뀌지 않는다)
   expect(b.people).toEqual([{ peerId: dev.id, name: '개발', me: false, leader: false, works: [{ name: 'abc', role: 'r', status: '', done: 0, total: 0, state: 'active' }] }]);
 });
+
+test('참여자가 올린 계획안은 리더에게 제안으로 간다. 리더가 승인해야 반영되고 각자에게 배정으로 간다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  const cPm = pm.core.coordinator.ensure(pm.projectId);
+  const cDev = dev.core.coordinator.ensure(dev.projectId);
+  // 참여자의 조율 에이전트: 함께하는 사람이 보이고, 계획안이 제안으로 간다는 것을 안다
+  const overview = await call(dev.core, cDev.id, 'project_overview');
+  expect(overview).toContain('\\"people\\"');
+  expect(overview).toContain('planNote');
+  const p = await dev.core.coordinator.propose(dev.projectId, {
+    summary: '결제를 붙인다', project_todos: ['결제 연동'],
+    workspaces: [
+      W('결제 API', { repo: 'repo-개발', todos: [{ title: 'POST /pay', under: '결제 연동' }] }),
+      W('결제 화면', { owner: '디자인', todos: [{ title: '결제 폼', under: '결제 연동' }] }),
+      W('일정 조정', { owner: '기획', todos: ['일정 다시 잡기'] }),
+    ],
+  });
+  const res = await dev.core.coordinator.approve(p.id, { items: p.items, projectTodos: p.projectTodos });
+  // 참여자의 PC 에는 아무것도 만들어지지 않는다
+  expect(res).toMatchObject({ suggested: true, created: [], assigned: 0 });
+  expect(dev.core.workspaces.list(dev.projectId)).toEqual([]);
+  expect(dev.core.todos.listProject(dev.projectId)).toEqual([]);
+  expect(dev.core.messages.undelivered(cDev.id).map((m) => m.body).join('\n')).toContain('제안으로 보냈다');
+  // 리더의 검토 화면에 미결 계획안으로 뜬다: 누가 제안했는지, 내 몫은 저장소가 비어 있다
+  const got = pm.core.coordinator.pending(pm.projectId)!;
+  expect(got.suggestedBy).toEqual({ peerId: dev.id, name: '개발' });
+  expect(got.items.map((it) => [it.name, it.owner === dev.id ? '개발' : it.owner === des.id ? '디자인' : it.owner, it.repoId])).toEqual([['결제 API', '개발', ''], ['결제 화면', '디자인', ''], ['일정 조정', '', '']]);
+  expect(pm.core.todos.listProject(pm.projectId)).toEqual([]);
+  expect(pm.core.messages.undelivered(cPm.id).map((m) => m.body).join('\n')).toContain('함께하는 사람(개발)이 계획안을 제안했다');
+  // 저장소를 고르지 않으면 승인되지 않는다. 검토하지 않은 계획안이 있으면 다른 제안은 받지 않는다
+  await expect(pm.core.coordinator.approve(got.id, { items: got.items, projectTodos: got.projectTodos })).rejects.toThrow('등록된 저장소가 아니다');
+  const again = await dev.core.coordinator.propose(dev.projectId, { summary: 's', workspaces: [W('또', { owner: '디자인', todos: ['x'] })] });
+  await expect(dev.core.coordinator.approve(again.id, { items: again.items, projectTodos: [] })).rejects.toThrow('아직 검토하지 않은 계획안이 있다');
+  // 리더가 저장소를 골라 승인한다
+  const done = await pm.core.coordinator.approve(got.id, { items: got.items.map((it) => (it.owner ? it : { ...it, repoId: pm.repo.id, baseBranch: 'main' })), projectTodos: got.projectTodos });
+  expect(done).toMatchObject({ assigned: 2 });
+  expect(done.created.map((w) => w.name)).toEqual(['일정 조정']);
+  expect(pm.core.todos.listProject(pm.projectId).filter((t) => t.workspaceId === null).map((t) => t.title)).toEqual(['결제 연동']);
+  // 제안한 사람의 몫도 배정으로 온다. 결과가 그 사람의 조율 에이전트에게 간다
+  expect(dev.core.assignments.incoming().map((a) => [a.fromName, a.items.map((it) => it.name)])).toEqual([['기획', ['결제 API']]]);
+  expect(des.core.assignments.incoming().map((a) => a.items.map((it) => it.name))).toEqual([['결제 화면']]);
+  await until(() => dev.core.messages.undelivered(cDev.id).some((m) => m.body.includes('승인했다')));
+});
+
+test('리더가 제안을 거절하면 이유가 제안한 사람에게 간다. 참여자끼리는 제안을 주고받지 못한다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  pm.core.coordinator.ensure(pm.projectId);
+  const cDev = dev.core.coordinator.ensure(dev.projectId);
+  const p = await dev.core.coordinator.propose(dev.projectId, { summary: 's', workspaces: [W('결제 화면', { owner: '디자인', todos: ['폼'] })] });
+  await dev.core.coordinator.approve(p.id, { items: p.items, projectTodos: [] });
+  pm.core.coordinator.reject(pm.core.coordinator.pending(pm.projectId)!.id, '이번 범위가 아님');
+  await until(() => dev.core.messages.undelivered(cDev.id).some((m) => m.body.includes('거절했다')));
+  expect(dev.core.messages.undelivered(cDev.id).map((m) => m.body).join('\n')).toContain('> 이번 범위가 아님');
+  expect(des.core.assignments.incoming()).toEqual([]);
+  // 같은 결과를 다시 보내도 받지 않는다. 리더가 아닌 사람이 보낸 결과도 받지 않는다
+  await expect(des.core.peers.sendMember(des.projectId, dev.id, { type: 'plan.result', sid: crypto.randomUUID(), state: 'approved' })).rejects.toThrow('프로젝트를 연 사람만');
+  // 참여자에게 직접 제안을 보낼 수 없다 (리더만 받는다)
+  await expect(dev.core.peers.sendMember(dev.projectId, des.id, { type: 'plan.suggest', sid: crypto.randomUUID(), plan: { items: [{ name: 'x', role: '', owner: des.id, todos: [] }], projectTodos: [] } })).rejects.toThrow('프로젝트를 연 사람만');
+  // 남이 꾸민 제안: 저장소나 폴더를 가리키는 값, 없는 사람은 받지 않는다
+  await expect(dev.core.peers.sendMember(dev.projectId, pm.id, { type: 'plan.suggest', sid: crypto.randomUUID(), plan: { items: [{ name: 'x', role: '', owner: crypto.randomUUID(), todos: [] }], projectTodos: [] } })).rejects.toThrow('올바르지 않다');
+  await dev.core.peers.sendMember(dev.projectId, pm.id, { type: 'plan.suggest', sid: crypto.randomUUID(), plan: { newRepos: [{ name: 'evil' }], addRepos: [{ path: '/etc' }], items: [{ name: '내 PC 에', role: '', owner: pm.id, repo: '/etc', repoId: 'path:/etc', todos: ['x'] }], projectTodos: [] } });
+  const got = pm.core.coordinator.pending(pm.projectId)!;
+  expect([got.newRepos, got.addRepos, got.items.map((it) => [it.name, it.repoId, it.owner])]).toEqual([[], [], [['내 PC 에', '', '']]]);
+});
+
+test('프로젝트 설정이 "승인 없이 반영" 이면 나눠 주기만 있는 제안은 바로 반영된다. 리더의 PC 에 만드는 제안은 검토로 남는다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  pm.core.coordinator.ensure(pm.projectId);
+  dev.core.coordinator.ensure(dev.projectId);
+  // 참여자는 이 설정을 바꿀 수 없다
+  expect(() => dev.core.peers.setSuggestMode(dev.projectId, 'auto')).toThrow('내가 연 프로젝트에서만');
+  expect(pm.core.peers.setSuggestMode(pm.projectId, 'auto').suggestMode).toBe('auto');
+  expect(dev.core.peers.share(dev.projectId)!.suggestMode).toBe('review');
+  const p = await dev.core.coordinator.propose(dev.projectId, { summary: 's', project_todos: ['결제 연동'], workspaces: [W('결제 화면', { owner: '디자인', todos: [{ title: '폼', under: '결제 연동' }] })] });
+  await dev.core.coordinator.approve(p.id, { items: p.items, projectTodos: p.projectTodos });
+  await until(() => des.core.assignments.incoming().length === 1);
+  expect(pm.core.coordinator.pending(pm.projectId)).toBeNull();
+  expect(pm.core.todos.listProject(pm.projectId).map((t) => t.title)).toEqual(['결제 연동']);
+  // 리더의 PC 에 워크스페이스를 만드는 제안은 설정과 상관없이 리더가 검토한다
+  const q = await dev.core.coordinator.propose(dev.projectId, { summary: 's', workspaces: [W('리더가 할 일', { owner: '기획', todos: ['x'] })] });
+  await dev.core.coordinator.approve(q.id, { items: q.items, projectTodos: [] });
+  await tick(100);
+  expect(pm.core.coordinator.pending(pm.projectId)!.suggestedBy!.name).toBe('개발');
+  expect(pm.core.workspaces.list(pm.projectId)).toEqual([]);
+});

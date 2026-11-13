@@ -848,3 +848,8 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .board-summary { margin-top: 10px; font-size: 13px; }
 .board-summary summary { cursor: pointer; color: var(--muted); }
 .board-summary .plan-summary { margin-top: 6px; max-height: 260px; overflow-y: auto; }
+
+/* 함께 탭: 참여자의 제안을 받는 방식 */
+.share-rule { display: flex; align-items: flex-start; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
+.share-rule .muted { font-size: 12px; line-height: 1.5; margin-top: 2px; }
+.share-rule select { flex: none; }

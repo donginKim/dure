@@ -474,6 +474,8 @@ export interface Proposal {
   id: string;
   projectId: string;
   status: 'pending' | 'approved' | 'rejected';
+  /** 함께하는 사람이 제안해 온 계획안이면 그 사람 (내가 연 프로젝트에서만). 내 조율 에이전트가 올린 것이면 없다 */
+  suggestedBy?: { peerId: string; name: string };
   /** 기획서를 정리한 글 (마크다운): 요구사항, 범위, 불확실한 점 */
   summary: string;
   /** 승인하면 새로 만들 저장소 (맞는 저장소가 등록돼 있지 않을 때) */
@@ -507,6 +509,8 @@ export interface PlanResult {
   repos: Repo[];
   created: Workspace[];
   todos: number;
+  /** 만들지 않고 프로젝트를 연 사람에게 제안으로 보냈다 (내가 연 프로젝트가 아닐 때) */
+  suggested?: boolean;
 }
 
 /** 사용자가 고른 기획서 파일 */
@@ -529,6 +533,11 @@ export interface CoordinatorInfo {
   newRepoDir: string;
   /** 함께하는 사람들 (일을 나눠 줄 수 있는 사람). 함께하는 프로젝트가 아니면 비어 있다 */
   people: { peerId: string; name: string; online: boolean }[];
+  /**
+   * 다른 사람이 연 프로젝트에 참여하고 있을 때: 그 사람(리더)의 이름. 이때 계획안은 승인해도 만들어지지 않고
+   * 리더에게 제안으로 간다. 내가 연 프로젝트이거나 함께하는 프로젝트가 아니면 없다
+   */
+  suggestTo?: string;
 }
 
 // ---- DB 조회 (5단계) ----
@@ -619,6 +628,11 @@ export interface ShareMember { peerId: string; name: string; me: boolean; owner:
 /** 함께하는 프로젝트. 내 프로젝트 하나에 이어 붙어 있다 */
 export interface Share {
   id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[];
+  /**
+   * 참여자가 제안한 계획안을 어떻게 받을지 (내가 연 프로젝트에서 내가 정한다).
+   * review: 내가 검토하고 승인해야 반영된다. auto: 승인 없이 반영한다 (내 PC 에 만드는 것이 없는 제안만. 있으면 검토로 남는다)
+   */
+  suggestMode: 'review' | 'auto';
   /** 초대했지만 아직 참여하지 않은 사람 (내가 연 프로젝트에서만) */
   invited: { peerId: string; name: string }[];
 }

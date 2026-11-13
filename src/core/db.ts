@@ -347,6 +347,16 @@ const MIGRATIONS: string[] = [
     received_at INTEGER NOT NULL
   );
   `,
+  `
+  -- 참여자가 제안한 계획안을 받는 방식 (프로젝트를 연 사람이 정한다): review 검토 뒤 승인, auto 승인 없이 반영
+  ALTER TABLE shares ADD COLUMN suggest_mode TEXT NOT NULL DEFAULT 'review';
+  -- 내가 리더에게 보낸 계획 제안: 결과 알림을 한 번만 받는다
+  CREATE TABLE suggestions_out (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

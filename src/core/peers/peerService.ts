@@ -26,7 +26,7 @@ export interface PeerDiscovery {
 }
 
 interface PeerRow { id: string; name: string; pub: string; address: string; mode: string; direct: number; created_at: number }
-interface ShareRow { id: string; name: string; owner_peer: string; project_id: string; created_at: number }
+interface ShareRow { id: string; name: string; owner_peer: string; project_id: string; created_at: number; suggest_mode?: string }
 interface Envelope { v: 1; from: string; to: string; ts: number; nonce: string; box: string }
 type Payload = { id: string; type: string; port?: number; name?: string } & Record<string, unknown>;
 /**
@@ -111,6 +111,8 @@ const REMOTE_ERRORS: Record<string, string> = {
   not_leader: '일을 나눠 주는 것은 프로젝트를 연 사람만 할 수 있다',
   no_assignment: '그런 배정이 없다',
   bad_assignment: '배정의 내용이 올바르지 않다',
+  plan_busy: '프로젝트를 연 사람에게 아직 검토하지 않은 계획안이 있다. 그 사람이 정한 뒤에 다시 보내라',
+  bad_plan: '제안한 계획안의 내용이 올바르지 않다',
   assign_busy: '받는 쪽에 아직 확인하지 않은 배정이 많다',
 };
 /** 열쇠로 감싸지 않은 거절 (누가 답했는지 알 수 없다). 아는 것만 내 말로 바꾼다. */
@@ -573,7 +575,7 @@ export class PeerService extends EventEmitter {
     const me = this.me();
     const mine = s.owner_peer === me.id;
     return {
-      id: s.id, name: s.name, projectId: s.project_id, ownerPeerId: s.owner_peer, mine,
+      id: s.id, name: s.name, projectId: s.project_id, ownerPeerId: s.owner_peer, mine, suggestMode: mine && s.suggest_mode === 'auto' ? 'auto' : 'review',
       members: [
         { peerId: me.id, name: this.myName(), me: true, owner: mine, online: true },
         ...this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), me: false, owner: id === s.owner_peer, online: this.isOnline(id) })),
@@ -587,6 +589,15 @@ export class PeerService extends EventEmitter {
   share(projectId: string): Share | null {
     const s = this.shareOfProject(projectId);
     return s ? this.toShare(s) : null;
+  }
+
+  /** 참여자가 제안한 계획안을 받는 방식을 정한다. 내가 연 프로젝트에서만 */
+  setSuggestMode(projectId: string, mode: 'review' | 'auto'): Share {
+    const s = this.shareOfProject(projectId);
+    if (!s || !this.isMine(s)) throw new Error('내가 연 프로젝트에서만 정할 수 있습니다.');
+    this.d.db.prepare('UPDATE shares SET suggest_mode = ? WHERE id = ?').run(mode === 'auto' ? 'auto' : 'review', s.id);
+    this.emit('changed');
+    return this.share(projectId)!;
   }
 
   /** 내 프로젝트를 함께하는 프로젝트로 연다. */

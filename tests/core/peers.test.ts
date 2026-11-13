@@ -715,3 +715,56 @@ describe('다시 켜도 남는 것', () => {
     await until(() => a.core.peers.share(a.projectId)!.members.length >= 2);
   });
 });
+
+describe('리더 넘기기', () => {
+  /** 가가 연 프로젝트에 나·다가 참여한다. 나와 다는 서로 직접 연결하지 않았다. */
+  async function team(): Promise<{ a: Node; b: Node; c: Node }> {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2'); const c = await node('다', '10.0.0.3');
+    await on(a); await on(b); await on(c);
+    await pair(a, b); await pair(a, c);
+    await join2(a, b); await join2(a, c);
+    await until(() => b.core.peers.share(b.projectId)!.members.length === 3 && c.core.peers.share(c.projectId)!.members.length === 3);
+    return { a, b, c };
+  }
+  const ownerName = (n: Node): string | undefined => n.core.peers.share(n.projectId)!.members.find((m) => m.owner)?.name;
+
+  test('리더가 넘기면 모두가 새 리더를 알고, 넘겨 준 사람은 참여자로 남는다. 새 리더가 나눠 주는 참여자 목록을 직접 연결하지 않은 사람도 받는다', async () => {
+    const { a, b, c } = await team();
+    await expect(b.core.peers.handOver(b.projectId, c.core.peers.status().id)).rejects.toThrow('내가 리더인');
+    const s = await a.core.peers.handOver(a.projectId, b.core.peers.status().id);
+    expect(s.mine).toBe(false);
+    expect(b.core.peers.share(b.projectId)!.mine).toBe(true);
+    await until(() => ownerName(c) === '나');
+    expect(ownerName(a)).toBe('나');
+    expect(ownerName(b)).toBe('나');
+    expect(a.core.peers.share(a.projectId)!.members.length).toBe(3);
+    // 새 리더가 사람을 더 들이면, 새 리더와 직접 연결하지 않은 다도 그 목록을 받는다
+    const d = await node('라', '10.0.0.4'); await on(d);
+    await pair(b, d);
+    await join2(b, d);
+    await until(() => c.core.peers.share(c.projectId)!.members.some((m) => m.name === '라'));
+    expect(a.core.peers.share(a.projectId)!.members.map((m) => m.name).sort()).toEqual(['가', '나', '다', '라']);
+    // 다와 새 리더는 이 프로젝트의 열쇠로 서로 닿는다 (빼기도 된다)
+    await b.core.peers.removeMember(b.core.peers.share(b.projectId)!.id, c.core.peers.status().id);
+    await until(() => c.core.peers.share(c.projectId) === null);
+  });
+
+  test('꺼져 있던 참여자에게는 켜졌을 때 다시 알린다. 리더가 아닌 사람이 보낸 새 리더 알림은 받지 않는다', async () => {
+    const { a, b, c } = await team();
+    const cAddr = '10.0.0.3:47800';
+    const handle = net.get(cAddr)!;
+    net.delete(cAddr);
+    await a.core.peers.handOver(a.projectId, b.core.peers.status().id);
+    expect(ownerName(c)).toBe('가');
+    net.set(cAddr, handle);
+    await (a.core.peers as unknown as { pingAll(): Promise<void> }).pingAll();
+    await until(() => ownerName(c) === '나');
+    // 리더가 아닌 가가 (이제 참여자) 다시 리더를 바꾸라고 보내도 받지 않는다
+    const send = (a.core.peers as unknown as { sendShare(s: string, p: string, x: unknown): Promise<Record<string, unknown>> }).sendShare.bind(a.core.peers);
+    const shareId = a.core.peers.share(a.projectId)!.id;
+    await expect(send(shareId, c.core.peers.status().id, { type: 'share.leader', shareId, leader: a.core.peers.status().id })).rejects.toThrow('그 프로젝트를 연 사람이 아니다');
+    await expect(send(shareId, b.core.peers.status().id, { type: 'share.lead', shareId })).rejects.toThrow('그 프로젝트를 연 사람이 아니다');
+    expect(ownerName(c)).toBe('나');
+    expect(b.core.peers.share(b.projectId)!.mine).toBe(true);
+  });
+});

@@ -335,6 +335,7 @@ export class PeerService extends EventEmitter {
     }
     // sendTo 가 닿았는지 적는다. 실패는 여기서 삼킨다.
     await Promise.all([...targets.values()].map((t) => this.sendTo(t, { type: 'ping' }).catch(() => undefined)));
+    await this.sendLeaderNotices().catch(() => undefined);
   }
 
   private toPeer(r: PeerRow): Peer {
@@ -706,16 +707,56 @@ export class PeerService extends EventEmitter {
     this.dropShare(s.id);
   }
 
+  /**
+   * 리더(프로젝트를 연 사람의 자리)를 다른 참여자에게 넘긴다. 내가 리더일 때만.
+   * 1) 받을 사람에게 먼저 알린다 (닿지 않으면 넘기지 않는다). 2) 내 쪽을 바꾼다. 3) 나머지 참여자에게 새 리더를 알린다:
+   * 참여자는 지금 리더(나)가 직접 알려 준 것만 믿는다. 꺼져 있던 사람에게는 켜지면 다시 알린다.
+   * 나는 참여자로 남는다. 받을 사람은 내가 직접 연결해 코드를 확인한 사람이어야 한다.
+   */
+  async handOver(projectId: string, peerId: string): Promise<Share> {
+    const s = this.shareOfProject(projectId);
+    if (!s || !this.isMine(s)) throw new Error('내가 리더인 함께하는 프로젝트에서만 넘길 수 있습니다.');
+    if (!this.memberIds(s.id).includes(peerId)) throw new Error('이 프로젝트에 참여한 사람에게만 넘길 수 있습니다.');
+    if (this.peerRow(peerId)?.direct !== 1) throw new Error('직접 연결한 사람에게만 넘길 수 있습니다.');
+    const r = await this.sendShare(s.id, peerId, { type: 'share.lead', shareId: s.id });
+    if (r.ok !== true) throw new Error(`넘기지 못했습니다: ${REMOTE_ERRORS[String(r.error)] ?? String(r.error ?? '알 수 없는 까닭')}`);
+    const others = this.memberIds(s.id).filter((id) => id !== peerId);
+    this.d.db.transaction(() => {
+      this.d.db.prepare("UPDATE shares SET owner_peer = ?, suggest_mode = 'review' WHERE id = ?").run(peerId, s.id);
+      // 초대만 해 둔 사람은 거둔다 (그 초대는 내 이름으로 간 것이다).
+      this.d.db.prepare("DELETE FROM share_members WHERE share_id = ? AND state = 'invited'").run(s.id);
+      const add = this.d.db.prepare('INSERT INTO share_leader_notice (share_id, peer_id, leader, at) VALUES (?, ?, ?, ?) ON CONFLICT(share_id, peer_id) DO UPDATE SET leader = excluded.leader, at = excluded.at');
+      for (const id of others) add.run(s.id, id, peerId, Date.now());
+    })();
+    this.emit('changed');
+    await this.sendLeaderNotices();
+    return this.share(projectId)!;
+  }
+
+  /** 새 리더를 아직 알리지 못한 참여자에게 알린다. 닿은 것은 지운다. 그사이 리더가 다시 바뀌었거나 빠진 사람의 것은 버린다. */
+  private async sendLeaderNotices(): Promise<void> {
+    const rows = this.d.db.prepare('SELECT * FROM share_leader_notice').all() as { share_id: string; peer_id: string; leader: string }[];
+    await Promise.all(rows.map(async (n) => {
+      const s = this.shareRow(n.share_id);
+      const drop = (): void => { this.d.db.prepare('DELETE FROM share_leader_notice WHERE share_id = ? AND peer_id = ?').run(n.share_id, n.peer_id); };
+      if (!s || s.owner_peer !== n.leader || !this.memberIds(s.id).includes(n.peer_id)) { drop(); return; }
+      const r = await this.sendShare(s.id, n.peer_id, { type: 'share.leader', shareId: s.id, leader: n.leader }).catch(() => null);
+      if (r && r.ok === true) drop();
+    }));
+  }
+
   /** 참여자를 빼거나 초대를 거둔다. 프로젝트를 연 사람만 할 수 있다. */
   async removeMember(shareId: string, peerId: string): Promise<void> {
     const s = this.shareRow(shareId);
     if (!s || !this.isMine(s)) throw new Error('내가 연 프로젝트가 아닙니다.');
+    // 알릴 열쇠를 먼저 잡아 둔다: 리더를 넘겨받았으면 직접 연결하지 않은 참여자도 있다 (이 프로젝트의 열쇠로 알린다).
+    const to = this.memberTarget(shareId, peerId);
     this.d.db.transaction(() => {
       this.d.db.prepare('DELETE FROM share_members WHERE share_id = ? AND peer_id = ?').run(shareId, peerId);
       this.d.db.prepare('DELETE FROM remote_workspaces WHERE share_id = ? AND peer_id = ?').run(shareId, peerId);
       this.d.db.prepare('DELETE FROM peer_inbox WHERE share_id = ? AND from_peer = ?').run(shareId, peerId);
     })();
-    await this.sendPeer(peerId, { type: 'share.removed', shareId }).catch(() => undefined);
+    await (to ? this.sendTo(to, { type: 'share.removed', shareId }) : this.sendPeer(peerId, { type: 'share.removed', shareId })).catch(() => undefined);
     await this.broadcastMembers(s);
     this.emit('changed');
   }
@@ -726,7 +767,8 @@ export class PeerService extends EventEmitter {
     const ids = this.memberIds(s.id);
     const members = [
       { id: me.id, name: this.myName(), pub: me.pub, address: '' },
-      ...ids.map((id) => this.peerRow(id)).filter((r): r is PeerRow => r !== undefined).map((r) => ({ id: r.id, name: r.name, pub: r.pub, address: r.address })),
+      // 이 프로젝트에서 쓰는 열쇠로 (리더를 넘겨받았으면 직접 연결하지 않은 사람도 있다).
+      ...ids.flatMap((id) => { const t = this.memberTarget(s.id, id); const r = this.peerRow(id); return t && r ? [{ id, name: r.name, pub: t.pub, address: t.address }] : []; }),
     ];
     await Promise.all(ids.map((id) => this.sendShare(s.id, id, { type: 'share.members', shareId: s.id, shareName: s.name, members }).catch(() => undefined)));
   }
@@ -1150,6 +1192,8 @@ export class PeerService extends EventEmitter {
     const no = (error: string): unknown => ({ ok: false, error });
     // 내가 코드를 맞춰 보고 직접 연결한 열쇠로 온 것인가.
     const direct = peer.direct === 1 && peer.pub === used;
+    // 그 프로젝트의 리더가 보낸 것인가: 직접 연결한 리더이거나, 리더를 넘겨받은 참여자 (이 프로젝트에서 받은 열쇠로).
+    const fromLeader = (s: ShareRow): boolean => s.owner_peer === peer.id && (direct || this.isMember(s.id, peer.id, used));
     switch (p.type) {
       case 'share.invite': {
         // 직접 연결한 사람의 초대만 받는다.
@@ -1177,13 +1221,39 @@ export class PeerService extends EventEmitter {
         void this.broadcastMembers(s).then(() => this.publishSoon());
         return { ok: true };
       }
+      case 'share.lead': {
+        // 지금 리더가 나에게 리더를 넘긴다. 직접 연결한 리더가 보낸 것만 받는다.
+        const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
+        if (!s || s.owner_peer !== peer.id || !direct) return no('not_owner');
+        this.d.db.transaction(() => {
+          this.d.db.prepare("UPDATE shares SET owner_peer = ?, suggest_mode = 'review' WHERE id = ?").run(this.me().id, s.id);
+          // 넘겨 준 사람은 참여자로 남는다.
+          this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state) VALUES (?, ?, 'member') ON CONFLICT(share_id, peer_id) DO UPDATE SET state = 'member'").run(s.id, peer.id);
+        })();
+        this.emit('changed');
+        this.emit('leader', { projectId: s.project_id, from: this.label(peer.id) });
+        return { ok: true };
+      }
+      case 'share.leader': {
+        // 지금 리더가 새 리더를 알린다. 새 리더는 이 프로젝트의 참여자여야 한다.
+        const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
+        if (!s || !fromLeader(s)) return no('not_owner');
+        if (!isId(p.leader) || p.leader === peer.id) return no('bad_share');
+        if (p.leader !== this.me().id && this.memberRow(s.id, p.leader)?.state !== 'member') return no('not_member');
+        // 나에게 넘기는 것은 share.lead 로만 받는다.
+        if (p.leader === this.me().id) return no('bad_share');
+        this.d.db.prepare('UPDATE shares SET owner_peer = ? WHERE id = ?').run(p.leader, s.id);
+        this.emit('changed');
+        return { ok: true };
+      }
       case 'share.members': {
         const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
-        // 그 프로젝트를 연 사람이 보낸 목록만 받는다.
-        if (!s || s.owner_peer !== peer.id || !direct) return no('not_owner');
+        // 그 프로젝트를 연 사람(리더)이 보낸 목록만 받는다.
+        if (!s || !fromLeader(s)) return no('not_owner');
         const me = this.me();
         const list = (Array.isArray(p.members) ? p.members : []).slice(0, 50) as Record<string, unknown>[];
-        const rows: { id: string; pub: string | null; address: string }[] = [{ id: peer.id, pub: null, address: '' }];
+        // 리더와 직접 연결하지 않았으면 (리더를 넘겨받은 사람) 이 프로젝트에서 쓰던 그 열쇠를 남긴다.
+        const rows: { id: string; pub: string | null; address: string }[] = [{ id: peer.id, pub: direct ? null : used, address: direct ? '' : this.memberRow(s.id, peer.id)?.address ?? '' }];
         this.d.db.transaction(() => {
           for (const m of list) {
             if (!m || typeof m !== 'object' || !isId(m.id) || m.id === me.id || m.id === peer.id || !validPub(m.pub) || rows.some((r) => r.id === m.id)) continue;
@@ -1226,9 +1296,10 @@ export class PeerService extends EventEmitter {
       }
       case 'share.closed':
       case 'share.removed': {
-        if (!direct || !isId(p.shareId)) return { ok: true };
+        if (!isId(p.shareId)) return { ok: true };
         const s = this.shareRow(p.shareId);
-        if (s && s.owner_peer === peer.id) this.dropShare(s.id);
+        if (s && fromLeader(s)) this.dropShare(s.id);
+        if (!direct) return { ok: true };
         // 아직 받아들이지 않은 초대였으면 초대를 지운다.
         for (const [id, inv] of this.invites) if (inv.shareId === p.shareId && inv.fromPeerId === peer.id) { this.invites.delete(id); this.emit('changed'); }
         return { ok: true };

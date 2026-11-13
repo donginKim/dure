@@ -356,6 +356,8 @@ export interface DureApi {
     declineInvite(inviteId: string): Promise<void>;
     leave(projectId: string): Promise<void>;
     removeMember(shareId: string, peerId: string): Promise<void>;
+    /** 리더를 다른 참여자에게 넘긴다 (내가 리더일 때). 나는 참여자로 남는다. */
+    handOver(projectId: string, peerId: string): Promise<Share>;
     sharing(workspaceId: string): Promise<WorkspaceSharing>;
     setSharing(workspaceId: string, audience: SharingAudience, peers: string[]): Promise<WorkspaceSharing>;
     /** 다른 사람이 나에게 공개한 워크스페이스 */
@@ -406,7 +408,7 @@ export const IPC_CHANNELS = [
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
   'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
-  'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
+  'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember', 'peers.handOver',
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',

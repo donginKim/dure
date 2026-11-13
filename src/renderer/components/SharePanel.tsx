@@ -79,14 +79,18 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
 
       <div className="section">
         <div className="section-head">
-          <h2>함께하는 사람 <span className="count">{share.members.length}</span> <span className="plan-hint">{share.mine ? '내가 연 프로젝트입니다' : `"${share.members.find((m) => m.owner)?.name ?? '다른 사람'}" 이(가) 연 프로젝트 "${share.name}" 입니다`}</span></h2>
-          {!readOnly && <button className="btn ghost danger" disabled={busy} title={share.mine ? '함께하기를 끝냅니다. 참여자 모두에게서 끊깁니다. 프로젝트는 그대로입니다' : '이 프로젝트에서 나갑니다. 내 프로젝트는 그대로입니다'} onClick={() => run(window.dure.peers.leave(project.id))}>{share.mine ? '함께하기 끝내기' : '나가기'}</button>}
+          <h2>함께하는 사람 <span className="count">{share.members.length}</span> <span className="plan-hint">{share.mine ? '내가 리더입니다' : `"${share.members.find((m) => m.owner)?.name ?? '다른 사람'}" 이(가) 리더인 프로젝트 "${share.name}" 입니다`}</span></h2>
+          {!readOnly && <button className="btn ghost danger" disabled={busy} title={share.mine ? '함께하기를 끝냅니다. 참여자 모두에게서 끊깁니다 (계속하게 하려면 먼저 리더를 넘기세요). 프로젝트는 그대로입니다' : '이 프로젝트에서 나갑니다. 내 프로젝트는 그대로입니다'} onClick={() => run(window.dure.peers.leave(project.id))}>{share.mine ? '함께하기 끝내기' : '나가기'}</button>}
         </div>
         <div className="rows">
           {share.members.map((m) => (
             <div key={m.peerId} className="row">
               <span className={`dot ${m.online ? 'idle' : 'stopped'}`} title={m.online ? '켜져 있습니다 (방금 닿았습니다)' : '지금은 닿지 않습니다 (꺼져 있으면 메시지가 가지 않습니다)'} />
-              <div className="grow">{m.name}{m.me && <span className="tag">나</span>}{m.owner && <span className="tag">연 사람</span>}</div>
+              <div className="grow">{m.name}{m.me && <span className="tag">나</span>}{m.owner && <span className="tag">리더</span>}</div>
+              {share.mine && !m.me && !readOnly && peers.some((p) => p.id === m.peerId && p.direct) && (
+                <button className="btn ghost" disabled={busy || !m.online} title={m.online ? '이 사람을 리더로 만듭니다. 나는 참여자로 남습니다' : '지금 닿지 않아 넘길 수 없습니다'}
+                  onClick={() => { if (window.confirm(`"${m.name}" 에게 리더를 넘길까요?\n\n일을 나눠 주고 계획안 제안을 승인하는 자리가 그 사람에게 갑니다. 나는 참여자로 남고, 되돌리려면 그 사람이 다시 넘겨 줘야 합니다. 아직 참여하지 않은 초대는 거둬집니다.`)) run(window.dure.peers.handOver(project.id, m.peerId)); }}>리더 넘기기</button>
+              )}
               {share.mine && !m.me && !readOnly && <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.peers.removeMember(share.id, m.peerId))}>빼기</button>}
             </div>
           ))}
@@ -120,7 +124,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
             </select>
           </div>
         )}
-        {!share.mine && <div className="help">이 프로젝트에서 일을 나누거나 바꾸려면 조율 탭에서 계획안을 만들어 "{share.members.find((m) => m.owner)?.name ?? '프로젝트를 연 사람'}" 에게 제안으로 보냅니다. 그 사람이 승인하면 반영됩니다.</div>}
+        {!share.mine && <div className="help">이 프로젝트에서 일을 나누거나 바꾸려면 조율 탭에서 계획안을 만들어 "{share.members.find((m) => m.owner)?.name ?? '리더'}" 에게 제안으로 보냅니다. 그 사람이 승인하면 반영됩니다.</div>}
       </div>
 
       <div className="section">

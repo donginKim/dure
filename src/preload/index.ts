@@ -245,6 +245,7 @@ const api: DureApi = {
     declineInvite: (inviteId) => call('peers.declineInvite', inviteId),
     leave: (projectId) => call('peers.leave', projectId),
     removeMember: (shareId, peerId) => call('peers.removeMember', shareId, peerId),
+    handOver: (projectId, peerId) => call('peers.handOver', projectId, peerId),
     sharing: (workspaceId) => call('peers.sharing', workspaceId),
     setSharing: (workspaceId, audience, peers) => call('peers.setSharing', workspaceId, audience, peers),
     remote: (projectId) => call('peers.remote', projectId),

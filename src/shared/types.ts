@@ -362,6 +362,11 @@ export interface Settings {
    * 세는 방식. half: 출퇴근 기록. 근무지의 와이파이에 붙으면 출근으로 적고 (30분 단위로 올림), 퇴근은 사용자가 누른다 (30분 단위로 올림).
    * minute: 붙어 있던 시간을 분 단위로 그대로 센다 (끊기면 멈춘다)
    */
+  /**
+   * Oracle Instant Client 가 있는 폴더. 적으면 Oracle 연결이 그 클라이언트로 접속한다 (옛 비밀번호 방식의 계정, 옛 서버).
+   * 비우면 클라이언트 없이 접속한다 (설치할 것이 없다). 바꾸면 두레를 다시 켜야 듣는다
+   */
+  oracleClientDir: string;
   workTimeUnit: 'minute' | 'half';
   /** 출근 여유 (분). 정각·30분에서 이만큼 안에 확인되면 그 정각·30분에 출근한 것으로 적는다 (확인이 조금 늦는 것을 봐준다) */
   workGraceMin: number;

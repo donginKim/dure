@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultPermissionMode: 'ask',
   worktreeRoot: '',
   repoRoot: '',
+  oracleClientDir: '',
   agentBrowser: 'ask',
   agentBrowserHosts: '',
   peersEnabled: false,
@@ -130,6 +131,7 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   defaultPermissionMode: oneOf('기본 권한 모드', 'ask', 'bypass'),
   worktreeRoot: path('작업 폴더 위치'),
   repoRoot: path('새 저장소 위치'),
+  oracleClientDir: path('Oracle Instant Client 폴더'),
   agentBrowser: oneOf('에이전트의 브라우저 사용', 'ask', 'local', 'off'),
   agentBrowserHosts: (v) => {
     const t = String(v ?? '').trim();

@@ -1,5 +1,5 @@
 import { checkReadOnly } from '@core/dbquery/guard';
-import { listColumns, listTables, riskyPrivileges, runReadOnly, type DbTarget } from '@core/dbquery/drivers';
+import { listColumns, listTables, oracleModeNow, riskyPrivileges, runReadOnly, setOracleClient, type DbTarget } from '@core/dbquery/drivers';
 
 /**
  * 진짜 DB 로 조회 전용 강제를 확인한다. 시험용 DB 가 떠 있을 때만 돈다:
@@ -118,7 +118,11 @@ for (const [name, t] of cases) {
  *   DURE_TEST_ORACLE=127.0.0.1:51521 (서비스 FREEPDB1. reader/reader_pw: 표 items 2500행, 뷰 cheap, 순서 seq1, 쓰는 함수 bump 의 주인. dure_ro/ro_pw: items 와 cheap 을 읽기만)
  */
 const oraAt = process.env.DURE_TEST_ORACLE;
-describe.skipIf(!oraAt)('진짜 oracle', () => {
+// DURE_TEST_ORACLE_CLIENT=<Oracle Instant Client 폴더> 를 주면 같은 시험을 Oracle Client 방식으로 돌린다 (한 번 정하면 그 프로세스에서는 바뀌지 않는다).
+const oraClient = process.env.DURE_TEST_ORACLE_CLIENT ?? '';
+describe.skipIf(!oraAt)(`진짜 oracle (${oraClient ? 'Oracle Client' : '클라이언트 없이'})`, () => {
+  beforeAll(() => setOracleClient(oraClient));
+  afterAll(() => expect(oracleModeNow()).toBe(oraClient ? 'thick' : 'thin'));
   const owner = (): DbTarget => at(oraAt!, { kind: 'oracle', database: 'FREEPDB1', user: 'reader', password: 'reader_pw', ssl: false });
   const ro = (): DbTarget => at(oraAt!, { kind: 'oracle', database: 'FREEPDB1', user: 'dure_ro', password: 'ro_pw', ssl: false });
   const run = (t: DbTarget, sql: string, lim = LIM) => runReadOnly(t, checkReadOnly(sql, 'oracle'), [], lim);

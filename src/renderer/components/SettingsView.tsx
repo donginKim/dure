@@ -115,7 +115,7 @@ export function SettingsView() {
     if (!v.trim() || Number.isNaN(n)) { setErrors((e) => ({ ...e, [key]: '숫자를 쓰세요.' })); return; }
     save(key, n);
   };
-  const pick = (key: 'worktreeRoot' | 'repoRoot') => (): void => { void window.dure.settings.pickFolder().then((p) => { if (p) save(key, p); }); };
+  const pick = (key: 'worktreeRoot' | 'repoRoot' | 'oracleClientDir') => (): void => { void window.dure.settings.pickFolder().then((p) => { if (p) save(key, p); }); };
   const modelKnown = !s.claudeModel || models.some((m) => m.value === s.claudeModel);
   const listed = models.filter((m) => m.value !== 'default');
   const claudeModels = listed.filter(isClaudeModel);
@@ -244,6 +244,16 @@ export function SettingsView() {
         <div className="set-box">
           <Row label="macOS 알림" help='에이전트가 권한을 묻거나, 계획안이 승인을 기다리거나, 다른 사람이 메시지를 보냈을 때 macOS 알림으로 알려 줍니다. 두레를 보고 있을 때는 띄우지 않습니다. 꺼도 왼쪽 위의 "확인할 것" 과 Dock 아이콘의 숫자는 그대로 보입니다. 처음에는 macOS 가 알림을 허용할지 묻습니다.' {...row('notifications')}>
             <Toggle on={s.notifications} onChange={(v) => save('notifications', v)} label="macOS 알림" />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>DB</h2></div>
+        <div className="set-box">
+          <Row label="Oracle Instant Client 폴더" help="비워 두면 Oracle 에 클라이언트 없이 접속합니다 (설치할 것이 없습니다). 옛 비밀번호 방식으로 저장된 계정(NJS-116 오류)이나 옛 서버에 붙으려면 Oracle Instant Client 를 설치하고 그 폴더(libclntsh.dylib 가 있는 곳)를 적으세요: 그러면 모든 Oracle 연결이 그 클라이언트로 접속합니다. 바꾼 뒤에는 두레를 다시 켜야 듣습니다." {...row('oracleClientDir')}>
+            <TextInput wide value={s.oracleClientDir} placeholder="예: ~/oracle/instantclient_23_3" onCommit={(v) => save('oracleClientDir', v)} />
+            <button className="btn" onClick={pick('oracleClientDir')}>고르기</button>
           </Row>
         </div>
       </div>

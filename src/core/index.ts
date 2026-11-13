@@ -385,7 +385,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     }
   });
   // 자동 반영: 확인 명령, 리뷰, 비밀 값을 거쳐 커밋하고, 설정이면 기준 브랜치까지 옮긴다.
-  const autoShip = new AutoShipService({ projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, isProjectClosed: (id) => service.isProjectClosed(id) });
+  const autoShip = new AutoShipService({ projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
   autoShip.on('changed', () => attention.poke());
   const reviewTimers = new Map<string, NodeJS.Timeout>();
   commitDrafts.on('changed', (id: string) => {
@@ -526,6 +526,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();
+      autoShip.dispose();
+      for (const t of reviewTimers.values()) clearTimeout(t);
       await peers.dispose();
       await pty.killAll();
       await mcp.close();

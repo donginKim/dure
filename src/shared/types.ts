@@ -218,7 +218,13 @@ export interface Figure { id: string; projectId: string; workspaceId: string; gr
 /** 리뷰 에이전트가 찾은 것 하나 */
 export interface ReviewFinding { severity: '높음' | '중간' | '낮음'; file: string; line: number | null; title: string; detail: string }
 /** 커밋 전의 리뷰. stale: 리뷰한 뒤에 작업 폴더가 바뀌었다 */
-export interface ReviewState { state: 'running' | 'done' | 'failed'; summary: string; findings: ReviewFinding[]; error: string; at: number; stale: boolean }
+export interface ReviewState {
+  state: 'running' | 'done' | 'failed'; summary: string; findings: ReviewFinding[]; error: string; at: number; stale: boolean;
+  /** 리뷰어의 답이 정해진 모양 그대로였다 (자동 반영은 이것만 믿는다) */
+  strict: boolean;
+  /** 리뷰한 작업 폴더의 트리 */
+  tree: string;
+}
 
 export interface CommitResult {
   hash: string;

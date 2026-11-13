@@ -94,3 +94,91 @@ test('commit 까지만: 워크스페이스 브랜치에 커밋하고 main 은 �
   expect(core.autoShip.events(projectId).length).toBe(1);
   expect(core.commitDrafts.get(ws.id)?.message).toBe('feat: y');
 }, 15_000);
+
+describe('보안 리뷰에서 나온 경우들', () => {
+  const draft = async (file: string, body: string, msg = `chore: ${file}`): Promise<string> => {
+    writeFileSync(join(ws.worktreePath, file), body);
+    const n = core.autoShip.events(projectId).length;
+    core.commitDrafts.save(ws.id, msg);
+    await until(() => core.autoShip.events(projectId).length > n);
+    return core.autoShip.events(projectId)[0]!.message;
+  };
+
+  test('검사하는 사이에 작업 폴더가 바뀌면 커밋하지 않는다', async () => {
+    core.projects.setAutoShip(projectId, 'main');
+    const before = gitOut(repo.path, 'rev-parse', 'main');
+    // 리뷰 도중에 에이전트가 파일을 더 고친다
+    const orig = core.review.review.bind(core.review);
+    core.review.review = async (id, o) => { const r = await orig(id, o); writeFileSync(join(ws.worktreePath, 'api.ts'), 'EVIL-unreviewed\n'); return r; };
+    expect(await draft('api.ts', 'ok\n')).toContain('작업 폴더가 바뀌었습니다');
+    expect(gitOut(ws.worktreePath, 'rev-list', '--count', 'main..HEAD')).toBe('0');
+    expect(gitOut(repo.path, 'rev-parse', 'main')).toBe(before);
+  });
+
+  test('작업 폴더가 이 워크스페이스의 브랜치에 있지 않으면 커밋하지 않는다', async () => {
+    core.projects.setAutoShip(projectId, 'commit');
+    const before = gitOut(repo.path, 'rev-parse', 'main');
+    gitOut(ws.worktreePath, 'checkout', '-q', '--ignore-other-worktrees', 'main');
+    expect(await draft('x.ts', 'x\n')).toContain('이 워크스페이스의 브랜치');
+    expect(gitOut(repo.path, 'rev-parse', 'main')).toBe(before);
+  });
+
+  test('리뷰어의 답이 정해진 모양이 아니면 믿지 않는다 (모르는 심각도, findings 없음, 덩어리 둘)', async () => {
+    core.projects.setAutoShip(projectId, 'commit');
+    findings = [{ severity: 'High', title: 'x' }];
+    expect(await draft('a.ts', '1\n')).toContain('정해진 모양이 아니어서');
+    findings = [];
+    expect(gitOut(ws.worktreePath, 'rev-list', '--count', 'main..HEAD')).toBe('0');
+  });
+
+  test('확인 명령의 결과를 바꿀 수 있는 파일이 바뀌면 사람에게 넘긴다', async () => {
+    core.projects.setAutoShip(projectId, 'commit');
+    expect(await draft('package.json', '{ "scripts": { "test": "exit 0" } }\n')).toContain('package.json: scripts');
+    expect(await draft('vitest.config.ts', 'export default {}\n')).toContain('시험·빌드 설정');
+    expect(gitOut(ws.worktreePath, 'rev-list', '--count', 'main..HEAD')).toBe('0');
+  });
+
+  test('main 까지: 이 워크스페이스의 브랜치만 합친다 (다른 워크스페이스의 커밋은 넣지 않는다)', async () => {
+    const web = await core.service.create({ projectId, repoId: repo.id, name: 'WEB', baseBranch: 'main', agentKind: 'claude' });
+    writeFileSync(join(web.worktreePath, 'wip.ts'), 'half done\n');
+    gitOut(web.worktreePath, 'add', '-A');
+    gitOut(web.worktreePath, '-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '-m', 'wip: half done');
+    core.projects.setAutoShip(projectId, 'main');
+    await draft('api.ts', 'export const a = 1;\n', 'feat: api');
+    await until(() => core.autoShip.events(projectId)[0]!.stage === 'done');
+    const files = gitOut(repo.path, 'ls-tree', '--name-only', 'main').split('\n');
+    expect(files).toContain('api.ts');
+    expect(files).not.toContain('wip.ts');
+  });
+
+  test('도중에 끄면 커밋하지 않는다. 끄면 확인할 것에서 사라지고, 같은 실패는 같은 알림 하나다', async () => {
+    core.projects.setAutoShip(projectId, 'commit');
+    pass = false;
+    await draft('a.ts', '1\n');
+    await draft('a.ts', '2\n');
+    expect(core.attention.list().filter((i) => i.kind === 'ship').length).toBe(1);
+    core.projects.setAutoShip(projectId, 'off');
+    core.attention.poke();
+    expect(core.autoShip.failures(projectId)).toEqual([]);
+    // 리뷰 도중에 끈다
+    pass = true;
+    core.projects.setAutoShip(projectId, 'commit');
+    const orig = core.review.review.bind(core.review);
+    core.review.review = async (id, o) => { const r = await orig(id, o); core.projects.setAutoShip(projectId, 'off'); return r; };
+    writeFileSync(join(ws.worktreePath, 'b.ts'), 'b\n');
+    core.commitDrafts.save(ws.id, 'feat: b');
+    await new Promise((r) => setTimeout(r, 4000));
+    expect(gitOut(ws.worktreePath, 'rev-list', '--count', 'main..HEAD')).toBe('0');
+  }, 20_000);
+
+  test('같은 워크스페이스는 기다리는 것을 하나로 합치고, 한 시간 상한이 있다', async () => {
+    core.projects.setAutoShip(projectId, 'commit');
+    pass = false;
+    for (let i = 0; i < 8; i++) { writeFileSync(join(ws.worktreePath, 'a.ts'), `${i}\n`); core.commitDrafts.save(ws.id, `x${i}`); await core.autoShip.run(ws.id); }
+    const msgs = core.autoShip.events(projectId).map((e) => e.message);
+    expect(msgs.filter((m) => m.includes('확인 명령이 실패했습니다')).length).toBe(6);
+    expect(msgs[0]).toContain('한 시간에 6번까지만');
+    // 에이전트에게도 까닭을 알렸다
+    expect(core.messages.undelivered(ws.id).map((m) => m.body).join('\n')).toContain('자동 반영이 멈췄다');
+  });
+});

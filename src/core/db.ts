@@ -429,6 +429,10 @@ const MIGRATIONS: string[] = [
   -- 자동 반영 (off / commit / main). 프로젝트마다 사용자가 정한다
   ALTER TABLE projects ADD COLUMN auto_ship TEXT NOT NULL DEFAULT 'off';
   `,
+  `
+  -- 리뷰어의 답이 정해진 모양 그대로였는가 (자동 반영은 이것만 믿는다)
+  ALTER TABLE reviews ADD COLUMN strict INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

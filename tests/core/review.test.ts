@@ -32,7 +32,7 @@ test('parseReview: 마지막 json 덩어리를 읽고, 높음부터 늘어놓고
   expect(r.summary).toBe('두 건');
   expect(r.findings.map((f) => [f.severity, f.file, f.line, f.title])).toEqual([['높음', 'b.ts', 12, '경로 검사 없음'], ['중간', '', null, '알 수 없는 심각도'], ['낮음', 'a.ts', 3, '로그 남김']]);
   expect(parseReview('JSON 이 없는 글')).toBeNull();
-  expect(parseReview('{"summary":"맨 JSON","findings":[]}')).toEqual({ summary: '맨 JSON', findings: [] });
+  expect(parseReview('{"summary":"맨 JSON","findings":[]}')).toEqual({ summary: '맨 JSON', findings: [], strict: false });
 });
 
 test('커밋 초안이 올라오면 저절로 리뷰한다. 변경과 초안이 리뷰어에게 가고, 같은 작업 폴더는 다시 리뷰하지 않는다', async () => {

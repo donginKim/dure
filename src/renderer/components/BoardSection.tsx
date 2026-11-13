@@ -37,7 +37,7 @@ export function BoardSection({ projectId }: { projectId: string }) {
     <div className="section">
       <div className="section-head">
         <h2>전체 현황</h2>
-        <span className="muted">{board.mine ? '내가 연 프로젝트입니다. 이 현황이 함께하는 사람 모두에게 보입니다' : `${board.leaderName} 의 두레가 보내 준 것 · ${boardAge(board.updatedAt, Date.now())}`}</span>
+        <span className="muted">{board.mine ? '내가 연 프로젝트입니다. 이 현황이 함께하는 사람 모두에게 보입니다 (비공개 워크스페이스도 이름과 끝낸 수는 실립니다. 맡은 일의 설명은 공개한 사람에게만)' : `${board.leaderName} 의 두레가 보내 준 것 · ${boardAge(board.updatedAt, Date.now())}`}</span>
       </div>
       <div className="board">
         <div className="board-col">

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
-import { countDone, remoteWork } from '@shared/board';
+import { assignedWork, countDone } from '@shared/board';
 import { remoteLabel } from '@shared/remote';
 import type { AssignChoice, AssignItem, AssignmentIn, AssignmentOut, AssignProgress, Board, BoardGoal, BoardPerson, BoardWork, PlanTodo, TodoStatus, Workspace, Brief } from '@shared/types';
 import type { CoordinatorService, SuggestedPlan } from './coordinator';
@@ -107,7 +107,7 @@ export class AssignmentService extends EventEmitter {
     d.peers.on('changed', () => this.boardSoon());
     this.on('changed', () => this.boardSoon());
     // 다른 사람에게 나눠 준 일도 프로젝트 TODO 에 딸린 일로 센다.
-    d.todos.setExtraChildren((projectId, parentId) => remoteWork(this.outgoing(projectId)).flatMap((w) => w.todos).filter((t) => t.goal === parentId).map((t) => ({ status: STATUSES.includes(t.status as TodoStatus) ? t.status as TodoStatus : 'todo' })));
+    d.todos.setExtraChildren((projectId, parentId) => this.counted(projectId).flatMap((w) => w.todos).filter((t) => t.goal === parentId).map((t) => ({ status: STATUSES.includes(t.status as TodoStatus) ? t.status as TodoStatus : 'unknown' as const })));
   }
 
   dispose(): void { clearTimeout(this.progressTimer); clearTimeout(this.boardTimer); }
@@ -119,8 +119,15 @@ export class AssignmentService extends EventEmitter {
     const share = this.d.peers.share(projectId);
     if (!share || share.mine) throw new Error('다른 사람이 연 프로젝트에서만 제안할 수 있습니다.');
     const sid = crypto.randomUUID();
-    await this.d.peers.sendMember(projectId, share.ownerPeerId, { type: 'plan.suggest', sid, plan });
+    // 먼저 적는다: 리더의 답(결과)이 보내기가 끝나기 전에 와도 받을 수 있다. 보내지 못하면 지운다.
+    this.d.db.prepare('DELETE FROM suggestions_out WHERE created_at < ?').run(Date.now() - 30 * 24 * 3_600_000);
     this.d.db.prepare('INSERT INTO suggestions_out (id, project_id, created_at) VALUES (?, ?, ?)').run(sid, projectId, Date.now());
+    try {
+      await this.d.peers.sendMember(projectId, share.ownerPeerId, { type: 'plan.suggest', sid, plan });
+    } catch (e) {
+      this.d.db.prepare('DELETE FROM suggestions_out WHERE id = ?').run(sid);
+      throw e;
+    }
   }
 
   /** 제안한 사람에게 결과를 알린다 (리더가 승인하거나 거절했을 때). */
@@ -143,23 +150,34 @@ export class AssignmentService extends EventEmitter {
 
   // ---- 현황판 ----
 
-  /** 내가 연 프로젝트의 현황판을 지금의 것으로 만든다. */
-  private buildBoard(projectId: string): WireBoard {
+  /** 지금도 함께하는 사람에게 나눠 준 일 (빠진 사람, 끝난 공유의 것은 세지 않는다). 내가 보낸 워크스페이스와 TODO 를 기준으로 본다. */
+  private counted(projectId: string): ReturnType<typeof assignedWork> {
+    const members = new Set(this.d.peers.people(projectId).map((p) => p.peerId));
+    return assignedWork(this.outgoing(projectId).filter((a) => members.has(a.peerId)));
+  }
+
+  /**
+   * 내가 연 프로젝트의 현황판을 지금의 것으로 만든다. to: 받을 사람.
+   * - 내 워크스페이스는 이름과 수를 싣는다. 맡은 일(요약)은 그 사람에게 공개한 워크스페이스의 것만 싣는다.
+   * - 다른 사람에게 나눠 준 일은 내가 보낸 이름과 맡을 일로 싣는다 (그 사람이 나에게만 보인 것이 다른 사람에게 퍼지지 않는다).
+   * - 에이전트의 상태는 싣지 않는다 (자주 바뀌어 되풀이해 보내게 된다).
+   */
+  private buildBoard(projectId: string, to?: string): WireBoard {
     const share = this.d.peers.share(projectId);
     const all = this.d.todos.listProject(projectId);
-    const remote = remoteWork(this.outgoing(projectId));
+    const remote = this.counted(projectId);
     const goals: BoardGoal[] = all.filter((t) => t.workspaceId === null && t.status !== 'cancelled').slice(0, MAX_GOALS).map((g) => ({
       title: g.title, status: g.status, assignee: g.assignee,
       ...countDone([...all.filter((t) => t.parentId === g.id), ...remote.flatMap((w) => w.todos).filter((t) => t.goal === g.id)]),
     }));
     const me = share?.members.find((m) => m.me);
-    const mine: BoardWork[] = this.d.workspaces.list(projectId).map((w) => ({ name: w.name, role: w.summary, status: w.status, ...countDone(all.filter((t) => t.workspaceId === w.id)), state: 'active' as const }));
+    const mine: BoardWork[] = this.d.workspaces.list(projectId).map((w) => ({ name: w.name, role: !to || this.d.peers.visibleTo(w.id, to) ? w.summary : '', status: '', ...countDone(all.filter((t) => t.workspaceId === w.id)), state: 'active' as const }));
     const people = [
       ...(me ? [{ peerId: me.peerId, name: me.name, works: mine }] : []),
       // 리더가 먼저, 나머지는 이름 순 (볼 때마다 순서가 바뀌지 않게).
       ...(share?.members.filter((m) => !m.me) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)).map((m) => ({
         peerId: m.peerId, name: m.name,
-        works: remote.filter((w) => w.peerId === m.peerId).map((w) => ({ name: w.name, role: w.role, status: w.status, ...countDone(w.todos), state: w.state })),
+        works: remote.filter((w) => w.peerId === m.peerId).map((w) => ({ name: w.name, role: w.role, status: '', ...countDone(w.todos), state: w.state })),
       })),
     ];
     return cleanBoard({ summary: this.d.coordinator().approvedSummary(projectId), goals, people, at: Date.now() });
@@ -184,14 +202,17 @@ export class AssignmentService extends EventEmitter {
     if (share.mine) return this.toBoard(projectId, this.buildBoard(projectId), true);
     const r = this.d.db.prepare('SELECT * FROM boards_in WHERE project_id = ?').get(projectId) as { from_peer: string; payload: string; received_at: number } | undefined;
     // 리더가 보낸 것만 보인다 (리더가 바뀌었거나 다른 사람의 것이 남아 있으면 보이지 않는다).
-    if (!r || r.from_peer !== share.ownerPeerId) return null;
-    return this.toBoard(projectId, cleanBoard(parse<unknown>(r.payload, {})), false);
+    const stored = parse<Record<string, unknown>>(r?.payload ?? '', {});
+    // 지금 함께하는 그 프로젝트에서 받은 것이어야 한다 (끝냈다가 다시 함께하면 옛 것이 보이지 않는다).
+    if (!r || r.from_peer !== share.ownerPeerId || stored.shareId !== share.id) return null;
+    return this.toBoard(projectId, cleanBoard(stored), false);
   }
 
   private onBoard(peer: { id: string; name: string }, p: Record<string, unknown>, projectId: string): unknown {
     // 현황판은 프로젝트를 연 사람의 것만 받는다: 참여자가 남의 진행이나 담당을 꾸며 보낼 수 없다.
-    if (this.d.peers.share(projectId)?.ownerPeerId !== peer.id) return { ok: false, error: 'not_leader' };
-    const board = cleanBoard(p.board);
+    const share = this.d.peers.share(projectId);
+    if (!share || share.ownerPeerId !== peer.id) return { ok: false, error: 'not_leader' };
+    const board = { ...cleanBoard(p.board), shareId: share.id };
     this.d.db.prepare('INSERT INTO boards_in (project_id, from_peer, payload, received_at) VALUES (?, ?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET from_peer = excluded.from_peer, payload = excluded.payload, received_at = excluded.received_at')
       .run(projectId, peer.id, JSON.stringify({ ...board, at: Date.now() }), Date.now());
     this.emit('changed');
@@ -210,10 +231,11 @@ export class AssignmentService extends EventEmitter {
       if (!this.d.peers.share(project.id)?.mine || this.d.service.isProjectClosed(project.id)) continue;
       const people = this.d.peers.people(project.id);
       if (people.length === 0) continue;
-      const board = this.buildBoard(project.id);
-      const { at: _at, ...content } = board;
-      const body = JSON.stringify(content);
       await Promise.all(people.map(async (p) => {
+        // 사람마다 만든다: 그 사람에게 공개한 것만 자세히 싣는다.
+        const board = this.buildBoard(project.id, p.peerId);
+        const { at: _at, ...content } = board;
+        const body = JSON.stringify(content);
         const key = `${project.id}|${p.peerId}`;
         if (this.boardSent.get(key) === body) return;
         try { await this.d.peers.sendMember(project.id, p.peerId, { type: 'board', board }); this.boardSent.set(key, body); } catch { this.boardSent.delete(key); }
@@ -281,7 +303,7 @@ export class AssignmentService extends EventEmitter {
   // ---- 나눠 주는 쪽 ----
 
   /** 함께하는 사람에게 배정을 보낸다. 닿지 않으면 던지고 아무것도 남기지 않는다. */
-  async send(projectId: string, peerId: string, a: Body): Promise<string> {
+  async send(projectId: string, peerId: string, a: Body, o: { open?: boolean } = {}): Promise<string> {
     const body = cleanBody(a);
     if (!body) throw new Error('나눠 줄 일이 없습니다.');
     if (!this.d.peers.share(projectId)?.mine) throw new Error('일을 나눠 주는 것은 프로젝트를 연 사람만 할 수 있습니다.');
@@ -291,7 +313,8 @@ export class AssignmentService extends EventEmitter {
     this.d.db.prepare('INSERT INTO assignments_out (id, project_id, peer_id, payload, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, projectId, peerId, JSON.stringify(body), 'sent', now, now);
     // 그 사람의 에이전트가 보고하고 물어볼 곳: 내 조율 에이전트를 그 사람에게 보이게 한다.
     const coordinator = this.d.workspaces.coordinator(projectId);
-    if (coordinator) { try { this.d.peers.allow(coordinator.id, peerId); } catch { /* 공개하지 못해도 배정은 간다 */ } }
+    // 내가 검토하지 않고 반영한 제안(open: false)이면 열지 않는다: 남이 제안 하나로 내 조율 에이전트에게 닿는 길을 열 수 없다.
+    if (coordinator && o.open !== false) { try { this.d.peers.allow(coordinator.id, peerId); } catch { /* 공개하지 못해도 배정은 간다 */ } }
     this.emit('changed');
     return id;
   }

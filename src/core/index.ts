@@ -119,6 +119,8 @@ export interface CoreOptions {
   /** 시험에서 가짜 슬랙으로 바꾼다 */
   slackFetch?: ConstructorParameters<typeof SlackService>[0]['fetch'];
   dbWaitMs?: number;
+  /** 한 사람의 계획 제안을 받는 최소 간격 (ms). 시험에서 줄인다 */
+  suggestEveryMs?: number;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
   repoRoot?: string;
   /** 터미널과 에이전트에 물려줄 환경 (로그인 셸 환경) */
@@ -225,7 +227,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       isProjectClosed: (projectId) => service.isProjectClosed(projectId),
     },
   });
-  const coordinator: CoordinatorService = new CoordinatorService({ db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos'), settings: () => settings.get(),
+  const coordinator: CoordinatorService = new CoordinatorService({ suggestEveryMs: o.suggestEveryMs, db, projects, repos, workspaces, todos, messages, git, service, dir: join(o.dataDir, 'coordinators'), repoRoot: o.repoRoot ?? join(dirname(o.worktreeRoot), 'repos'), settings: () => settings.get(),
     // 계획안의 일을 함께하는 사람에게 나눠 준다. 아래에서 만들어지는 것들을 부를 때 읽는다.
     assign: {
       // 내가 열었으면 나눠 줄 수 있는 사람들. 참여한 프로젝트면 함께하는 사람 모두 (계획안은 리더에게 제안으로 간다).
@@ -236,7 +238,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       },
       suggest: (projectId, plan) => assignments.suggest(projectId, plan),
       result: (projectId, peerId, sid, state, reason) => assignments.result(projectId, peerId, sid, state, reason),
-      send: (projectId, peerId, a) => assignments.send(projectId, peerId, a), cancel: (id) => assignments.cancel(id), link: (ids, parents) => assignments.link(ids, parents), brief: (projectId, summary, skip) => assignments.sendBrief(projectId, summary, skip) },
+      send: (projectId, peerId, a, o) => assignments.send(projectId, peerId, a, o), cancel: (id) => assignments.cancel(id), link: (ids, parents) => assignments.link(ids, parents), brief: (projectId, summary, skip) => assignments.sendBrief(projectId, summary, skip) },
   });
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.

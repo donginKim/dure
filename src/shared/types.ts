@@ -630,7 +630,7 @@ export interface Share {
   id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[];
   /**
    * 참여자가 제안한 계획안을 어떻게 받을지 (내가 연 프로젝트에서 내가 정한다).
-   * review: 내가 검토하고 승인해야 반영된다. auto: 승인 없이 반영한다 (내 PC 에 만드는 것이 없는 제안만. 있으면 검토로 남는다)
+   * review: 내가 검토하고 승인해야 반영된다. auto: 다른 사람에게 일을 나눠 주기만 하는 제안은 승인 없이 반영한다 (내 PC 에 만들거나 프로젝트 TODO 를 더하는 제안은 검토로 남는다)
    */
   suggestMode: 'review' | 'auto';
   /** 초대했지만 아직 참여하지 않은 사람 (내가 연 프로젝트에서만) */

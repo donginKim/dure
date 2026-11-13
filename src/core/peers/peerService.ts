@@ -690,7 +690,20 @@ export class PeerService extends EventEmitter {
     if (!inv) throw new Error('받은 초대가 아닙니다.');
     // 보기만 하는 자리면 이어 붙일 프로젝트를 고르지 않아도 된다: 그 이름으로 새로 만든다.
     let made: string | null = null;
-    if (!projectId && inv.observer) { made = this.d.projects.create(`${inv.name} (${inv.fromName})`).id; projectId = made; }
+    if (!projectId && inv.observer) {
+      if (this.shareRow(inv.shareId)) throw new Error('이미 참여한 프로젝트입니다.');
+      made = this.d.projects.create(`${inv.name} (${inv.fromName})`).id; projectId = made;
+    }
+    try {
+      return await this.joinShare(inv, inviteId, projectId);
+    } catch (e) {
+      // 참여하지 못했으면 보기만 하려고 만든 프로젝트를 남기지 않는다.
+      if (made) { try { this.d.projects.remove(made); } catch { /* 이미 없다 */ } }
+      throw e;
+    }
+  }
+
+  private async joinShare(inv: ShareInvite, inviteId: string, projectId: string): Promise<Share> {
     if (!this.d.projects.get(projectId)) throw new Error('프로젝트가 없습니다.');
     if (this.d.isProjectClosed(projectId)) throw new Error('완료된 프로젝트입니다.');
     if (this.shareOfProject(projectId)) throw new Error('그 프로젝트는 이미 함께하는 프로젝트입니다. 다른 프로젝트를 고르세요.');
@@ -705,7 +718,6 @@ export class PeerService extends EventEmitter {
     } catch (e) {
       // 연 사람에게 닿지 않았으면 참여하지 않은 것으로 되돌린다.
       this.d.db.prepare('DELETE FROM shares WHERE id = ?').run(inv.shareId);
-      if (made) this.d.projects.remove?.(made);
       throw e;
     }
     this.invites.delete(inviteId);
@@ -933,7 +945,7 @@ export class PeerService extends EventEmitter {
   remoteWorkspaces(projectId: string): RemoteWorkspace[] {
     const s = this.shareOfProject(projectId);
     if (!s) return [];
-    const members = new Set(this.memberIds(s.id));
+    const members = new Set(this.memberIds(s.id).filter((id) => !this.isObserver(s.id, id)));
     const rows = this.d.db.prepare('SELECT * FROM remote_workspaces WHERE share_id = ? AND listed = 1 ORDER BY peer_id, name').all(s.id) as { peer_id: string; workspace_id: string; name: string }[];
     return rows.filter((r) => members.has(r.peer_id)).map((r) => {
       const peerName = this.label(r.peer_id);
@@ -1385,6 +1397,8 @@ export class PeerService extends EventEmitter {
       case 'directory': {
         const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
         if (!s || !this.isMember(s.id, peer.id, used)) return no('not_member');
+        // 보기만 하는 사람의 워크스페이스는 받지 않는다 (메시지를 주고받는 사람이 아니다).
+        if (this.isObserver(s.id, peer.id)) return no('observer');
         const list = (Array.isArray(p.workspaces) ? p.workspaces : []).slice(0, MAX_DIRECTORY) as Record<string, unknown>[];
         this.d.db.transaction(() => {
           // 목록에서 빠진 것은 숨긴다 (지우지 않는다: 이미 주고받은 메시지의 이름이 남아야 한다).

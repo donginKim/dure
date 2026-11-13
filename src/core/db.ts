@@ -460,11 +460,11 @@ const MIGRATIONS: string[] = [
   ALTER TABLE shares ADD COLUMN prev_owner TEXT;
   `,
   // 보기만 하는 참여자 (윗사람 등): 현황판만 받는다. role 은 그 프로젝트에서 그 사람의 자리, my_role 은 내 자리.
-  // observer_reports: 리더가 정한다. 보기만 하는 사람에게 작업 보고(커밋 수 등)까지 보낼지.
+  // observer_reports: 리더가 정한다. 보기만 하는 사람에게 작업 보고(커밋 수 등)까지 보낼지 (처음에는 보내지 않는다).
   `
   ALTER TABLE share_members ADD COLUMN role TEXT NOT NULL DEFAULT 'member';
   ALTER TABLE shares ADD COLUMN my_role TEXT NOT NULL DEFAULT 'member';
-  ALTER TABLE shares ADD COLUMN observer_reports INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE shares ADD COLUMN observer_reports INTEGER NOT NULL DEFAULT 0;
   `,
 ];
 

@@ -232,8 +232,8 @@ export class AssignmentService extends EventEmitter {
       ...(share?.members.filter((m) => !m.me && !m.observer) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)).map((m) => ({
         peerId: m.peerId, name: m.name,
         works: remote.filter((w) => w.peerId === m.peerId).map((w) => ({ name: w.name, role: w.role, status: '', ...countDone(w.todos), state: w.state })),
-        // 작업 보고 요약: 보기만 하는 사람에게는 리더가 허락했을 때만.
-        ...(!toObserver || share?.observerReports ? this.personReport(projectId, m.peerId) : {}),
+        // 작업 보고 요약: 리더 자신의 화면과, 리더가 허락했을 때 보기만 하는 사람에게만 (다른 참여자에게는 가지 않는다).
+        ...(to === undefined || (toObserver && share?.observerReports) ? this.personReport(projectId, m.peerId) : {}),
       })),
     ];
     return cleanBoard({ summary: this.d.coordinator().approvedSummary(projectId), goals, people, at: Date.now() });

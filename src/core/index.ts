@@ -451,7 +451,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     };
   }
   // 커밋, 확인 명령, 리뷰가 바뀌면 작업 보고를 다시 보낸다.
-  for (const src of [verify, review, commit]) src.on('changed', () => assignments.poke());
+  for (const src of [verify, review, commit, settings]) src.on('changed', () => assignments.poke());
 
   let disposed = false;
   return {

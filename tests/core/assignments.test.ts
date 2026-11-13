@@ -597,8 +597,16 @@ test('보기만 하는 사람(윗사람): 현황판과 작업 보고 요약만 �
   execFileSync('git', ['-C', ws!.worktreePath, '-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '-m', 'feat: 로그인']);
   await dev.core.assignments.progressNow();
   await until(() => pm.core.assignments.outgoing(pm.projectId)[0]!.progress[0]?.report !== undefined);
+  // 처음에는 보기만 하는 사람에게 작업 보고를 보내지 않는다. 리더가 켜야 간다
+  await pm.core.assignments.boardNow();
+  await until(() => boss.core.assignments.board(bossProject)?.people.some((x) => x.name === '개발') === true);
+  expect(boss.core.assignments.board(bossProject)!.people.find((x) => x.name === '개발')!.report).toBeUndefined();
+  pm.core.peers.setObserverReports(pm.projectId, true);
   await pm.core.assignments.boardNow();
   await until(() => boss.core.assignments.board(bossProject)?.people.find((x) => x.name === '개발')?.report?.commits === 1);
+  // 다른 참여자(개발 자신 포함)의 현황판에는 보고 요약이 실리지 않는다
+  await until(() => dev.core.assignments.board(dev.projectId) !== null);
+  expect(dev.core.assignments.board(dev.projectId)!.people.every((x) => x.report === undefined)).toBe(true);
   const board = boss.core.assignments.board(bossProject)!;
   expect(board.people.map((x) => x.name).sort()).toEqual(['개발', '팀장']);
   expect(board.people.find((x) => x.name === '개발')!.report).toMatchObject({ commits: 1, files: 1, last: { subject: 'feat: 로그인' } });

@@ -10,6 +10,7 @@ declare module 'oracledb' {
     close(): Promise<void>;
   }
   const oracledb: {
+    initOracleClient(o?: { libDir?: string }): void;
     getConnection(o: { user: string; password: string; connectString: string; connectTimeout?: number; transportConnectTimeout?: number }): Promise<Connection>;
     OUT_FORMAT_ARRAY: number;
     DB_TYPE_NUMBER: unknown;

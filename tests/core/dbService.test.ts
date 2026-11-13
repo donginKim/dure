@@ -98,6 +98,35 @@ describe('DB 연결', () => {
     expect(ran.length).toBe(1);
   });
 
+  test('MongoDB: 연결 문자열 하나로 받는다. 통째로 암호화해 두고, 목록에는 호스트와 사용자만 보인다', async () => {
+    const uri = 'mongodb://reader:s3cret@mongo.internal:27018/shop?authSource=admin';
+    const c = core.dbs.save(input({ name: '몽고', kind: 'mongo', host: '', port: 0, database: '', user: '', password: uri }));
+    expect(c).toMatchObject({ kind: 'mongo', host: 'mongo.internal', port: 27018, user: 'reader', database: 'shop', hasPassword: true });
+    expect(JSON.stringify(core.dbs.list(projectId))).not.toContain('s3cret');
+    // 조회는 JSON 명령이다: 검사를 거쳐 드라이버에 연결 문자열과 함께 간다
+    await core.dbs.query(c.id, '{"collection":"items","op":"find","limit":5}');
+    expect(ran.at(-1)).toMatchObject({ sql: '{"collection":"items","op":"find","limit":5}', target: { kind: 'mongo', database: 'shop', password: uri } });
+    await expect(async () => core.dbs.query(c.id, 'select 1')).rejects.toThrow('JSON 으로 씁니다');
+    await expect(async () => core.dbs.query(c.id, '{"collection":"items","op":"aggregate","pipeline":[{"$out":"x"}]}')).rejects.toThrow('$out');
+    // 접속 확인은 ping 으로 한다
+    await core.dbs.test(c.id);
+    expect(ran.at(-1)!.sql).toBe('{"op":"ping"}');
+    // 고칠 때 비워 두면 저장된 연결 문자열을 그대로 쓴다. DB 이름만 바꿀 수 있다
+    const again = core.dbs.save(input({ id: c.id, name: '몽고', kind: 'mongo', host: '', port: 0, database: 'logs', user: '', password: undefined }));
+    expect(again).toMatchObject({ host: 'mongo.internal', user: 'reader', database: 'logs' });
+    // 잘못된 입력
+    expect(() => core.dbs.save(input({ name: 'm2', kind: 'mongo', database: '', password: '' }))).toThrow('연결 문자열을 적으세요');
+    expect(() => core.dbs.save(input({ name: 'm2', kind: 'mongo', database: '', password: 'postgres://x' }))).toThrow('mongodb://');
+    expect(() => core.dbs.save(input({ name: 'm2', kind: 'mongo', database: '', password: 'mongodb://h:1/' }))).toThrow('데이터베이스 이름');
+    // 종류를 바꾸면 저장된 것은 맞지 않는다: 다시 적어야 한다
+    expect(() => core.dbs.save(input({ id: c.id, name: '몽고', kind: 'postgres', password: undefined }))).toThrow('비밀번호를 다시 적으세요');
+    // 에이전트에게는 이름과 종류만 간다
+    const listed = await call(ws.id, 'db_list');
+    expect(listed).toContain('mongo');
+    expect(listed).not.toContain('mongo.internal');
+    expect(listed).not.toContain('s3cret');
+  });
+
   test('프로젝트를 지우면 연결도 지워진다', async () => {
     core.dbs.save(input());
     await core.removeProject(projectId);

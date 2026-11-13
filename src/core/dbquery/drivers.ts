@@ -1,9 +1,14 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import mysql from 'mysql2';
 import oracledb, { type Connection as OracleConnection } from 'oracledb';
 import pg from 'pg';
 import type { DbCell, DbColumn, DbKind, DbResult, DbTable } from '@shared/types';
+import { mongoColumns, mongoRisks, mongoTables, runMongo } from './mongo';
 
+/** MongoDB 는 password 에 연결 문자열 전체가 들어 있다 (host, port, user 는 화면에 보이는 용도다). */
 export interface DbTarget { kind: DbKind; host: string; port: number; database: string; user: string; password: string; ssl: boolean }
+const mongoOf = (t: DbTarget): { uri: string; database: string } => ({ uri: t.password, database: t.database });
 export interface DbLimits {
   maxRows: number; timeoutMs: number;
   /** 서버에서 받는 바이트의 상한. 큰 칸 하나가 메모리를 채우지 못하게 한다. 없으면 64MB */
@@ -169,6 +174,34 @@ function runMysql(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): P
   });
 }
 
+/**
+ * Oracle 에 접속하는 방식. 두 가지다:
+ * - 기본: 순수 JS 로 접속한다. 설치할 것이 없다. 옛 비밀번호 방식(10G)으로만 저장된 계정에는 붙지 못한다 (NJS-116).
+ * - Oracle Client: Oracle Instant Client 의 라이브러리로 접속한다. 폴더를 정해 두면 이 방식을 쓴다.
+ * 한 번 정해지면 두레를 끌 때까지 바뀌지 않는다 (드라이버가 그렇게 돼 있다).
+ */
+let oracleClientDir = '';
+let oracleMode: 'thin' | 'thick' | null = null;
+/** Oracle Instant Client 의 폴더를 정한다 (설정에서 온다). 빈 글이면 클라이언트 없이 접속한다. */
+export function setOracleClient(dir: string): void {
+  const d = String(dir ?? '').trim();
+  oracleClientDir = d.startsWith('~/') ? join(homedir(), d.slice(2)) : d;
+}
+/** 지금 정해진 방식. 아직 한 번도 접속하지 않았으면 null */
+export function oracleModeNow(): 'thin' | 'thick' | null { return oracleMode; }
+
+function prepareOracle(): void {
+  if (oracleMode === 'thick') return;
+  if (!oracleClientDir) { oracleMode = 'thin'; return; }
+  if (oracleMode === 'thin') throw new Error('Oracle Instant Client 폴더를 정했지만, 이미 클라이언트 없이 접속한 뒤입니다. 두레를 껐다 켜면 Oracle Client 로 접속합니다.');
+  try {
+    oracledb.initOracleClient({ libDir: oracleClientDir });
+    oracleMode = 'thick';
+  } catch (e) {
+    throw new Error(`Oracle Instant Client 를 불러오지 못했습니다 (${oracleClientDir}): ${String((e as { message?: string })?.message ?? e).replace(/\s+/g, ' ').slice(0, 300)}`);
+  }
+}
+
 /** Oracle 이 준 값 하나를 보낼 수 있는 값으로. LOB 은 앞부분만 읽는다 (통째로 받으면 크기를 알 수 없다). */
 async function oracleCell(v: unknown): Promise<DbCell> {
   const lob = v as { getData?: (offset: number, amount: number) => Promise<unknown>; destroy?: () => void; length?: number } | null;
@@ -204,10 +237,14 @@ async function runOracle(t: DbTarget, sql: string, params: unknown[], lim: DbLim
   let gaveUp = false;
   const whole = setTimeout(() => { gaveUp = true; stopNow(); abort(new Error(`조회가 ${Math.round(lim.timeoutMs / 1000)}초 안에 끝나지 않아 멈췄습니다.`)); }, CONNECT_MS + lim.timeoutMs + 3000);
   try {
+    prepareOracle();
+    const secs = Math.ceil(CONNECT_MS / 1000);
+    const where = `${t.ssl ? 'tcps' : 'tcp'}://${t.host.includes(':') ? `[${t.host}]` : t.host}:${t.port}/${t.database}`;
     const opening = oracledb.getConnection({
       user: t.user, password: t.password,
-      connectString: `${t.ssl ? 'tcps' : 'tcp'}://${t.host.includes(':') ? `[${t.host}]` : t.host}:${t.port}/${t.database}`,
-      connectTimeout: Math.ceil(CONNECT_MS / 1000), transportConnectTimeout: Math.ceil(CONNECT_MS / 1000),
+      // Oracle Client 로 접속할 때는 접속 제한 시간을 주소에 적는다 (아래의 두 값은 클라이언트 없이 접속할 때만 듣는다).
+      connectString: oracleMode === 'thick' ? `${where}?connect_timeout=${secs}&transport_connect_timeout=${secs}` : where,
+      connectTimeout: secs, transportConnectTimeout: secs,
     });
     // 제한 시간이 지난 뒤에 접속이 끝나면 그 연결을 닫는다.
     opening.then((c) => { if (gaveUp) void c.close().catch(() => undefined); }, () => undefined);
@@ -248,6 +285,10 @@ async function runOracle(t: DbTarget, sql: string, params: unknown[], lim: DbLim
     }
     return { columns, rows, truncated, ms: Date.now() - started };
   } catch (e) {
+    // 옛 비밀번호 방식의 계정: 클라이언트 없이는 붙을 수 없다. 무엇을 하면 되는지 알려 준다.
+    if (/NJS-116/.test(String((e as { message?: string })?.message))) {
+      throw new Error('이 계정의 비밀번호는 옛 방식(10G)으로 저장돼 있어 Oracle Client 없이는 접속할 수 없습니다 (NJS-116). 설정 > DB 에서 Oracle Instant Client 폴더를 정하고 두레를 다시 켜세요. 또는 DB 관리자에게 그 계정의 비밀번호를 다시 설정해 달라고 하면 새 방식으로 저장됩니다.');
+    }
     throw fail(e);
   } finally {
     clearTimeout(whole);
@@ -260,6 +301,7 @@ async function runOracle(t: DbTarget, sql: string, params: unknown[], lim: DbLim
 }
 
 export function runReadOnly(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): Promise<DbResult> {
+  if (t.kind === 'mongo') return runMongo(mongoOf(t), sql, lim);
   return t.kind === 'postgres' ? runPostgres(t, sql, params, lim) : t.kind === 'oracle' ? runOracle(t, sql, params, lim) : runMysql(t, sql, params, lim);
 }
 
@@ -271,6 +313,7 @@ const SCHEMA_LIMITS: DbLimits = { maxRows: 3000, timeoutMs: 15_000 };
 
 /** 표와 뷰의 목록. 시스템 스키마는 뺀다. */
 export async function listTables(t: DbTarget): Promise<DbTable[]> {
+  if (t.kind === 'mongo') return mongoTables(mongoOf(t));
   const sql = t.kind === 'postgres'
     ? "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name"
     : t.kind === 'oracle'
@@ -283,6 +326,7 @@ export async function listTables(t: DbTarget): Promise<DbTable[]> {
 
 /** 표 하나의 칸 목록. 이름은 값으로 넘긴다 (문장에 끼워 넣지 않는다). */
 export async function listColumns(t: DbTarget, schema: string, table: string): Promise<DbColumn[]> {
+  if (t.kind === 'mongo') return mongoColumns(mongoOf(t), table);
   const r = t.kind === 'postgres'
     ? await runReadOnly(t, `SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
         (SELECT string_agg(tc.constraint_type, ', ') FROM information_schema.key_column_usage k
@@ -309,6 +353,7 @@ export async function listColumns(t: DbTarget, schema: string, table: string): P
  * 알아내지 못하면 빈 목록이 아니라 "확인하지 못함" 을 돌려준다.
  */
 export async function riskyPrivileges(t: DbTarget): Promise<string[]> {
+  if (t.kind === 'mongo') return mongoRisks(mongoOf(t));
   try {
     if (t.kind === 'postgres') {
       const r = await runReadOnly(t, `SELECT

@@ -6,6 +6,7 @@ import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
+import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
 import { coordinatorTools } from './mcp/tools/coordinator';
 import { browserTools } from './mcp/tools/browser';
@@ -240,6 +241,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       result: (projectId, peerId, sid, state, reason) => assignments.result(projectId, peerId, sid, state, reason),
       send: (projectId, peerId, a, o) => assignments.send(projectId, peerId, a, o), cancel: (id) => assignments.cancel(id), link: (ids, parents) => assignments.link(ids, parents), brief: (projectId, summary, skip) => assignments.sendBrief(projectId, summary, skip) },
   });
+  // Oracle 에 접속하는 방식 (설정의 Oracle Instant Client 폴더). 이미 접속한 뒤에 바꾸면 다시 켜야 듣는다.
+  setOracleClient(settings.get().oracleClientDir);
+  settings.on('changed', () => setOracleClient(settings.get().oracleClientDir));
   const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });

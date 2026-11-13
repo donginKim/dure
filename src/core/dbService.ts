@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
 import type { DbAccess, DbColumn, DbConnection, DbConnectionInput, DbKind, DbRequest, DbResult, DbTable } from '@shared/types';
 import { checkReadOnly } from './dbquery/guard';
+import { mongoUriParts } from './dbquery/mongo';
 import { listColumns, listTables, riskyPrivileges, runReadOnly, type DbLimits, type DbTarget } from './dbquery/drivers';
 import type { MessageService } from './messages';
 import type { ProjectStore, WorkspaceStore } from './stores';
@@ -37,8 +38,8 @@ const AGENT_MAX_CHARS = 60_000;
 const WAIT_MS = 40_000;
 const KEEP_REQUESTS = 50;
 
-const KINDS: DbKind[] = ['postgres', 'mysql', 'oracle'];
-const kindOf = (k: string): DbKind => (k === 'mysql' ? 'mysql' : k === 'oracle' ? 'oracle' : 'postgres');
+const KINDS: DbKind[] = ['postgres', 'mysql', 'oracle', 'mongo'];
+const kindOf = (k: string): DbKind => (k === 'mysql' ? 'mysql' : k === 'oracle' ? 'oracle' : k === 'mongo' ? 'mongo' : 'postgres');
 const ACCESS: DbAccess[] = ['ask', 'auto', 'off'];
 // eslint-disable-next-line no-control-regex
 const oneLine = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, max);
@@ -57,7 +58,7 @@ const fingerprint = (r: Row): string => [r.kind, r.host, r.port, r.database, r.u
  */
 function agentError(e: unknown): Error {
   const m = e instanceof Error ? e.message : String(e);
-  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ECONNRESET|EAI_AGAIN|getaddrinfo|authentication failed|Access denied for user|no pg_hba|password|SSL|certificate|응답하지 않습니다|Connection terminated|timeout expired/i.test(m)) {
+  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ECONNRESET|EAI_AGAIN|getaddrinfo|authentication failed|bad auth|Server selection timed out|MongoServerSelection|MongoNetwork|연결 문자열|Access denied for user|no pg_hba|password|SSL|certificate|응답하지 않습니다|Connection terminated|timeout expired/i.test(m)) {
     return new Error('DB 에 접속하지 못했다. 접속 정보는 사용자가 관리한다: 사용자에게 두레의 DB 탭에서 "접속 확인" 을 해 달라고 하라.');
   }
   return new Error(m);
@@ -121,10 +122,21 @@ export class DbService extends EventEmitter {
     return { kind: kindOf(r.kind), host: r.host, port: r.port, database: r.database, user: r.user, ssl: r.ssl === 1, password: r.secret ? this.d.secrets.decrypt(r.secret) : '' };
   }
 
-  private clean(i: DbConnectionInput): Omit<DbConnectionInput, 'id' | 'password' | 'projectId'> {
+  private clean(i: DbConnectionInput, existing?: Row): Omit<DbConnectionInput, 'id' | 'password' | 'projectId'> {
     const name = oneLine(i?.name, 40);
     if (!name) throw new Error('연결 이름을 적으세요.');
     if (!KINDS.includes(i.kind)) throw new Error('지원하지 않는 DB 종류입니다.');
+    if (!ACCESS.includes(i.agentAccess)) throw new Error('에이전트 사용 방식이 올바르지 않습니다.');
+    if (i.kind === 'mongo') {
+      // MongoDB 는 연결 문자열 하나로 받는다 (password 에 온다). 호스트, 포트, 사용자는 거기서 뽑아 화면에 보이는 데만 쓴다.
+      const typed = typeof i.password === 'string' && i.password !== '';
+      const parts = typed ? mongoUriParts(i.password!) : existing && kindOf(existing.kind) === 'mongo' ? { host: existing.host, port: existing.port, user: existing.user, database: '' } : null;
+      if (!parts) throw new Error('연결 문자열을 적으세요 (mongodb://… 또는 mongodb+srv://…).');
+      const database = oneLine(i.database, 128) || oneLine(parts.database, 128);
+      if (!database) throw new Error('데이터베이스 이름을 적으세요 (연결 문자열에 없으면 따로 적습니다).');
+      if (/[\s/\\."$\0]/.test(database)) throw new Error('데이터베이스 이름이 올바르지 않습니다.');
+      return { name, kind: 'mongo', host: oneLine(parts.host, 255), port: parts.port, database, user: oneLine(parts.user, 128), ssl: false, agentAccess: i.agentAccess };
+    }
     const host = oneLine(i.host, 255);
     if (!host || /\s/.test(host)) throw new Error('호스트를 적으세요.');
     const port = Number(i.port);
@@ -140,15 +152,18 @@ export class DbService extends EventEmitter {
 
   /** 연결을 등록하거나 고친다. 고칠 때 비밀번호를 주지 않으면 저장된 것을 그대로 둔다. */
   save(i: DbConnectionInput): DbConnection {
-    const c = this.clean(i);
     const existing = i.id ? this.row(i.id) : undefined;
+    const c = this.clean(i, existing);
     const projectId = existing?.project_id ?? i.projectId;
     if (!this.d.projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
     if (this.d.isProjectClosed(projectId)) throw new Error('완료된 프로젝트입니다.');
     const clash = this.list(projectId).find((x) => x.name === c.name && x.id !== existing?.id);
     if (clash) throw new Error(`이미 있는 연결 이름입니다: ${c.name}`);
     const password = typeof i.password === 'string' ? i.password : undefined;
-    if (password !== undefined && password.length > 1000) throw new Error('비밀번호가 너무 깁니다.');
+    if (password !== undefined && password.length > (c.kind === 'mongo' ? 4000 : 1000)) throw new Error(c.kind === 'mongo' ? '연결 문자열이 너무 깁니다.' : '비밀번호가 너무 깁니다.');
+    // 종류를 MongoDB 로, 또는 MongoDB 에서 다른 것으로 바꾸면 저장된 것(비밀번호나 연결 문자열)은 맞지 않는다: 다시 적어야 한다.
+    if (existing && password === undefined && (kindOf(existing.kind) === 'mongo') !== (c.kind === 'mongo')) throw new Error(c.kind === 'mongo' ? '연결 문자열을 적으세요.' : '비밀번호를 다시 적으세요.');
+    if (c.kind === 'mongo' && password === '') throw new Error('연결 문자열을 적으세요.');
     const secret = password === undefined ? existing?.secret ?? '' : password === '' ? '' : this.d.secrets.encrypt(password);
     const id = existing?.id ?? crypto.randomUUID();
     if (existing) {
@@ -173,7 +188,7 @@ export class DbService extends EventEmitter {
   /** 접속되는지 보고, 이 계정이 조회 말고 할 수 있는 것을 확인한다. 걸린 시간(ms)과 경고를 돌려준다. */
   async test(id: string): Promise<{ ms: number; warnings: string[] }> {
     const row = this.row(id);
-    const r = await this.runner.run(this.target(row), 'SELECT 1', [], { maxRows: 1, timeoutMs: 8000 });
+    const r = await this.runner.run(this.target(row), kindOf(row.kind) === 'mongo' ? '{"op":"ping"}' : kindOf(row.kind) === 'oracle' ? 'SELECT 1 FROM dual' : 'SELECT 1', [], { maxRows: 1, timeoutMs: 8000 });
     const warnings = await this.risk(row, true);
     this.emit('changed', row.project_id);
     return { ms: r.ms, warnings };

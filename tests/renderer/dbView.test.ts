@@ -46,3 +46,13 @@ test('Oracle: 기본 포트, 서비스 이름이 있어야 한다, 미리 보기
   expect(previewSql('oracle', { schema: 'READER', name: 'ITEMS', type: 'table' })).toBe('SELECT * FROM "READER"."ITEMS" WHERE ROWNUM <= 100');
   expect(previewSql('oracle', { schema: '', name: 'ITEMS', type: 'table' })).toBe('SELECT * FROM "ITEMS" WHERE ROWNUM <= 100');
 });
+
+test('MongoDB: 연결 문자열로 받는다. 미리 보기는 JSON 명령이다', () => {
+  expect(DEFAULT_PORT.mongo).toBe(27017);
+  const f = { ...emptyForm(), kind: 'mongo' as const, name: '몽고', host: '', user: '' };
+  expect(formProblem(f)).toBeNull();
+  expect(formProblem({ ...f, name: ' ' })).toContain('연결 이름');
+  expect(formProblem({ ...f, password: 'postgres://x' })).toContain('mongodb://');
+  expect(formProblem({ ...f, password: 'mongodb+srv://u:p@c.example.net/shop' })).toBeNull();
+  expect(previewSql('mongo', { schema: '', name: 'items', type: 'table' })).toBe('{"collection":"items","op":"find","filter":{},"limit":100}');
+});

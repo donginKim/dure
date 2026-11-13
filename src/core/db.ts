@@ -357,6 +357,31 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- 저장소의 확인 명령 (사용자가 정한다) 과, 워크스페이스마다의 마지막 확인 결과
+  ALTER TABLE repos ADD COLUMN verify_command TEXT NOT NULL DEFAULT '';
+  CREATE TABLE verifications (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    state TEXT NOT NULL,
+    tree TEXT NOT NULL DEFAULT '',
+    command TEXT NOT NULL,
+    output TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- 일의 순서: todo_id 는 after_id 가 끝난 뒤에 시작한다
+  CREATE TABLE todo_deps (
+    todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+    after_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE,
+    PRIMARY KEY (todo_id, after_id)
+  );
+  CREATE INDEX todo_deps_after ON todo_deps (after_id);
+  `,
+  `
+  -- 워크스페이스마다의 모델 (비어 있으면 설정의 모델). 에이전트가 도는 중에도 바꿀 수 있다
+  ALTER TABLE workspaces ADD COLUMN model TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

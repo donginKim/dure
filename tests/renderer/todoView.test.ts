@@ -3,10 +3,10 @@ import type { Todo, Workspace } from '@shared/types';
 
 const ws = (id: string, createdAt: number): Workspace => ({
   id, projectId: 'p', role: 'worker', repoId: 'r', name: `ws-${id}`, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
-  worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', status: 'stopped', createdAt,
+  worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', model: '', status: 'stopped', createdAt,
 });
 const todo = (id: string, workspaceId: string | null, position: number, status: Todo['status'] = 'todo'): Todo => ({
-  id, projectId: 'p', workspaceId, parentId: null, title: id, detail: '', status, assignee: 'agent', position, rev: 1, updatedBy: 'agent', createdAt: 0, updatedAt: 0,
+  id, projectId: 'p', workspaceId, parentId: null, after: [], title: id, detail: '', status, assignee: 'agent', position, rev: 1, updatedBy: 'agent', createdAt: 0, updatedAt: 0,
 });
 
 test('groupTodos: 프로젝트 묶음이 먼저, 이어서 워크스페이스 생성 순, 항목 없는 워크스페이스도 묶음으로 나온다', () => {

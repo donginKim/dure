@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -81,6 +81,15 @@ export interface DureApi {
     /** 등록된 저장소가 지금도 유효한지와 현재 브랜치 */
     status(repoId: string): Promise<RepoStatus>;
     remove(id: string): Promise<void>;
+    /** 저장소의 확인 명령을 정한다 (빈 글이면 없앤다). 에이전트가 TODO 를 완료로 바꿀 때 두레가 돌린다 */
+    setVerify(repoId: string, command: string): Promise<void>;
+  };
+  /** 끝난 일의 확인 */
+  verify: {
+    /** 워크스페이스 id → 마지막 확인 (확인 명령이 있는 것만) */
+    statuses(projectId: string): Promise<Record<string, VerifyState>>;
+    /** 지금 확인 명령을 돌린다 */
+    run(workspaceId: string): Promise<VerifyState | null>;
   };
   workspaces: {
     list(projectId: string): Promise<Workspace[]>;
@@ -94,6 +103,8 @@ export interface DureApi {
     stopAgent(id: string): Promise<void>;
     /** 에이전트를 돌리는 방식을 바꾼다. 꺼져 있을 때만 된다 */
     setEngine(id: string, engine: AgentEngine): Promise<void>;
+    /** 모델을 바꾼다 (빈 글이면 설정의 모델). 채팅 방식으로 도는 중이면 바로(now), 아니면 다음에 시작할 때(next) */
+    setModel(id: string, model: string): Promise<{ applied: 'now' | 'next' }>;
     /** 표시 이름을 바꾼다 (브랜치와 작업 폴더는 그대로). 직접 지은 이름은 에이전트가 바꾸지 못한다 */
     rename(id: string, name: string): Promise<Workspace>;
     /** 에이전트가 작업에 맞게 이름을 바꿔도 되는가 */
@@ -121,6 +132,8 @@ export interface DureApi {
     move(id: string, direction: 'up' | 'down'): Promise<void>;
     /** 워크스페이스 항목을 프로젝트 항목 아래에 달거나 (parentId), 뗀다 (null) */
     setParent(id: string, parentId: string | null): Promise<Todo>;
+    /** 앞의 일을 정한다 (먼저 끝나야 하는 항목들. 빈 목록이면 없앤다) */
+    setAfter(id: string, afterIds: string[]): Promise<Todo>;
     /** 워크스페이스 id → 에이전트에게 아직 전달되지 않은 변경 수, 그리고 바로 알릴 수 있는지 */
     pending(projectId: string): Promise<Record<string, { count: number; canNudge: boolean }>>;
     nudge(workspaceId: string): Promise<void>;
@@ -332,12 +345,12 @@ export const IPC_CHANNELS = [
   'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide',
   'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
-  'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
+  'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
-  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.rename', 'workspaces.setAutoName',
+  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
-  'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.pending', 'todos.nudge',
+  'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.setAfter', 'todos.pending', 'todos.nudge',
   'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',

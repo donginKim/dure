@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import type { Todo, Workspace } from '@shared/types';
+import { settled, waitingFor } from '@shared/todo';
 import { childrenOf, progress, TODO_STATUS_LABEL } from '../todoView';
+import { VerifyStatus } from './VerifyParts';
 
 /** 항목들 사이의 이음을 그리는 데 쓰는 것: 프로젝트 전체의 항목과 워크스페이스 */
 export interface TodoLinks { all: Todo[]; workspaces: Workspace[] }
@@ -74,6 +76,13 @@ function TodoRow({ todo, first, last, onError, readOnly, links }: { todo: Todo; 
   const cancelled = todo.status === 'cancelled';
   // 프로젝트 항목: 딸린 워크스페이스 항목들. 워크스페이스 항목: 딸릴 수 있는 프로젝트 항목들.
   const kids = links && todo.workspaceId === null ? childrenOf(todo.id, links.all, links.workspaces) : [];
+  // 일의 순서: 앞의 일과, 앞의 일로 고를 수 있는 항목 (같은 프로젝트의 다른 워크스페이스 항목, 원격 묶음은 빼고)
+  const wsName = (id: string | null): string => links?.workspaces.find((w) => w.id === id)?.name ?? '';
+  const before = links && todo.after.length ? todo.after.map((id) => links.all.find((t) => t.id === id)).filter((t): t is Todo => t !== undefined) : [];
+  const waiting = links && !settled(todo) ? waitingFor(todo, links.all) : [];
+  const candidates = links && todo.workspaceId !== null && !todo.workspaceId.startsWith('remote:')
+    ? links.all.filter((t) => t.id !== todo.id && t.workspaceId !== null && !t.workspaceId.startsWith('remote:') && !todo.after.includes(t.id))
+    : [];
   const parents = links && todo.workspaceId !== null ? links.all.filter((t) => t.workspaceId === null) : [];
   const parent = todo.parentId ? parents.find((t) => t.id === todo.parentId) : undefined;
   const kidsDone = progress(kids.map((k) => k.todo));
@@ -100,6 +109,17 @@ function TodoRow({ todo, first, last, onError, readOnly, links }: { todo: Todo; 
           <div className="todo-title" title={readOnly ? undefined : '눌러서 고치기'} onClick={() => { if (!readOnly) { setDraft(todo.title); setEditing(true); } }}>{todo.title}</div>
         )}
         {todo.detail && <div className="todo-detail" title={todo.detail}>{todo.detail}</div>}
+        {before.length > 0 && (
+          <div className={`todo-after${waiting.length ? ' waiting' : ''}`} title={waiting.length ? '앞의 일이 끝나기 전에는 에이전트가 이 항목을 시작할 수 없습니다. 끝나면 두레가 알립니다' : '앞의 일이 모두 끝났습니다'}>
+            {waiting.length ? '⏳ 기다림: ' : '✓ 앞의 일 끝남: '}
+            {before.map((b, i) => (
+              <span key={b.id} className={settled(b) ? 'done' : ''}>
+                {i > 0 && ', '}{b.workspaceId !== todo.workspaceId ? `${wsName(b.workspaceId)} · ` : ''}{b.title}
+                {!readOnly && <button className="todo-after-x" title="이 순서를 풉니다" aria-label="순서 풀기" onClick={() => run(window.dure.todos.setAfter(todo.id, todo.after.filter((x) => x !== b.id)))}>×</button>}
+              </span>
+            ))}
+          </div>
+        )}
         {parent && <div className="todo-under" title={`프로젝트 항목 "${parent.title}" 에 딸린 일입니다. 딸린 일이 다 끝나면 그 항목이 완료됩니다`}>↳ {parent.title}</div>}
       </div>
       {kids.length > 0 && <span className="todo-count" title={`딸린 일 ${kidsDone.total}개 중 ${kidsDone.done}개 완료. 다 끝나면 이 항목이 저절로 완료됩니다`}>{kidsDone.done}/{kidsDone.total}</span>}
@@ -120,6 +140,12 @@ function TodoRow({ todo, first, last, onError, readOnly, links }: { todo: Todo; 
           aria-label={cancelled ? '되살리기' : '하지 않기로 표시'}
           onClick={() => run(window.dure.todos.update(todo.id, { status: cancelled ? 'todo' : 'cancelled' }))}
         ><Icon name={cancelled ? 'restore' : 'cancel'} /></button>
+        {candidates.length > 0 && (
+          <select className="todo-parent" value="" title="이 항목보다 먼저 끝나야 하는 일을 고릅니다. 그 일이 끝나기 전에는 에이전트가 이 항목을 시작할 수 없습니다" aria-label="앞의 일 더하기" onChange={(e) => { if (e.target.value) run(window.dure.todos.setAfter(todo.id, [...todo.after, e.target.value])); }}>
+            <option value="">앞의 일 더하기…</option>
+            {candidates.map((c) => <option key={c.id} value={c.id}>{c.workspaceId !== todo.workspaceId ? `${wsName(c.workspaceId)} · ` : ''}{c.title}</option>)}
+          </select>
+        )}
         {parents.length > 0 && (
           <select className="todo-parent" value={todo.parentId ?? ''} title="이 일이 딸린 프로젝트 항목. 딸린 일이 다 끝나면 그 항목이 완료됩니다" aria-label="딸린 프로젝트 항목" onChange={(e) => run(window.dure.todos.setParent(todo.id, e.target.value || null))}>
             <option value="">(딸린 곳 없음)</option>
@@ -211,6 +237,7 @@ export function TodoBody({ workspace, items, pending, readOnly, links }: { works
   return (
     <>
       <Ticks items={items} />
+      <VerifyStatus workspace={workspace} readOnly={readOnly} />
       {undelivered > 0 && pending && (
         <div className="todo-pending">
           <div className="grow">

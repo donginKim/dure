@@ -236,6 +236,28 @@ export class WorkspaceService extends EventEmitter {
     this.emit('changed', id);
   }
 
+  /**
+   * 이 워크스페이스의 모델을 바꾼다 (빈 글이면 설정의 모델을 따른다). 한도에 걸렸을 때 다른 모델로 이어 가는 데 쓴다.
+   * 채팅 방식으로 도는 중이면 대화를 끊지 않고 다음 응답부터 바꾼다. 터미널 방식이거나 꺼져 있으면 다음에 시작할 때 듣는다.
+   */
+  async setModel(id: string, model: string): Promise<{ applied: 'now' | 'next' }> {
+    const ws = this.mustGet(id);
+    if (ws.agentKind !== 'claude') throw new Error('모델은 Claude Code 워크스페이스에서만 바꿀 수 있습니다.');
+    if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
+    const m = String(model ?? '').trim();
+    if (m.length > 100 || !/^[A-Za-z0-9._:\[\]-]*$/.test(m)) throw new Error('모델 이름이 올바르지 않습니다.');
+    const live = this.engine?.has(id) === true;
+    // 먼저 에이전트에게 바꾸라고 한다: 받지 않으면 저장하지 않는다 (화면과 실제가 어긋나지 않게).
+    if (live) {
+      try { await this.engine!.setModel(id, m || this.settings().claudeModel); } catch (e) {
+        throw new Error(`에이전트가 모델을 바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    this.d.workspaces.update(id, { model: m });
+    this.emit('changed', id);
+    return { applied: live ? 'now' : 'next' };
+  }
+
   /** 이름으로 쓸 수 있는 글로 다듬고 확인한다. */
   private cleanName(ws: Workspace, raw: unknown): string {
     // eslint-disable-next-line no-control-regex
@@ -590,7 +612,7 @@ export class WorkspaceService extends EventEmitter {
       initialPrompt: firstPrompt,
       headless,
       resumeSessionId,
-      model: settings.claudeModel || undefined,
+      model: ws.model || settings.claudeModel || undefined,
       effort: settings.claudeEffort || undefined,
       extraArgs,
     });

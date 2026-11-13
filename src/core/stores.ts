@@ -3,21 +3,21 @@ import type Database from 'better-sqlite3';
 import type { Project, Repo, Workspace } from '@shared/types';
 
 interface ProjectRow { id: string; name: string; created_at: number; status: string; completed_at: number | null }
-interface RepoRow { id: string; project_id: string; name: string; path: string }
+interface RepoRow { id: string; project_id: string; name: string; path: string; verify_command?: string }
 interface WorkspaceRow {
   id: string; project_id: string; repo_id: string; name: string; name_locked: number; summary: string;
   branch: string; base_branch: string; worktree_path: string; agent_kind: string; permission_mode: string;
-  status: string; token: string; created_at: number; engine: string; session_id: string | null; role: string;
+  status: string; token: string; created_at: number; engine: string; session_id: string | null; role: string; model?: string;
 }
 
 const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at, status: r.status === 'done' ? 'done' : 'active', completedAt: r.completed_at });
-const toRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, name: r.name, path: r.path });
+const toRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, name: r.name, path: r.path, verifyCommand: r.verify_command ?? '' });
 // 토큰은 일부러 옮기지 않는다. 화면으로 나가는 객체에 들어가면 안 된다.
 const toWorkspace = (r: WorkspaceRow): Workspace => ({
   id: r.id, projectId: r.project_id, role: r.role === 'coordinator' ? 'coordinator' : 'worker', repoId: r.repo_id, name: r.name, nameLocked: r.name_locked === 1,
   summary: r.summary, branch: r.branch, baseBranch: r.base_branch, worktreePath: r.worktree_path,
   agentKind: r.agent_kind as Workspace['agentKind'], permissionMode: r.permission_mode as Workspace['permissionMode'],
-  engine: r.engine as Workspace['engine'], status: r.status as Workspace['status'], createdAt: r.created_at,
+  engine: r.engine as Workspace['engine'], model: r.model ?? '', status: r.status as Workspace['status'], createdAt: r.created_at,
 });
 
 export class ProjectStore {
@@ -59,7 +59,7 @@ export class RepoStore {
   constructor(private readonly db: Database.Database) {}
 
   add(projectId: string, path: string): Repo {
-    const r: Repo = { id: crypto.randomUUID(), projectId, name: basename(path), path };
+    const r: Repo = { id: crypto.randomUUID(), projectId, name: basename(path), path, verifyCommand: '' };
     this.db.prepare('INSERT INTO repos (id, project_id, name, path) VALUES (?, ?, ?, ?)').run(r.id, r.projectId, r.name, r.path);
     return r;
   }
@@ -73,9 +73,13 @@ export class RepoStore {
   addInternal(projectId: string, path: string): Repo {
     const found = this.db.prepare('SELECT * FROM repos WHERE project_id = ? AND path = ?').get(projectId, path) as RepoRow | undefined;
     if (found) return toRepo(found);
-    const r: Repo = { id: crypto.randomUUID(), projectId, name: basename(path), path };
+    const r: Repo = { id: crypto.randomUUID(), projectId, name: basename(path), path, verifyCommand: '' };
     this.db.prepare('INSERT INTO repos (id, project_id, name, path, internal) VALUES (?, ?, ?, ?, 1)').run(r.id, r.projectId, r.name, r.path);
     return r;
+  }
+
+  setVerifyCommand(id: string, command: string): void {
+    this.db.prepare('UPDATE repos SET verify_command = ? WHERE id = ?').run(command, id);
   }
 
   isInternal(id: string): boolean {
@@ -92,9 +96,9 @@ export class RepoStore {
   }
 }
 
-export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine' | 'role'> & { token: string; engine?: Workspace['engine']; role?: Workspace['role'] };
+export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine' | 'role' | 'model'> & { token: string; engine?: Workspace['engine']; role?: Workspace['role'] };
 
-const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine' } as const;
+const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine', model: 'model' } as const;
 export type WorkspacePatch = Partial<Pick<Workspace, keyof typeof PATCH_COLUMNS>>;
 
 export class WorkspaceStore {

@@ -59,6 +59,11 @@ const api: DureApi = {
     branches: (repoId) => call('repos.branches', repoId),
     status: (repoId) => call('repos.status', repoId),
     remove: (id) => call('repos.remove', id),
+    setVerify: (repoId, command) => call('repos.setVerify', repoId, command),
+  },
+  verify: {
+    statuses: (projectId) => call('verify.statuses', projectId),
+    run: (workspaceId) => call('verify.run', workspaceId),
   },
   workspaces: {
     list: (projectId) => call('workspaces.list', projectId),
@@ -68,6 +73,7 @@ const api: DureApi = {
     interrupt: (id) => call('workspaces.interrupt', id),
     stopAgent: (id) => call('workspaces.stopAgent', id),
     setEngine: (id, engine) => call('workspaces.setEngine', id, engine),
+    setModel: (id, model) => call('workspaces.setModel', id, model),
     rename: (id, name) => call('workspaces.rename', id, name),
     setAutoName: (id, on) => call('workspaces.setAutoName', id, on),
   },
@@ -89,6 +95,7 @@ const api: DureApi = {
     remove: (id) => call('todos.remove', id),
     move: (id, direction) => call('todos.move', id, direction),
     setParent: (id, parentId) => call('todos.setParent', id, parentId),
+    setAfter: (id, afterIds) => call('todos.setAfter', id, afterIds),
     pending: (projectId) => call('todos.pending', projectId),
     nudge: (workspaceId) => call('todos.nudge', workspaceId),
   },

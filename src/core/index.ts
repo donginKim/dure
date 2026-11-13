@@ -2,10 +2,11 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus } from '@shared/types';
+import type { Repo, RepoStatus, Todo } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
+import { VerifyService, type VerifyRunner } from './verify';
 import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
 import { coordinatorTools } from './mcp/tools/coordinator';
@@ -67,6 +68,7 @@ export interface Core {
   usage: UsageStore;
   checkpoints: CheckpointService;
   prs: PrService;
+  verify: VerifyService;
   worktime: WorkTimeService;
   browser: BrowserService;
   peers: PeerService;
@@ -120,6 +122,8 @@ export interface CoreOptions {
   /** 시험에서 가짜 슬랙으로 바꾼다 */
   slackFetch?: ConstructorParameters<typeof SlackService>[0]['fetch'];
   dbWaitMs?: number;
+  /** 확인 명령을 돌리는 쪽 (시험에서 바꾼다) */
+  verifyRunner?: VerifyRunner;
   /** 한 사람의 계획 제안을 받는 최소 간격 (ms). 시험에서 줄인다 */
   suggestEveryMs?: number;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
@@ -153,6 +157,19 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const usage = new UsageStore(db, workspaces);
   const checkpoints = new CheckpointService({ db, workspaces, git });
   const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
+  // 일의 순서: 앞의 일이 다 끝난 항목이 생기면 그 워크스페이스에 알린다 (꺼져 있으면 이 알림으로 뜬다).
+  todos.on('unblocked', (todo: Todo, done: Todo) => {
+    if (!todo.workspaceId || todo.assignee !== 'agent' || service.isProjectClosed(todo.projectId)) return;
+    const from = done.workspaceId && done.workspaceId !== todo.workspaceId ? workspaces.get(done.workspaceId)?.name : undefined;
+    try {
+      messages.send({
+        projectId: todo.projectId, from: { kind: 'system' }, toWorkspaceId: todo.workspaceId, title: '순서',
+        body: `앞의 일이 끝났다${from ? ` (워크스페이스 "${from}")` : ''}: "${done.title}". 이제 "${todo.title}" 을(를) 시작할 수 있다. todo_list 로 확인하고 진행하라.${from ? ' 그 일의 결과(API 형식 등)가 필요하면 그 워크스페이스가 올린 자료를 읽거나 message_send 로 물어라.' : ''}`,
+      });
+    } catch { /* 알림 실패가 상태 변경을 막으면 안 된다 */ }
+  });
+  // 끝난 일의 확인: 에이전트가 TODO 를 완료로 바꿀 때 저장소의 확인 명령을 돌린다.
+  const verify = new VerifyService({ db, repos, workspaces, git, env: o.baseEnv, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, runner: o.verifyRunner });
   const worktime = new WorkTimeService({ db, settings: () => settings.get(), probe: o.networkProbe ?? undefined });
   // 시험에서는 저절로 재지 않는다 (가짜 네트워크를 줄 때만).
   if (o.networkProbe !== null) worktime.start();
@@ -176,6 +193,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     notesForAgents: () => settings.get().notesForAgents,
     notesWriteForAgents: () => settings.get().notesWriteForAgents,
     prs,
+    verify,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -311,7 +329,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

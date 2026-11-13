@@ -138,6 +138,9 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return core.git.listBranches(repo.path);
     },
     'repos.status': (repoId: string) => core.repoStatus(repoId),
+    'repos.setVerify': (repoId: string, command: string) => { const r = core.repos.get(String(repoId)); if (r) assertOpen(r.projectId); core.verify.setCommand(String(repoId), String(command ?? '')); changed('repos'); },
+    'verify.statuses': (projectId: string) => core.verify.statuses(String(projectId)),
+    'verify.run': async (workspaceId: string) => { await core.verify.check(String(workspaceId), { force: true }); return core.verify.status(String(workspaceId)); },
     'repos.remove': (id: string) => {
       try {
         core.repos.remove(id);
@@ -153,6 +156,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'workspaces.interrupt': (id: string) => core.service.interrupt(id),
     'workspaces.stopAgent': (id: string) => core.service.stopAgent(id),
     'workspaces.setEngine': (id: string, engine: 'chat' | 'terminal') => core.service.setEngine(id, engine),
+    'workspaces.setModel': (id: string, model: string) => core.service.setModel(String(id), String(model ?? '')),
     'workspaces.rename': (id: string, name: string) => core.service.rename(id, name),
     'workspaces.setAutoName': (id: string, on: boolean) => core.service.setAutoName(id, on === true),
     'terminals.list': (workspaceId: string) => core.pty.listWithExited(workspaceId),
@@ -173,6 +177,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'todos.update': (id: string, patch: TodoPatch) => assertTodoOpen(id) ?? core.todos.update(id, patch, { actor: 'user' }),
     'todos.remove': (id: string) => assertTodoOpen(id) ?? core.todos.remove(id, { actor: 'user' }),
     'todos.setParent': (id: string, parentId: string | null) => assertTodoOpen(id) ?? core.todos.setParent(String(id), parentId === null ? null : String(parentId)),
+    'todos.setAfter': (id: string, afterIds: string[]) => assertTodoOpen(id) ?? core.todos.setAfter(String(id), Array.isArray(afterIds) ? afterIds.map(String) : [], 'user'),
     'todos.move': (id: string, direction: 'up' | 'down') => assertTodoOpen(id) ?? core.todos.move(id, direction),
     'todos.pending': (projectId: string) => Object.fromEntries(
       core.workspaces.listAll(projectId).map((w) => [w.id, { count: core.todos.pendingCount(w.id), canNudge: core.service.canNudge(w.id) }]),
@@ -347,6 +352,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.notes.on('changed', onNotesChanged);
   core.checkpoints.on('changed', onCheckpointsChanged);
   core.worktime.on('changed', onWorktimeChanged);
+  core.verify.on('changed', onTodosChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -372,6 +378,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.notes.off('changed', onNotesChanged);
     core.checkpoints.off('changed', onCheckpointsChanged);
     core.worktime.off('changed', onWorktimeChanged);
+    core.verify.off('changed', onTodosChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

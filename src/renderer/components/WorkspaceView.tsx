@@ -1,3 +1,4 @@
+import { ModelPicker } from './ModelPicker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ERROR_PREFIX } from '@shared/ipc';
 import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types';
@@ -79,6 +80,9 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // 모델을 바꾼 결과처럼, 잠깐 보이고 사라지는 알림
+  const [note, setNote] = useState('');
+  useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(''), 6000); return () => clearTimeout(t); }, [note]);
   const [removing, setRemoving] = useState<{ uncommitted: number } | null>(null);
   const area = useRef<HTMLDivElement>(null);
   const [committing, setCommitting] = useState(false);
@@ -189,6 +193,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
           <button role="tab" aria-selected={mode === 'browser'} className={mode === 'browser' ? 'on' : ''} onClick={() => switchTo('browser')} title="개발 서버 같은 웹 페이지를 앱 안에서 봅니다">브라우저</button>
         </div>
         {readOnly && <span className="tag">완료된 프로젝트 · 기록만 봅니다</span>}
+        <ModelPicker workspace={workspace} readOnly={readOnly} onError={setError} onNote={setNote} />
         {canChat && !hasAgent && !readOnly && (
           <select
             className="engine-select" value={workspace.engine} onChange={(e) => setEngine(e.target.value as 'chat' | 'terminal')}
@@ -228,6 +233,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
             onStartAgent={() => void open('agent')}
           />
           {error && <div className="error" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{error}</div>}
+          {note && !error && <div className="note-pop" style={{ position: 'absolute', top: 8, right: 8, zIndex: 2, maxWidth: 420 }}>{note}</div>}
         </div>
       )}
       {mode === 'diff' && <Checkpoints workspace={workspace} />}

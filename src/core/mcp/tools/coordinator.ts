@@ -15,6 +15,7 @@ export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
   });
   const WORK_TODO = TODO.extend({
     under: z.string().optional().describe('이 일이 딸린 프로젝트 TODO 의 제목 (project_todos 의 제목이나 이미 있는 프로젝트 TODO 의 제목과 글자까지 같게). 딸린 TODO 가 다 끝나면 그 프로젝트 TODO 가 저절로 완료된다'),
+    after: z.array(z.string()).max(10).optional().describe('이 일보다 먼저 끝나야 하는 TODO 의 제목들 (이 계획안의 TODO. 다른 워크스페이스의 것도 된다. 글자까지 같게). 예: 화면의 "API 붙이기" 는 after 에 API 워크스페이스의 "POST /login 만들기". 앞의 일이 끝나기 전에는 그 에이전트가 이 일을 시작할 수 없고, 끝나면 두레가 그 워크스페이스에 알려 시작하게 한다. 순서가 꼭 필요한 곳에만 적어라: 나란히 할 수 있는 일을 묶으면 느려진다. 다른 사람에게 나눠 주는 워크스페이스(owner)의 TODO 는 적을 수 없다'),
   });
 
   server.registerTool(
@@ -69,9 +70,10 @@ export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
         detail: z.string().optional(),
         assignee: z.enum(['agent', 'user']).optional().describe('사용자가 해야 하는 일이면 user'),
         under: z.string().optional().describe('이 일이 딸린 프로젝트 TODO 의 제목이나 id (todo_list 의 items). 주면 그 프로젝트 TODO 의 진행에 함께 잡힌다'),
+        after: z.array(z.string()).max(10).optional().describe('이 일보다 먼저 끝나야 하는 TODO 들. "워크스페이스 이름/TODO 제목" 으로 적는다 (예: "로그인 API/POST /login 만들기"). 앞의 일이 끝나면 두레가 이 워크스페이스에 알린다'),
       },
     },
-    async ({ workspace, title, detail, assignee, under }) => {
+    async ({ workspace, title, detail, assignee, under, after }) => {
       const peers = deps.workspaces.list(ctx.project.id);
       const matches = peers.filter((w) => w.name === workspace.trim());
       if (matches.length === 0) return fail(`"${workspace}" 라는 워크스페이스가 없다. 있는 워크스페이스: ${peers.map((w) => `"${w.name}"`).join(', ') || '(없음. 먼저 plan_propose 로 계획안을 올려라)'}`);
@@ -80,8 +82,18 @@ export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
       const projectItems = deps.todos.listProject(ctx.project.id).filter((t) => t.workspaceId === null);
       const parent = key ? projectItems.find((t) => t.id === key) ?? projectItems.find((t) => t.title === key) : undefined;
       if (key && !parent) return fail(`"${key}" 라는 프로젝트 TODO 가 없다. 있는 프로젝트 TODO: ${projectItems.map((t) => `"${t.title}"`).join(', ') || '(없음. todo_add 로 먼저 만들어라)'}`);
+      // 앞의 일: "워크스페이스 이름/TODO 제목"
+      const all = deps.todos.listProject(ctx.project.id);
+      const afterIds: string[] = [];
+      for (const ref of after ?? []) {
+        const cut = ref.indexOf('/');
+        const ws = cut > 0 ? peers.filter((w) => w.name === ref.slice(0, cut).trim()) : [];
+        const found = ws.length === 1 ? all.find((t) => t.workspaceId === ws[0]!.id && t.title === ref.slice(cut + 1).trim()) : undefined;
+        if (!found) return fail(`앞의 일 "${ref}" 을(를) 찾을 수 없다. "워크스페이스 이름/TODO 제목" 으로 적어라 (todo_list 의 workspaces 에 있는 것).`);
+        afterIds.push(found.id);
+      }
       try {
-        const t = deps.todos.add({ projectId: ctx.project.id, workspaceId: matches[0]!.id, title, detail, assignee, parentId: parent?.id ?? null }, 'agent');
+        const t = deps.todos.add({ projectId: ctx.project.id, workspaceId: matches[0]!.id, title, detail, assignee, parentId: parent?.id ?? null, after: afterIds }, 'agent');
         return ok({ id: t.id, workspace: matches[0]!.name, title: t.title, ...(parent ? { under: parent.title } : {}) });
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));

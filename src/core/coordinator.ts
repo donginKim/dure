@@ -272,7 +272,8 @@ export class CoordinatorService extends EventEmitter {
       const title = oneLine(o.title, 200);
       if (!title) { problems.push(`${where}: 제목이 없는 TODO 가 있다`); continue; }
       const under = withUnder ? oneLine(o.under, 200) : '';
-      out.push({ title, detail: text(o.detail, 1000), assignee: o.assignee === 'user' ? 'user' : 'agent', ...(under ? { under } : {}) });
+      const after = withUnder && Array.isArray(o.after) ? [...new Set(o.after.slice(0, 10).map((a) => oneLine(a, 200)).filter(Boolean))] : [];
+      out.push({ title, detail: text(o.detail, 1000), assignee: o.assignee === 'user' ? 'user' : 'agent', ...(under ? { under } : {}), ...(after.length ? { after } : {}) });
     }
     return out;
   }
@@ -343,6 +344,29 @@ export class CoordinatorService extends EventEmitter {
     for (const it of items) for (const t of it.todos) {
       if (t.under && !parents.has(t.under)) problems.push(`"${it.name}" 의 TODO "${t.title}": under 의 "${t.under}" 라는 프로젝트 TODO 가 없다 (project_todos 의 제목과 글자까지 같아야 한다)`);
     }
+    // 일의 순서: 앞의 일은 이 계획안의 내 PC 에 만드는 워크스페이스의 TODO 여야 하고, 순서가 돌고 돌면 안 된다.
+    const local = items.filter((it) => !it.owner);
+    const titles = new Set(local.flatMap((it) => it.todos.map((t) => t.title)));
+    const next = new Map<string, string[]>();
+    for (const it of items) for (const t of it.todos) {
+      if (!t.after?.length) continue;
+      if (it.owner) { problems.push(`"${it.name}" 의 TODO "${t.title}": 다른 사람에게 나눠 주는 일에는 after 를 적을 수 없다 (그 사람의 두레에서 따로 돈다)`); continue; }
+      for (const a of t.after) {
+        if (a === t.title) problems.push(`"${it.name}" 의 TODO "${t.title}": 자기 자신을 after 에 적을 수 없다`);
+        else if (!titles.has(a)) problems.push(`"${it.name}" 의 TODO "${t.title}": after 의 "${a}" 라는 TODO 가 이 계획안에 없다 (내 PC 에 만드는 워크스페이스의 TODO 제목과 글자까지 같아야 한다)`);
+      }
+      next.set(t.title, [...(next.get(t.title) ?? []), ...t.after]);
+    }
+    const state = new Map<string, 1 | 2>();
+    const loops = (title: string): boolean => {
+      if (state.get(title) === 2) return false;
+      if (state.get(title) === 1) return true;
+      state.set(title, 1);
+      const hit = (next.get(title) ?? []).some(loops);
+      state.set(title, 2);
+      return hit;
+    };
+    if ([...next.keys()].some(loops)) problems.push('TODO 의 순서(after)가 돌고 돈다: 서로를 기다려 아무도 시작할 수 없다. 순서를 고쳐라');
     return { newRepos, addRepos, items, projectTodos, problems };
   }
 
@@ -554,7 +578,16 @@ export class CoordinatorService extends EventEmitter {
           todoIds.push(made.id);
           parents.set(t.title, made.id);
         }
-        for (const it of items) for (const t of it.todos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: targets.get(it.name)!.id, title: t.title, detail: t.detail, assignee: t.assignee, parentId: (t.under && parents.get(t.under)) || null }, 'agent').id);
+        const made = new Map<string, string>();
+        const ordered: { id: string; after: string[] }[] = [];
+        for (const it of items) for (const t of it.todos) {
+          const id = this.d.todos.add({ projectId: r.project_id, workspaceId: targets.get(it.name)!.id, title: t.title, detail: t.detail, assignee: t.assignee, parentId: (t.under && parents.get(t.under)) || null }, 'agent').id;
+          todoIds.push(id);
+          if (!made.has(t.title)) made.set(t.title, id);
+          if (t.after?.length) ordered.push({ id, after: t.after });
+        }
+        // 일의 순서: 다 만든 뒤에 잇는다 (앞의 일이 뒤에 만들어질 수 있다).
+        for (const o2 of ordered) this.d.todos.setAfter(o2.id, o2.after.map((a) => made.get(a)).filter((x): x is string => x !== undefined && x !== o2.id), 'agent');
         // 다른 사람에게 나눠 준 일도 프로젝트 TODO 에 딸린다: 그 사람의 진행이 프로젝트 TODO 의 진행에 잡힌다.
         if (sent.length) this.d.assign?.link?.(sent, parents);
       } catch (e) {

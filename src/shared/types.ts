@@ -28,7 +28,15 @@ export interface Repo {
   projectId: string;
   name: string;
   path: string;
+  /**
+   * 확인 명령 (시험, 빌드, 린트 등. 예: "pnpm test"). 사용자가 정한다. 있으면 이 저장소의 워크스페이스에서
+   * 에이전트가 TODO 를 완료로 바꿀 때 두레가 작업 폴더에서 돌리고, 실패하면 완료를 받지 않는다. 없으면 빈 글
+   */
+  verifyCommand: string;
 }
+
+/** 워크스페이스의 마지막 확인 (확인 명령을 돌린 결과). none: 아직 돌린 적이 없다 */
+export interface VerifyState { state: 'none' | 'running' | 'passed' | 'failed'; command: string; /** 출력의 끝부분 */ output: string; at: number }
 
 /** 등록된 저장소가 지금도 쓸 수 있는 상태인지. 화면이 등록 결과를 보여주는 데 쓴다. */
 export type RepoStatus = { ok: true; branch: string } | { ok: false; reason: string };
@@ -53,6 +61,8 @@ export interface Workspace {
   agentKind: AgentKind;
   permissionMode: PermissionMode;
   engine: AgentEngine;
+  /** 이 워크스페이스의 모델 (Claude Code). 빈 글이면 설정의 모델을 따른다 */
+  model: string;
   status: WorkspaceStatus;
   createdAt: number;
 }
@@ -71,6 +81,11 @@ export interface Todo {
    * 딸린 것이 다 끝나면 저절로 완료되고, 하나라도 시작되면 진행 중이 된다.
    */
   parentId: string | null;
+  /**
+   * 앞의 일: 이 항목보다 먼저 끝나야 하는 항목들의 id (워크스페이스 항목끼리. 다른 워크스페이스의 것도 된다).
+   * 앞의 일이 끝나지(완료·취소) 않았으면 에이전트는 이 항목을 시작하거나 완료할 수 없다. 다 끝나면 두레가 그 워크스페이스에 알린다.
+   */
+  after: string[];
   title: string;
   detail: string;
   status: TodoStatus;
@@ -372,6 +387,8 @@ export interface Settings {
   workGraceMin: number;
   /** 하루에 채울 근무시간 (시간, 휴게 시간을 뺀 것). 채우면 "퇴근 가능!" 을 보인다. 0 이면 보이지 않는다 */
   workDayHours: number;
+  /** 확인 명령의 시간 제한 (초). 넘으면 멈추고 실패로 본다 */
+  verifyTimeoutSec: number;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -443,6 +460,8 @@ export interface PlanTodo {
   assignee: TodoAssignee;
   /** 워크스페이스 TODO 에만: 이 일이 딸릴 프로젝트 TODO 의 제목. 비어 있으면 어디에도 딸리지 않는다 */
   under?: string;
+  /** 워크스페이스 TODO 에만: 이 일보다 먼저 끝나야 하는 TODO 의 제목들 (이 계획안의 내 PC 에 만드는 워크스페이스의 TODO. 다른 워크스페이스의 것도 된다) */
+  after?: string[];
   /** 나눠 준 쪽의 기록에만: 이 일이 딸린 내 프로젝트 TODO 의 id (승인할 때 두레가 적는다. 상대에게 보내지 않는다) */
   goal?: string;
 }

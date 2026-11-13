@@ -7,6 +7,9 @@ import type { VerifyRunner } from '@core/verify';
 import type { Repo, Workspace } from '@shared/types';
 import { gitOut, makeRepo, tempDir } from '../helpers/repo';
 
+// git 을 많이 돌린다: 시험을 한꺼번에 돌릴 때 느려질 수 있다.
+vi.setConfig({ testTimeout: 90_000 });
+
 let core: Core;
 let projectId: string;
 let repo: Repo;

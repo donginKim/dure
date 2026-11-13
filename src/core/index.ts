@@ -91,6 +91,8 @@ export interface Core {
   removeProject(projectId: string): Promise<void>;
   /** 설정 화면이 고르게 보여줄 모델 목록. 받아 둔 것이 없으면 Claude Code 에게 물어 온다. refresh: 받아 둔 것이 있어도 다시 묻는다 */
   models(refresh?: boolean): Promise<ModelChoice[]>;
+  /** 처음 켤 때 안내: Claude Code 와 git 이 있는가, Claude Code 에 로그인했는가 (알 수 없으면 null) */
+  doctor(): Promise<{ claude: string | null; git: string | null; loggedIn: boolean | null }>;
   /** 채팅 화면이 받는 것: 대화, 쓰는 중인 글, 승인·질문 대기 */
   chatView(workspaceId: string): ChatView;
   slashCommands(workspaceId: string): SlashCommand[];
@@ -491,6 +493,15 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       const coordDir = join(o.dataDir, 'coordinators', projectId);
       if (coordDir.startsWith(join(o.dataDir, 'coordinators') + sep)) rmSync(coordDir, { recursive: true, force: true });
       projects.remove(projectId);
+    },
+    async doctor() {
+      let claude: string | null = null;
+      try { claude = service.claudeExecutable(); } catch { /* 없다 */ }
+      const gitVersion = await git.raw(['--version']).then((s) => s.trim(), () => null);
+      // 로그인: Claude Code 가 모델 목록을 알려 주면 로그인한 것이다 (받아 둔 목록이 있으면 그것으로 본다).
+      let loggedIn: boolean | null = null;
+      if (claude) loggedIn = engine.models().length > 0 ? true : await service.loadModels().then((m) => m.length > 0, () => null);
+      return { claude, git: gitVersion, loggedIn };
     },
     models: async (refresh) => (engine.models().length > 0 && !refresh ? engine.models() : service.loadModels()),
     chatView(workspaceId) {

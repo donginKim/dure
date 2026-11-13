@@ -222,6 +222,8 @@ export interface DureApi {
     commands(workspaceId: string): Promise<SlashCommand[]>;
   };
   /** 두레의 설정 (앱 전체에 하나) */
+  /** 처음 켤 때 안내: 이 PC 에 필요한 것이 있는가 */
+  doctor(): Promise<{ claude: string | null; git: string | null; loggedIn: boolean | null }>;
   settings: {
     get(): Promise<Settings>;
     /** 준 것만 바꾼다. 규칙에 맞지 않으면 이유를 던지고 아무것도 바꾸지 않는다 */
@@ -405,7 +407,7 @@ export const IPC_CHANNELS = [
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',
   'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent', 'figures.list', 'figures.remove', 'agreements.list', 'agreements.save', 'agreements.accept', 'agreements.remove', 'merge.plans', 'merge.prepare', 'merge.advance', 'merge.askToResolve',
-  'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
+  'app.doctor', 'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;
 export type IpcChannel = (typeof IPC_CHANNELS)[number];

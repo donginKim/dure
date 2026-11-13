@@ -1,17 +1,19 @@
+import { useState } from 'react';
 import type { Repo } from '@shared/types';
+import { Onboarding } from './Onboarding';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
 /** 아무것도 고르지 않았을 때 보이는 화면: 운영 중인 프로젝트 전체. */
-export function ProjectsHome({ tree, repos, onSelect }: { tree: TreeNode[]; repos: Repo[]; onSelect: (s: Selection) => void }) {
+export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNode[]; repos: Repo[]; onSelect: (s: Selection) => void; onCreate: (name: string) => Promise<void> }) {
+  const [guide, setGuide] = useState(false);
   return (
     <div className="page">
-      <h1>프로젝트</h1>
+      <div className="section-head"><h1>프로젝트</h1>{tree.length > 0 && !guide && <button className="btn ghost" onClick={() => setGuide(true)}>시작 안내</button>}</div>
+      <Onboarding tree={tree} repos={repos} onCreate={onCreate} onOpenProject={(id) => onSelect({ type: 'project', id })} force={guide} onClose={() => setGuide(false)} />
       <div className="sub">
         프로젝트는 함께 움직이는 저장소와 워크스페이스의 묶음입니다. 보통 프론트와 백엔드 한 세트가 한 프로젝트입니다.
       </div>
-      {tree.length === 0 && (
-        <div className="rows"><div className="rows-empty">아직 프로젝트가 없습니다. 왼쪽 위의 "+ 새 프로젝트"로 만드세요.</div></div>
-      )}
+
       <div className="cards-grid">
         {tree.map(({ project, workspaces }) => {
           const projectRepos = repos.filter((r) => r.projectId === project.id);

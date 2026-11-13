@@ -152,6 +152,7 @@ const api: DureApi = {
     dismissQuestion: (workspaceId, requestId) => call('chat.dismissQuestion', workspaceId, requestId),
     commands: (workspaceId) => call('chat.commands', workspaceId),
   },
+  doctor: () => call('app.doctor'),
   settings: {
     get: () => call('settings.get'),
     update: (patch) => call('settings.update', patch),

@@ -10,6 +10,7 @@ import { ReviewService, type ReviewRunner } from './review';
 import { MergeService } from './merge';
 import { AutoShipService } from './autoship';
 import { BudgetService } from './budget';
+import { ActivityService } from './activity';
 import { shellRunner, VerifyService, type VerifyRunner } from './verify';
 import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
@@ -104,6 +105,7 @@ export interface Core {
   figures: FigureService;
   autoShip: AutoShipService;
   budget: BudgetService;
+  activity: ActivityService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -401,6 +403,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 자동 반영: 확인 명령, 리뷰, 비밀 값을 거쳐 커밋하고, 설정이면 기준 브랜치까지 옮긴다.
   const autoShip = new AutoShipService({ projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
   autoShip.on('changed', () => attention.poke());
+  const activity = new ActivityService({ workspaces, messages, todos, git, chat, verify, review, autoShip, figures });
   budget.on('changed', () => attention.poke());
   const reviewTimers = new Map<string, NodeJS.Timeout>();
   commitDrafts.on('changed', (id: string) => {
@@ -417,7 +420,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

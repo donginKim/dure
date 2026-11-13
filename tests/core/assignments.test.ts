@@ -504,3 +504,28 @@ test('나눠 준 일의 진행: 공개를 끄거나 사람이 빠져도 완료�
   pm.core.todos.settleProject(pm.projectId);
   expect(pm.core.todos.get(goal.id)!.status).toBe('todo');
 });
+
+test('제안한 사람이 꺼져 있어도 결과는 남아 있다가, 다시 닿으면 간다. 한 번만 간다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const des = await node('디자인', '10.0.0.3');
+  await team(pm, dev, des);
+  pm.core.coordinator.ensure(pm.projectId);
+  const cDev = dev.core.coordinator.ensure(dev.projectId);
+  const p = await dev.core.coordinator.propose(dev.projectId, { summary: 's', workspaces: [W('결제 화면', { owner: '디자인', todos: ['폼'] })] });
+  await dev.core.coordinator.approve(p.id, { items: p.items, projectTodos: [] });
+  await until(() => pm.core.coordinator.pending(pm.projectId) !== null);
+  // 개발이 꺼진다
+  const addr = '10.0.0.2:47800';
+  const handle = net.get(addr)!;
+  net.delete(addr);
+  pm.core.coordinator.reject(pm.core.coordinator.pending(pm.projectId)!.id, '이번 범위가 아님');
+  await until(() => pm.core.assignments.pendingResults(pm.projectId) === 1);
+  await tick(200);
+  expect(dev.core.messages.undelivered(cDev.id).some((m) => m.body.includes('거절했다'))).toBe(false);
+  // 다시 켜져 닿으면 보낸다
+  net.set(addr, handle);
+  await (pm.core.peers as unknown as { pingAll(): Promise<void> }).pingAll();
+  await until(() => dev.core.messages.undelivered(cDev.id).some((m) => m.body.includes('거절했다')));
+  await until(() => pm.core.assignments.pendingResults(pm.projectId) === 0);
+  await pm.core.assignments.resendResults();
+  expect(dev.core.messages.undelivered(cDev.id).filter((m) => m.body.includes('거절했다')).length).toBe(1);
+});

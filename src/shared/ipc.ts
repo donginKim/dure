@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ProjectDashboard, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -38,6 +38,8 @@ export interface DureApi {
     setAutoShip(id: string, mode: AutoShipMode): Promise<Project>;
     /** 예산: 상태, 상한 정하기, 오늘만 더 쓰기 */
     budget(id: string): Promise<BudgetStatus>;
+    /** 여러 프로젝트 대시보드 (완료되지 않은 프로젝트마다 한눈 요약) */
+    dashboard(): Promise<ProjectDashboard[]>;
     setBudget(id: string, daily: number, total: number): Promise<BudgetStatus>;
     allowToday(id: string): Promise<BudgetStatus>;
     /** 자동 반영의 기록 (새것부터) */
@@ -356,6 +358,8 @@ export interface DureApi {
     declineInvite(inviteId: string): Promise<void>;
     leave(projectId: string): Promise<void>;
     removeMember(shareId: string, peerId: string): Promise<void>;
+    /** 리더를 다른 참여자에게 넘긴다 (내가 리더일 때). 나는 참여자로 남는다. */
+    handOver(projectId: string, peerId: string): Promise<Share>;
     sharing(workspaceId: string): Promise<WorkspaceSharing>;
     setSharing(workspaceId: string, audience: SharingAudience, peers: string[]): Promise<WorkspaceSharing>;
     /** 다른 사람이 나에게 공개한 워크스페이스 */
@@ -384,7 +388,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',
@@ -406,7 +410,7 @@ export const IPC_CHANNELS = [
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
   'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
-  'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
+  'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember', 'peers.handOver',
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',

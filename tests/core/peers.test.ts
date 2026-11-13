@@ -540,7 +540,9 @@ describe('믿지 않는 것', () => {
       return (b.core.peers['d'].db.prepare('SELECT address FROM share_members WHERE share_id = ? AND peer_id = ?').get(shareId, id) as { address: string }).address;
     };
     expect(await tryAddress('192.168.0.7:47800')).toBe('192.168.0.7:47800');
-    for (const bad of ['010.8.8.8:80', '172.016.0.1:80', '127.0.0.1:5432', '8.8.8.8:80', 'evil.example.com:80', '[::1]:80', '10.0.0.5:0', '10.0.0.5:99999']) expect(await tryAddress(bad)).toBe('');
+    // VPN(Tailscale 등) 대역은 받는다
+    expect(await tryAddress('100.101.2.3:47800')).toBe('100.101.2.3:47800');
+    for (const bad of ['010.8.8.8:80', '172.016.0.1:80', '127.0.0.1:5432', '8.8.8.8:80', '100.128.0.1:80', '100.63.0.1:80', 'evil.example.com:80', '[::1]:80', '10.0.0.5:0', '10.0.0.5:99999']) expect(await tryAddress(bad)).toBe('');
     // 목록에서 빠진 사람의 기록은 쌓이지 않는다
     expect((b.core.peers['d'].db.prepare('SELECT count(*) AS n FROM peers WHERE direct = 0').get() as { n: number }).n).toBe(1);
   });
@@ -714,4 +716,93 @@ describe('다시 켜도 남는 것', () => {
     await b3.core.peers.acceptInvite(b3.core.peers.shareInvites()[0]!.id, b3.projectId);
     await until(() => a.core.peers.share(a.projectId)!.members.length >= 2);
   });
+});
+
+describe('리더 넘기기', () => {
+  /** 가가 연 프로젝트에 나·다가 참여한다. 나와 다는 서로 직접 연결하지 않았다. */
+  async function team(): Promise<{ a: Node; b: Node; c: Node }> {
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2'); const c = await node('다', '10.0.0.3');
+    await on(a); await on(b); await on(c);
+    await pair(a, b); await pair(a, c);
+    await join2(a, b); await join2(a, c);
+    await until(() => b.core.peers.share(b.projectId)!.members.length === 3 && c.core.peers.share(c.projectId)!.members.length === 3);
+    return { a, b, c };
+  }
+  const ownerName = (n: Node): string | undefined => n.core.peers.share(n.projectId)!.members.find((m) => m.owner)?.name;
+
+  test('리더가 넘기면 모두가 새 리더를 알고, 넘겨 준 사람은 참여자로 남는다. 새 리더가 나눠 주는 참여자 목록을 직접 연결하지 않은 사람도 받는다', async () => {
+    const { a, b, c } = await team();
+    await expect(b.core.peers.handOver(b.projectId, c.core.peers.status().id)).rejects.toThrow('내가 리더인');
+    const s = await a.core.peers.handOver(a.projectId, b.core.peers.status().id);
+    expect(s.mine).toBe(false);
+    expect(b.core.peers.share(b.projectId)!.mine).toBe(true);
+    await until(() => ownerName(c) === '나');
+    expect(ownerName(a)).toBe('나');
+    expect(ownerName(b)).toBe('나');
+    expect(a.core.peers.share(a.projectId)!.members.length).toBe(3);
+    // 새 리더가 사람을 더 들이면, 새 리더와 직접 연결하지 않은 다도 그 목록을 받는다
+    const d = await node('라', '10.0.0.4'); await on(d);
+    await pair(b, d);
+    await join2(b, d);
+    await until(() => c.core.peers.share(c.projectId)!.members.some((m) => m.name === '라'));
+    expect(a.core.peers.share(a.projectId)!.members.map((m) => m.name).sort()).toEqual(['가', '나', '다', '라']);
+    // 다와 새 리더는 이 프로젝트의 열쇠로 서로 닿는다 (빼기도 된다)
+    await b.core.peers.removeMember(b.core.peers.share(b.projectId)!.id, c.core.peers.status().id);
+    await until(() => c.core.peers.share(c.projectId) === null);
+  });
+
+  test('꺼져 있던 참여자에게는 켜졌을 때 다시 알린다. 리더가 아닌 사람이 보낸 새 리더 알림은 받지 않는다', async () => {
+    const { a, b, c } = await team();
+    const cAddr = '10.0.0.3:47800';
+    const handle = net.get(cAddr)!;
+    net.delete(cAddr);
+    await a.core.peers.handOver(a.projectId, b.core.peers.status().id);
+    expect(ownerName(c)).toBe('가');
+    net.set(cAddr, handle);
+    await (a.core.peers as unknown as { pingAll(): Promise<void> }).pingAll();
+    await until(() => ownerName(c) === '나');
+    // 리더가 아닌 가가 (이제 참여자) 다시 리더를 바꾸라고 보내도 받지 않는다
+    const send = (a.core.peers as unknown as { sendShare(s: string, p: string, x: unknown): Promise<Record<string, unknown>> }).sendShare.bind(a.core.peers);
+    const shareId = a.core.peers.share(a.projectId)!.id;
+    await expect(send(shareId, c.core.peers.status().id, { type: 'share.leader', shareId, leader: a.core.peers.status().id })).rejects.toThrow('그 프로젝트를 연 사람이 아니다');
+    // 넘겨 준 가가 같은 넘기기를 다시 보내면 (응답이 사라졌을 때) 받아 주기만 하고 아무것도 바뀌지 않는다
+    expect(await send(shareId, b.core.peers.status().id, { type: 'share.lead', shareId })).toMatchObject({ ok: true });
+    expect(ownerName(c)).toBe('나');
+    expect(b.core.peers.share(b.projectId)!.mine).toBe(true);
+  });
+
+  test('두 번 넘기는 동안 꺼져 있던 사람도 지금의 리더를 알게 된다. 넘기기의 응답이 사라져 다시 넘겨도 된다', async () => {
+    const { a, b, c } = await team();
+    const d = await node('라', '10.0.0.4'); await on(d);
+    await pair(a, d); await join2(a, d);
+    await pair(b, d);
+    await until(() => c.core.peers.share(c.projectId)!.members.length === 4);
+    const cAddr = '10.0.0.3:47800';
+    const handle = net.get(cAddr)!;
+    net.delete(cAddr);
+    // 응답이 사라진 것처럼: 나는 이미 넘겨받았는데 가는 아직 모른다
+    const send = (a.core.peers as unknown as { sendShare(s: string, p: string, x: unknown): Promise<Record<string, unknown>> }).sendShare.bind(a.core.peers);
+    const shareId = a.core.peers.share(a.projectId)!.id;
+    await send(shareId, b.core.peers.status().id, { type: 'share.lead', shareId });
+    expect(b.core.peers.share(b.projectId)!.mine).toBe(true);
+    expect(a.core.peers.share(a.projectId)!.mine).toBe(true);
+    await a.core.peers.handOver(a.projectId, b.core.peers.status().id);
+    expect(a.core.peers.share(a.projectId)!.mine).toBe(false);
+    // 나가 다시 라에게 넘긴다. 다는 아직 꺼져 있다
+    await b.core.peers.handOver(b.projectId, d.core.peers.status().id);
+    await until(() => ownerName(a) === '라');
+    expect(ownerName(c)).toBe('가');
+    // 다가 켜지면 가가 지금의 리더(라)를 알린다
+    net.set(cAddr, handle);
+    await (a.core.peers as unknown as { pingAll(): Promise<void> }).pingAll();
+    await until(() => ownerName(c) === '라');
+  });
+});
+
+test('내 주소: 같은 네트워크 주소를 먼저, VPN(100.64.0.0/10) 주소는 VPN 으로 표시한다. 자기 자신과 자동 할당 주소는 뺀다', async () => {
+  const { myAddresses } = await import('@core/peers/peerService');
+  const nic = (address: string, internal = false, family = 'IPv4') => ({ address, internal, family, netmask: '', mac: '', cidr: null }) as never;
+  expect(myAddresses(47800, { lo0: [nic('127.0.0.1', true)], utun4: [nic('100.101.2.3')], en0: [nic('192.168.0.12'), nic('fe80::1', false, 'IPv6'), nic('169.254.3.3')], en1: [nic('100.200.1.1')] })).toEqual([
+    { address: '192.168.0.12:47800', kind: 'lan' }, { address: '100.200.1.1:47800', kind: 'lan' }, { address: '100.101.2.3:47800', kind: 'vpn' },
+  ]);
 });

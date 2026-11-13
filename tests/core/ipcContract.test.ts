@@ -2,7 +2,7 @@ import { IPC_CHANNELS, IPC_EVENTS } from '@shared/ipc';
 
 test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', () => {
   expect([...IPC_CHANNELS].sort()).toEqual([
-    'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.list', 'projects.remove', 'projects.reopen',
+    'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.list', 'projects.remove', 'projects.reopen',
     'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
     'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak', 'pr.info', 'pr.create', 'pr.open', 'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore', 'usage.summary', 'attention.list', 'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove', 'update.status', 'update.check', 'update.apply', 'update.dismiss', 'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide', 'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.schemas', 'db.columns', 'db.query', 'db.requests', 'db.decide',
     'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
@@ -15,7 +15,7 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
     'messages.resume', 'messages.delivery', 'workspaces.interrupt', 'artifacts.list', 'artifacts.get',
     'browser.register', 'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.board', 'assignments.dropBrief',
     'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
-    'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember',
+    'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember', 'peers.handOver',
     'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop', 'browser.requests', 'browser.decide', 'commit.state', 'commit.diff', 'commit.run', 'commit.push',
     'app.doctor', 'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
     'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',

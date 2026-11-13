@@ -61,3 +61,23 @@ test('막 넘으면 일하던 에이전트를 멈춘다. 리뷰 에이전트의 
   expect(sum.total.output).toBe(500);
   expect(sum.models.map((m) => m.model)).toContain('claude-x');
 });
+
+test('여러 프로젝트 대시보드: 진행 중인 프로젝트마다 TODO 진행, 에이전트, 오늘 토큰, 예산을 모은다', async () => {
+  const other = core.projects.create('두 번째');
+  const repo = await core.addRepo(other.id, makeRepo('two'));
+  const w = await core.service.create({ projectId: other.id, repoId: repo.id, name: '화면', baseBranch: 'main', agentKind: 'claude' });
+  core.todos.add({ projectId: other.id, workspaceId: w.id, title: '하나', status: 'done' }, 'user');
+  core.todos.add({ projectId: other.id, workspaceId: w.id, title: '둘', status: 'doing' }, 'user');
+  core.todos.add({ projectId: other.id, workspaceId: w.id, title: '셋', status: 'cancelled' }, 'user');
+  const d = core.dashboard().find((x) => x.projectId === other.id)!;
+  expect(d.todos).toEqual({ total: 2, done: 1, doing: 1 });
+  expect(d.agents).toMatchObject({ total: 1, waiting: 0 });
+  expect(d.budget).toMatchObject({ today: 0, state: 'ok' });
+  expect(d.share).toBeNull();
+  expect(d.lastShip).toBeNull();
+  // 오늘 쓴 토큰은 그 프로젝트에만, 완료된 프로젝트는 빠진다
+  spend(1234);
+  expect(core.dashboard().find((x) => x.projectId === projectId)!.budget.today).toBe(1234);
+  core.projects.setStatus(other.id, 'done');
+  expect(core.dashboard().map((x) => x.projectId)).toEqual([projectId]);
+});

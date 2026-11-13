@@ -447,6 +447,18 @@ const MIGRATIONS: string[] = [
   -- 합치기 도우미가 만들어 둔 결과와 그 확인 (저장소·기준 브랜치마다)
   CREATE TABLE merge_prepared (key TEXT PRIMARY KEY, commit_id TEXT NOT NULL, verified INTEGER, only TEXT NOT NULL DEFAULT '');
   `,
+  // 리더를 넘긴 뒤, 아직 알리지 못한 참여자 (켜지면 다시 알린다).
+  `
+  CREATE TABLE share_leader_notice (share_id TEXT NOT NULL, peer_id TEXT NOT NULL, leader TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (share_id, peer_id));
+  `,
+  // 계획안 제안의 결과 (리더 → 제안한 사람). 닿을 때까지 다시 보낸다.
+  `
+  CREATE TABLE plan_results_out (sid TEXT PRIMARY KEY, project_id TEXT NOT NULL, peer_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
+  `,
+  // 리더를 넘겨 준 사람 (넘겨받은 쪽에 적는다): 넘기기 응답이 사라져 다시 보내도 받아 준다.
+  `
+  ALTER TABLE shares ADD COLUMN prev_owner TEXT;
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

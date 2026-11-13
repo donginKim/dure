@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -172,6 +172,8 @@ export interface DureApi {
     /** git 이 낸 글을 돌려준다 */
     push(workspaceId: string): Promise<string>;
   };
+  /** 작업 기록: 워크스페이스가 받은 것과 한 것 (새것부터) */
+  activity: { list(workspaceId: string): Promise<ActivityItem[]> };
   /** 에이전트가 그린 그림 */
   figures: {
     list(workspaceId: string): Promise<Figure[]>;
@@ -406,7 +408,7 @@ export const IPC_CHANNELS = [
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',
-  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent', 'figures.list', 'figures.remove', 'agreements.list', 'agreements.save', 'agreements.accept', 'agreements.remove', 'merge.plans', 'merge.prepare', 'merge.advance', 'merge.askToResolve',
+  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent', 'activity.list', 'figures.list', 'figures.remove', 'agreements.list', 'agreements.save', 'agreements.accept', 'agreements.remove', 'merge.plans', 'merge.prepare', 'merge.advance', 'merge.askToResolve',
   'app.doctor', 'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;

@@ -975,3 +975,16 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .onb-form input { width: 240px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; }
 .onb-tips { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
 .onb-tips ul { margin: 4px 0 0; padding-left: 18px; line-height: 1.7; }
+
+/* 작업 기록 */
+.activity { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px; }
+.activity-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.activity-day { margin: 14px 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.activity-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 6px; background: none; border: 0; border-radius: 6px; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.activity-item:hover { background: var(--panel-2); }
+.activity-time { flex: none; width: 64px; white-space: nowrap; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.activity-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-item.bad .activity-title { color: var(--danger, #c25b5b); }
+.activity-item.good .tag { color: var(--ok); border-color: var(--ok); }
+.activity-detail { margin: 0 0 4px 78px; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.activity-detail.open { white-space: pre-wrap; }

@@ -1,3 +1,4 @@
+import { ActivityPane } from './ActivityPane';
 import { ModelPicker } from './ModelPicker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ERROR_PREFIX } from '@shared/ipc';
@@ -191,6 +192,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
           <button role="tab" aria-selected={mode === 'terminal'} className={mode === 'terminal' ? 'on' : ''} onClick={() => switchTo('terminal')} title={chatEngine ? '이 작업 폴더의 셸 터미널' : '에이전트가 도는 터미널을 그대로 봅니다'}>{chatEngine ? '셸' : '터미널'}</button>
           <button role="tab" aria-selected={mode === 'diff'} className={mode === 'diff' ? 'on' : ''} onClick={() => switchTo('diff')} title="마지막 커밋 뒤에 바뀐 파일과 그 내용을 봅니다">변경{commitInfo.changed > 0 && <span className="n">{commitInfo.changed}</span>}</button>
           <button role="tab" aria-selected={mode === 'browser'} className={mode === 'browser' ? 'on' : ''} onClick={() => switchTo('browser')} title="개발 서버 같은 웹 페이지를 앱 안에서 봅니다">브라우저</button>
+          <button role="tab" aria-selected={mode === 'log'} className={mode === 'log' ? 'on' : ''} onClick={() => switchTo('log')} title="이 워크스페이스가 받은 지시, 메시지, TODO, 커밋, 확인, 리뷰를 시간순으로 봅니다">기록</button>
         </div>
         {readOnly && <span className="tag">완료된 프로젝트 · 기록만 봅니다</span>}
         <ModelPicker workspace={workspace} readOnly={readOnly} onError={setError} onNote={setNote} />
@@ -239,6 +241,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
       {mode === 'diff' && <Checkpoints workspace={workspace} />}
       {mode === 'diff' && <div className="ws-terms"><DiffPane workspace={workspace} /></div>}
       {mode === 'browser' && <div className="ws-terms"><BrowserPane workspace={workspace} /></div>}
+      {mode === 'log' && <div className="ws-terms"><ActivityPane workspace={workspace} /></div>}
       {mode === 'terminal' && (
       <div className="ws-terms">
       <div className="tabs">

@@ -224,6 +224,12 @@ export interface Agreement { id: string; projectId: string; kind: AgreementKind;
 export type FigureKind = 'svg' | 'mermaid';
 export interface Figure { id: string; projectId: string; workspaceId: string; groupId: string; version: number; title: string; kind: FigureKind; source: string; note: string; createdAt: number }
 
+/** 작업 기록의 한 줄. ok: 결과가 있는 것(확인, 리뷰, 자동 반영)의 성공 여부 */
+export interface ActivityItem {
+  id: string; at: number; title: string; detail: string; ok?: boolean;
+  kind: 'instruction' | 'message-in' | 'message-out' | 'artifact' | 'todo' | 'commit' | 'verify' | 'review' | 'ship' | 'figure';
+}
+
 /** 리뷰 에이전트가 찾은 것 하나 */
 export interface ReviewFinding { severity: '높음' | '중간' | '낮음'; file: string; line: number | null; title: string; detail: string }
 /** 커밋 전의 리뷰. stale: 리뷰한 뒤에 작업 폴더가 바뀌었다 */

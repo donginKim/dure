@@ -125,7 +125,8 @@ export class AssignmentService extends EventEmitter {
     const mine: BoardWork[] = this.d.workspaces.list(projectId).map((w) => ({ name: w.name, role: w.summary, status: w.status, ...countDone(all.filter((t) => t.workspaceId === w.id)), state: 'active' as const }));
     const people = [
       ...(me ? [{ peerId: me.peerId, name: me.name, works: mine }] : []),
-      ...(share?.members.filter((m) => !m.me) ?? []).map((m) => ({
+      // 리더가 먼저, 나머지는 이름 순 (볼 때마다 순서가 바뀌지 않게).
+      ...(share?.members.filter((m) => !m.me) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)).map((m) => ({
         peerId: m.peerId, name: m.name,
         works: remote.filter((w) => w.peerId === m.peerId).map((w) => ({ name: w.name, role: w.role, status: w.status, ...countDone(w.todos), state: w.state })),
       })),

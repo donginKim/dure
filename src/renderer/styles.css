@@ -941,3 +941,9 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .ship-row { display: flex; align-items: baseline; gap: 8px; }
 .ship-row.bad { color: var(--danger, #c25b5b); }
 .ship-at { flex: none; width: 44px; }
+
+/* 조율 화면: 답을 기다리는 워크스페이스 */
+.waiting-asks { margin: 8px 16px 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--panel-2); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); }
+.waiting-asks .permit { margin: 8px 0 0; border: 0; padding: 0; background: none; }
+.waiting-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.waiting-pill { margin: 8px 16px 0; align-self: flex-start; }

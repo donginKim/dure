@@ -1,3 +1,4 @@
+import { WaitingAsks } from './WaitingAsks';
 import { FigurePanel } from './FigurePanel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { folderRepoId, folderRepoPath, isFolderRepoId, isNewRepoId } from '@shared/plan';
@@ -290,7 +291,9 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
 /**
  * 프로젝트의 "조율" 탭. 조율 에이전트와 대화한다: 기획서를 주면 분석해 계획안을 올리고, 승인하면 일을 나눠 시키고, 모아서 보고한다.
  */
-export function CoordinatorPane({ project, repos, everyone, conversation, readOnly }: {
+export function CoordinatorPane({ project, repos, everyone, conversation, readOnly, onOpenWorkspace }: {
+  /** 워크스페이스 화면으로 간다 (답을 기다리는 카드의 "대화 보기") */
+  onOpenWorkspace?: (workspaceId: string) => void;
   project: Project; repos: Repo[];
   /** 이 프로젝트의 워크스페이스 전부 (이름을 찾는 데 쓴다) */
   everyone: Workspace[];
@@ -356,6 +359,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
         {hasAgent && <button className="btn ghost" title="조율 에이전트를 끕니다. 대화는 남아 있어 다시 시작하면 이어집니다" onClick={() => { window.dure.workspaces.stopAgent(ws.id).catch((e: Error) => setError(e.message)); }}>끄기</button>}
       </div>
       {error && <div className="error" style={{ margin: '8px 16px 0' }}>{error}</div>}
+      {!readOnly && <WaitingAsks workspaces={everyone} onOpen={(id) => onOpenWorkspace?.(id)} />}
       {!readOnly && <DbRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
       {!readOnly && <SlackRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
       {!(proposal && reviewing) && <AssignPanel projectId={project.id} repos={repos} readOnly={readOnly} />}

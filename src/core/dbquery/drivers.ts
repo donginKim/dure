@@ -4,8 +4,11 @@ import mysql from 'mysql2';
 import oracledb, { type Connection as OracleConnection } from 'oracledb';
 import pg from 'pg';
 import type { DbCell, DbColumn, DbKind, DbResult, DbTable } from '@shared/types';
+import { mongoColumns, mongoRisks, mongoTables, runMongo } from './mongo';
 
+/** MongoDB 는 password 에 연결 문자열 전체가 들어 있다 (host, port, user 는 화면에 보이는 용도다). */
 export interface DbTarget { kind: DbKind; host: string; port: number; database: string; user: string; password: string; ssl: boolean }
+const mongoOf = (t: DbTarget): { uri: string; database: string } => ({ uri: t.password, database: t.database });
 export interface DbLimits {
   maxRows: number; timeoutMs: number;
   /** 서버에서 받는 바이트의 상한. 큰 칸 하나가 메모리를 채우지 못하게 한다. 없으면 64MB */
@@ -298,6 +301,7 @@ async function runOracle(t: DbTarget, sql: string, params: unknown[], lim: DbLim
 }
 
 export function runReadOnly(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): Promise<DbResult> {
+  if (t.kind === 'mongo') return runMongo(mongoOf(t), sql, lim);
   return t.kind === 'postgres' ? runPostgres(t, sql, params, lim) : t.kind === 'oracle' ? runOracle(t, sql, params, lim) : runMysql(t, sql, params, lim);
 }
 
@@ -309,6 +313,7 @@ const SCHEMA_LIMITS: DbLimits = { maxRows: 3000, timeoutMs: 15_000 };
 
 /** 표와 뷰의 목록. 시스템 스키마는 뺀다. */
 export async function listTables(t: DbTarget): Promise<DbTable[]> {
+  if (t.kind === 'mongo') return mongoTables(mongoOf(t));
   const sql = t.kind === 'postgres'
     ? "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name"
     : t.kind === 'oracle'
@@ -321,6 +326,7 @@ export async function listTables(t: DbTarget): Promise<DbTable[]> {
 
 /** 표 하나의 칸 목록. 이름은 값으로 넘긴다 (문장에 끼워 넣지 않는다). */
 export async function listColumns(t: DbTarget, schema: string, table: string): Promise<DbColumn[]> {
+  if (t.kind === 'mongo') return mongoColumns(mongoOf(t), table);
   const r = t.kind === 'postgres'
     ? await runReadOnly(t, `SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
         (SELECT string_agg(tc.constraint_type, ', ') FROM information_schema.key_column_usage k
@@ -347,6 +353,7 @@ export async function listColumns(t: DbTarget, schema: string, table: string): P
  * 알아내지 못하면 빈 목록이 아니라 "확인하지 못함" 을 돌려준다.
  */
 export async function riskyPrivileges(t: DbTarget): Promise<string[]> {
+  if (t.kind === 'mongo') return mongoRisks(mongoOf(t));
   try {
     if (t.kind === 'postgres') {
       const r = await runReadOnly(t, `SELECT

@@ -1,4 +1,5 @@
 import type { DbKind } from '@shared/types';
+import { parseMongoCommand } from './mongo';
 
 /**
  * 조회 전용 강제의 첫 겹: 실행하기 전에 글을 보고 거른다.
@@ -11,6 +12,8 @@ const ALLOWED: Record<DbKind, string[]> = {
   mysql: ['select', 'with', 'show', 'explain', 'describe', 'desc', 'table', 'values'],
   // Oracle 은 읽기 전용 트랜잭션이 DDL 과 PL/SQL 을 막지 못한다: 조회 문장만 받는다 (EXPLAIN PLAN 은 표에 쓴다).
   oracle: ['select', 'with'],
+  // MongoDB 는 SQL 이 아니다: JSON 명령을 따로 검사한다 (mongo.ts).
+  mongo: [],
 };
 
 /**
@@ -73,6 +76,8 @@ export function skeleton(sql: string, kind: DbKind): string | null {
 
 /** 조회 전용으로 받을 수 있는 문장인지 본다. 안 되면 이유를 던진다. 실행할 글(끝의 ; 를 뗀 것)을 돌려준다. */
 export function checkReadOnly(sql: string, kind: DbKind): string {
+  // MongoDB: JSON 명령 하나. 조회 넷(find, count, distinct, aggregate)만 받고, 쓰거나 서버에서 코드를 돌리는 연산자를 거른다.
+  if (kind === 'mongo') { parseMongoCommand(sql); return sql.trim(); }
   if (typeof sql !== 'string' || !sql.trim()) throw new Error('조회할 문장이 비어 있습니다.');
   if (sql.length > 20_000) throw new Error('문장이 너무 깁니다 (20000자까지).');
   if (sql.includes('\0')) throw new Error('문장에 쓸 수 없는 글자가 있습니다.');

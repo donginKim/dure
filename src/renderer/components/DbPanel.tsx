@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DbAccess, DbColumn, DbConnection, DbKind, DbResult, DbTable, Workspace } from '@shared/types';
-import { ACCESS_HELP, ACCESS_LABEL, cellText, DEFAULT_PORT, emptyForm, formOf, formProblem, KIND_LABEL, previewSql, toInput, type DbForm } from '../dbView';
+import { ACCESS_HELP, ACCESS_LABEL, cellText, DEFAULT_PORT, emptyForm, formOf, formProblem, KIND_LABEL, previewSql, QUERY_HINT, QUERY_PLACEHOLDER, toInput, type DbForm } from '../dbView';
 import { DbRequests } from './DbRequests';
 
 /** 연결을 등록하거나 고치는 창. */
@@ -27,9 +27,19 @@ function ConnectionDialog({ projectId, editing, onClose }: { projectId: string; 
           <div className="field"><label>연결 이름</label><input type="text" autoFocus value={f.name} placeholder="예: 로컬 개발 DB" onChange={(e) => set({ name: e.target.value })} /><div className="hint">에이전트는 이 이름으로 연결을 가리킵니다</div></div>
           <div className="field"><label>종류</label>
             <select value={f.kind} onChange={(e) => { const kind = e.target.value as DbKind; set({ kind, port: f.port === String(DEFAULT_PORT[f.kind]) ? String(DEFAULT_PORT[kind]) : f.port }); }}>
-              <option value="postgres">{KIND_LABEL.postgres}</option><option value="mysql">{KIND_LABEL.mysql}</option><option value="oracle">{KIND_LABEL.oracle}</option>
+              <option value="postgres">{KIND_LABEL.postgres}</option><option value="mysql">{KIND_LABEL.mysql}</option><option value="oracle">{KIND_LABEL.oracle}</option><option value="mongo">{KIND_LABEL.mongo}</option>
             </select>
           </div>
+          {f.kind === 'mongo' ? (
+            <>
+              <div className="field db-wide"><label>연결 문자열</label>
+                <input type="password" value={f.password} placeholder={editing?.hasPassword && editing.kind === 'mongo' ? '저장된 연결 문자열을 그대로 씁니다. 바꾸려면 새로 적으세요' : 'mongodb://사용자:비밀번호@호스트:27017/DB이름  또는  mongodb+srv://…'} onChange={(e) => set({ password: e.target.value })} />
+                <div className="hint">비밀번호가 들어 있어 통째로 암호화해 저장합니다. 화면에도 에이전트에게도 다시 보이지 않습니다. 읽기만 할 수 있는 계정을 쓰세요.</div>
+              </div>
+              <div className="field"><label>데이터베이스 (연결 문자열에 있으면 비워도 됩니다)</label><input type="text" value={f.database} onChange={(e) => set({ database: e.target.value })} /></div>
+            </>
+          ) : (
+            <>
           <div className="field"><label>호스트</label><input type="text" value={f.host} onChange={(e) => set({ host: e.target.value })} /></div>
           <div className="field"><label>포트</label><input type="text" value={f.port} onChange={(e) => set({ port: e.target.value })} /></div>
           <div className="field"><label>{f.kind === 'oracle' ? '서비스 이름' : '데이터베이스'}{f.kind === 'mysql' && ' (비워도 됩니다)'}</label><input type="text" value={f.database} onChange={(e) => set({ database: e.target.value })} /></div>
@@ -40,6 +50,8 @@ function ConnectionDialog({ projectId, editing, onClose }: { projectId: string; 
             {editing?.hasPassword && <label className="check"><input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} /> 저장된 비밀번호 지우기</label>}
           </div>
           <label className="check db-wide"><input type="checkbox" checked={f.ssl} onChange={(e) => set({ ssl: e.target.checked })} /> SSL 로 접속 <span className="muted">(서버 인증서는 확인하지 않습니다)</span></label>
+            </>
+          )}
           <div className="field db-wide"><label>에이전트가 이 연결을 쓰는 방식</label>
             <select value={f.agentAccess} onChange={(e) => set({ agentAccess: e.target.value as DbAccess })}>
               {(['ask', 'auto', 'off'] as DbAccess[]).map((a) => <option key={a} value={a}>{ACCESS_LABEL[a]}</option>)}
@@ -81,7 +93,8 @@ function Browser({ conn }: { conn: DbConnection }) {
     setPicked(t); setColumns(null); setColumnsError('');
     // 표를 빠르게 바꿔 누르면 늦게 온 앞 표의 칸이 덮지 않게 한다.
     const seq = ++pickSeq.current;
-    if (!sql.trim() || /^SELECT \* FROM .* LIMIT 100$/.test(sql.trim())) setSql(previewSql(conn.kind, t));
+    // 직접 고친 문장은 그대로 두고, 비었거나 앞에서 넣어 준 본보기일 때만 바꾼다.
+    if (!sql.trim() || /^SELECT \* FROM .* (LIMIT 100|WHERE ROWNUM <= 100)$/.test(sql.trim()) || /^\{"collection":"[^"]*","op":"find","filter":\{\},"limit":100\}$/.test(sql.trim())) setSql(previewSql(conn.kind, t));
     window.dure.db.columns(conn.id, t.schema, t.name).then((c) => { if (seq === pickSeq.current) setColumns(c); }).catch((e: Error) => { if (seq === pickSeq.current) setColumnsError(e.message); });
   };
   const run = (): void => {
@@ -125,8 +138,8 @@ function Browser({ conn }: { conn: DbConnection }) {
           </div>
         )}
         <div className="db-query">
-          <div className="db-sub">조회 <span className="plan-hint">조회 전용: SELECT, WITH, SHOW, EXPLAIN 으로 시작하는 문장 하나. 1000행, 30초까지</span></div>
-          <textarea value={sql} spellCheck={false} placeholder="SELECT ..." onChange={(e) => setSql(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); } }} />
+          <div className="db-sub">조회 <span className="plan-hint">{QUERY_HINT[conn.kind]}</span></div>
+          <textarea value={sql} spellCheck={false} placeholder={QUERY_PLACEHOLDER[conn.kind]} onChange={(e) => setSql(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); run(); } }} />
           <div className="db-query-actions">
             <button className="btn primary" disabled={running || !sql.trim()} onClick={run}>{running ? '조회하는 중…' : '조회 (⌘Enter)'}</button>
             {result && <span className="muted">{result.rows.length}행 · {result.ms}ms{result.truncated && ' · 1000행에서 잘렸습니다'}</span>}
@@ -187,7 +200,7 @@ export function DbPanel({ projectId, workspaces, readOnly }: { projectId: string
             <div key={c.id} className={`row db-conn${active?.id === c.id ? ' on' : ''}`} onClick={() => setActiveId(c.id)}>
               <div className="grow">
                 <div>{c.name} <span className="tag">{KIND_LABEL[c.kind]}</span> <span className={`tag${c.agentAccess === 'auto' ? ' warn' : ''}`} title={ACCESS_HELP[c.agentAccess]}>에이전트: {ACCESS_LABEL[c.agentAccess]}</span></div>
-                <div className="path">{c.user}@{c.host}:{c.port}{c.database && `/${c.database}`}{c.ssl && ' · SSL'}{!c.hasPassword && ' · 비밀번호 없음'}</div>
+                <div className="path">{c.user ? `${c.user}@` : ''}{c.host}{c.kind === 'mongo' && c.port === 27017 ? '' : `:${c.port}`}{c.database && `/${c.database}`}{c.ssl && ' · SSL'}{!c.hasPassword && c.kind !== 'mongo' && ' · 비밀번호 없음'}</div>
                 {tested[c.id] && <div className={`db-tested${tested[c.id]!.startsWith('접속 실패') ? ' bad' : ''}`}>{tested[c.id]}</div>}
                 {c.warnings && c.warnings.length > 0 && (
                   <div className="db-warn">읽기 전용 계정이 아닙니다: {c.warnings.join(' · ')}. 두레는 조회만 실행하지만, 이런 계정은 조회 문장으로도 할 수 있는 일이 있습니다. 에이전트의 조회는 "바로 조회" 로 두어도 매번 승인을 받습니다. 읽기 전용 계정으로 바꾸는 것을 권합니다.</div>

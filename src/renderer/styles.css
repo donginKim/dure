@@ -915,3 +915,23 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .agreement-title { background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; font: inherit; padding: 0; }
 .agreement-body { margin-top: 6px; font-size: 12.5px; }
 .agreement-text { width: 100%; min-height: 140px; margin: 8px 0; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 12.5px/1.5 var(--mono, ui-monospace, monospace); resize: vertical; box-sizing: border-box; }
+
+/* 그림 탭 */
+.figure-panel { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.figure-head { display: flex; align-items: center; gap: 8px; }
+.figure-head select { flex: 1; min-width: 0; }
+.figure-ver { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.figure-note { font-size: 12px; }
+.figure-frame { display: block; width: 100%; padding: 8px; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); cursor: zoom-in; }
+.figure-img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.figure-img.big { max-width: 92vw; max-height: 84vh; background: #fff; border-radius: 8px; padding: 12px; }
+.figure-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.figure-wait, .figure-error { font-size: 12px; }
+.figure-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.75); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: zoom-out; }
+.figure-overlay-title { color: #fff; font-size: 13px; }
+
+.coord-main { flex: 1; min-height: 0; display: flex; }
+.coord-main > :first-child { flex: 1; min-width: 0; }
+.coord-figures { flex: none; width: 380px; }
+.model-select { max-width: 170px; flex: 0 1 auto; }
+.ws-head .view-switch button, .ws-head .ws-head-name { white-space: nowrap; }

@@ -409,6 +409,22 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX agreements_by_project ON agreements (project_id, status);
   `,
+  `
+  -- 에이전트가 그린 그림 (SVG, Mermaid). 고치면 같은 group_id 의 새 판
+  CREATE TABLE figures (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    group_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX figures_by_workspace ON figures (workspace_id, created_at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

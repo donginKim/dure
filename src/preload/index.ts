@@ -117,6 +117,10 @@ const api: DureApi = {
     run: (workspaceId, input) => call('commit.run', workspaceId, input),
     push: (workspaceId) => call('commit.push', workspaceId),
   },
+  figures: {
+    list: (workspaceId) => call('figures.list', workspaceId),
+    remove: (id) => call('figures.remove', id),
+  },
   agreements: {
     list: (projectId, proposed) => call('agreements.list', projectId, proposed),
     save: (projectId, input) => call('agreements.save', projectId, input),

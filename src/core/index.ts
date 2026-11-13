@@ -26,6 +26,8 @@ import { PrService } from './pr';
 import { WorkTimeService, type NetworkProbe } from './worktime';
 import { noteTools } from './mcp/tools/notes';
 import { agreementTools } from './mcp/tools/agreements';
+import { figureTools } from './mcp/tools/figures';
+import { FigureService } from './figures';
 import { AgreementService } from './agreements';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
@@ -95,6 +97,7 @@ export interface Core {
   review: ReviewService;
   merges: MergeService;
   agreements: AgreementService;
+  figures: FigureService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -182,6 +185,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 끝난 일의 확인: 에이전트가 TODO 를 완료로 바꿀 때 저장소의 확인 명령을 돌린다.
   // 프로젝트의 약속: 에이전트는 읽고 제안만 한다. 사용자가 받아들이면 모든 에이전트에게 알린다.
   const agreements = new AgreementService(db);
+  // 에이전트가 그린 그림 (워크스페이스 옆 패널의 "그림" 탭)
+  const figures = new FigureService(db);
   const verify = new VerifyService({ db, repos, workspaces, git, env: o.baseEnv, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, runner: o.verifyRunner });
   const worktime = new WorkTimeService({ db, settings: () => settings.get(), probe: o.networkProbe ?? undefined });
   // 시험에서는 저절로 재지 않는다 (가짜 네트워크를 줄 때만).
@@ -208,6 +213,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     prs,
     verify,
     agreements,
+    figures,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -242,7 +248,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -386,7 +392,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

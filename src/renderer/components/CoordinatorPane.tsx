@@ -1,3 +1,4 @@
+import { FigurePanel } from './FigurePanel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { folderRepoId, folderRepoPath, isFolderRepoId, isNewRepoId } from '@shared/plan';
 import type { CoordinatorInfo, PlanTodo, Project, Proposal, ProposalItem, Repo, Workspace } from '@shared/types';
@@ -296,6 +297,17 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
   conversation: ConversationData; readOnly: boolean;
 }) {
   const [info, setInfo] = useState<CoordinatorInfo | null>(null);
+  // 조율 에이전트가 그린 그림: 새 그림이 오면 옆에 연다.
+  const [figureCount, setFigureCount] = useState(0);
+  const [showFigures, setShowFigures] = useState(false);
+  const coordId = info?.workspace.id;
+  useEffect(() => {
+    if (!coordId) return;
+    let last: number | null = null;
+    const load = (): void => { window.dure.figures.list(coordId).then((l) => { if (last !== null && l.length > last) setShowFigures(true); last = l.length; setFigureCount(l.length); }).catch(() => undefined); };
+    load();
+    return window.dure.onChanged((topic) => { if (topic === 'figures') load(); });
+  }, [coordId]);
   const [error, setError] = useState('');
   // 계획안이 오면 검토 화면을 연다. 사용자가 대화로 돌아가면 그 계획안에 대해서는 다시 저절로 열지 않는다.
   const [reviewing, setReviewing] = useState(false);
@@ -337,6 +349,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
         <span className="tag">{STATUS_LABEL[ws.status]}</span>
         <span className="coord-help">기획서를 주면 분석해 계획안을 올립니다. 승인하면 일을 나눠 시키고 모아서 보고합니다. 코드는 직접 고치지 않습니다.</span>
         <span className="spacer" />
+        {figureCount > 0 && <button className={`btn ghost${showFigures ? ' on' : ''}`} title="조율 에이전트가 그린 그림" onClick={() => setShowFigures((v) => !v)}>그림 {figureCount}</button>}
         {(ws.status === 'working' || ws.status === 'waiting_user') && (
           <button className="btn" title="하던 일을 멈춥니다. 꺼지지 않습니다" onClick={() => { window.dure.workspaces.interrupt(ws.id).catch((e: Error) => setError(e.message)); }}>멈춤</button>
         )}
@@ -347,6 +360,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
       {!readOnly && <SlackRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
       {!(proposal && reviewing) && <AssignPanel projectId={project.id} repos={repos} readOnly={readOnly} />}
       {!readOnly && !(proposal && reviewing) && <PeerInbox projectId={project.id} workspaces={everyone} only="person" />}
+      <div className="coord-main">
       {proposal && reviewing
         ? <PlanReview key={proposal.id} proposal={proposal} repos={repos} newRepoDir={info.newRepoDir} people={info.people} suggestTo={info.suggestTo} onBack={() => setReviewing(false)} />
         : (
@@ -365,6 +379,8 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
             ) : null}
           />
         )}
+      {showFigures && <aside className="todo-panel coord-figures"><div className="side-tabs"><span className="side-tab on">그림</span><span className="spacer" /><button className="btn ghost" onClick={() => setShowFigures(false)}>접기</button></div><FigurePanel workspaceId={ws.id} readOnly={readOnly} /></aside>}
+      </div>
     </div>
   );
 }

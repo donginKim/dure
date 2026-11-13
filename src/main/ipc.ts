@@ -247,6 +247,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'browser.decide': (requestId: string, allow: boolean) => core.browser.decide(String(requestId), allow === true),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
+    'figures.list': (workspaceId: string) => core.figures.list(String(workspaceId)),
+    'figures.remove': (id: string) => core.figures.remove(String(id)),
     'agreements.list': (projectId: string, proposed?: boolean) => core.agreements.list(String(projectId), { proposed: proposed === true }),
     'agreements.save': (projectId: string, input: { id?: string; kind: string; title: string; body: string }) => { assertOpen(String(projectId)); return core.agreements.save(String(projectId), input ?? {}); },
     'agreements.accept': (id: string) => { const a = core.agreements.get(String(id)); if (a) assertOpen(a.projectId); return core.agreements.accept(String(id)); },
@@ -378,6 +380,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.merges.on('changed', onReviewChanged);
   const onAgreementsChanged = (): void => changed('todos');
   core.agreements.on('changed', onAgreementsChanged);
+  const onFiguresChanged = (): void => changed('figures');
+  core.figures.on('changed', onFiguresChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -407,6 +411,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.review.off('changed', onReviewChanged);
     core.merges.off('changed', onReviewChanged);
     core.agreements.off('changed', onAgreementsChanged);
+    core.figures.off('changed', onFiguresChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

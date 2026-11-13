@@ -22,6 +22,7 @@
     "@xterm/xterm": "^6.0.0",
     "better-sqlite3": "^13.0.3",
     "bonjour-service": "^1.4.4",
+    "mermaid": "11.4.1",
     "mongodb": "^6.22.0",
     "mysql2": "^3.24.6",
     "node-pty": "^1.1.0",

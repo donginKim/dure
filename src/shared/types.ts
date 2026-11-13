@@ -203,6 +203,10 @@ export interface MergePlan {
 export type AgreementKind = 'api' | 'naming' | 'decision' | 'other';
 export interface Agreement { id: string; projectId: string; kind: AgreementKind; title: string; body: string; status: 'active' | 'proposed'; author: string; replaces: string | null; updatedAt: number }
 
+/** 에이전트가 그린 그림. 고치면 같은 groupId 의 새 판(version)으로 쌓인다 */
+export type FigureKind = 'svg' | 'mermaid';
+export interface Figure { id: string; projectId: string; workspaceId: string; groupId: string; version: number; title: string; kind: FigureKind; source: string; note: string; createdAt: number }
+
 /** 리뷰 에이전트가 찾은 것 하나 */
 export interface ReviewFinding { severity: '높음' | '중간' | '낮음'; file: string; line: number | null; title: string; detail: string }
 /** 커밋 전의 리뷰. stale: 리뷰한 뒤에 작업 폴더가 바뀌었다 */

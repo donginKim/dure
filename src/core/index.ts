@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard } from '@shared/types';
+import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
@@ -312,7 +312,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     db, projects, workspaces, messages, settings: () => settings.get(), secrets: o.secrets ?? noSecrets,
     transport: o.peerTransport ?? noTransport, discovery: o.peerDiscovery, isProjectClosed: (projectId) => service.isProjectClosed(projectId),
   });
-  const assignments = new AssignmentService({ db, peers, projects, repos, workspaces, todos, messages, service, coordinator: () => coordinator });
+  const assignments = new AssignmentService({
+    db, peers, projects, repos, workspaces, todos, messages, service, coordinator: () => coordinator,
+    reportOn: () => settings.get().shareWorkReport,
+    report: (id) => workReport(id),
+  });
   // 워크스페이스의 이름이 바뀌거나 지워지면 공개한 목록을 다시 보낸다. 설정이 바뀌면 듣기를 켜거나 끈다.
   service.on('changed', () => peers.publishSoon());
   settings.on('changed', () => { void peers.apply(); });
@@ -420,6 +424,34 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     t.unref?.();
     reviewTimers.set(id, t);
   });
+
+  /** 작업 보고: 기준 브랜치에서 갈라진 뒤의 커밋과 바꾼 파일 이름, 마지막 확인 명령과 리뷰. 코드는 담지 않는다. */
+  async function workReport(workspaceId: string): Promise<WorkReport | null> {
+    const ws = workspaces.get(workspaceId);
+    if (!ws || !existsSync(ws.worktreePath)) return null;
+    const commits: WorkReport['commits'] = [];
+    const files = new Set<string>();
+    try {
+      const log = await git.raw(['-C', ws.worktreePath, 'log', '--no-merges', '--max-count=20', '--format=%x1e%H%x1f%ct%x1f%s', '--name-only', `${ws.baseBranch}..HEAD`]);
+      for (const rec of log.split('\x1e').filter((x) => x.trim())) {
+        const [head, ...lines] = rec.split('\n');
+        const [hash, ct, subject] = (head ?? '').split('\x1f');
+        const names = lines.map((l) => l.trim()).filter(Boolean);
+        for (const n of names) files.add(n);
+        commits.push({ hash: (hash ?? '').slice(0, 12), subject: subject ?? '', at: Number(ct) * 1000, files: names.length });
+      }
+    } catch { /* 기준 브랜치가 없다 등 */ }
+    const v = verify.status(workspaceId);
+    const r = await review.status(workspaceId).catch(() => null);
+    return {
+      commits, files: [...files].slice(0, 40),
+      verify: v && v.at && (v.state === 'passed' || v.state === 'failed') ? { passed: v.state === 'passed', command: v.command, at: v.at } : null,
+      review: r && r.state === 'done' ? { high: r.findings.filter((f) => f.severity === '높음').length, total: r.findings.length, at: r.at } : null,
+      at: Date.now(),
+    };
+  }
+  // 커밋, 확인 명령, 리뷰가 바뀌면 작업 보고를 다시 보낸다.
+  for (const src of [verify, review, commit]) src.on('changed', () => assignments.poke());
 
   let disposed = false;
   return {

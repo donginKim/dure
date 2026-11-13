@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
 import { assignedWork, countDone } from '@shared/board';
 import { remoteLabel } from '@shared/remote';
-import type { AssignChoice, AssignItem, AssignmentIn, AssignmentOut, AssignProgress, Board, BoardGoal, BoardPerson, BoardWork, PlanTodo, TodoStatus, Workspace, Brief } from '@shared/types';
+import type { AssignChoice, AssignItem, AssignmentIn, AssignmentOut, AssignProgress, Board, BoardGoal, BoardPerson, BoardWork, PlanTodo, TodoStatus, Workspace, Brief, WorkReport } from '@shared/types';
 import type { CoordinatorService, SuggestedPlan } from './coordinator';
 import type { MessageService } from './messages';
 import { PeerOfflineError, type PeerService } from './peers/peerService';
@@ -87,6 +87,9 @@ export class AssignmentService extends EventEmitter {
   private readonly accepting = new Set<string>();
 
   constructor(private readonly d: {
+    /** 워크스페이스의 작업 보고를 만든다 (없으면 보내지 않는다). 보낼지는 reportOn 이 정한다 */
+    report?: (workspaceId: string) => Promise<WorkReport | null>;
+    reportOn?: () => boolean;
     db: Database.Database; peers: PeerService; projects: ProjectStore; repos: RepoStore; workspaces: WorkspaceStore;
     todos: TodoService; messages: MessageService; service: WorkspaceService; coordinator(): CoordinatorService;
   }) {
@@ -435,6 +438,7 @@ export class AssignmentService extends EventEmitter {
         workspaceId: String(w.workspaceId), name: oneLine(w.name, 40).replace(/[@"]/g, '') || '워크스페이스', status: oneLine(w.status, 20), summary: oneLine(w.summary, 80),
         todos: (Array.isArray(w.todos) ? w.todos : []).slice(0, 100).map((t) => (t && typeof t === 'object' ? t : {}) as Record<string, unknown>)
           .map((t) => ({ title: oneLine(t.title, 200), status: oneLine(t.status, 20), assignee: t.assignee === 'user' ? 'user' : 'agent' })).filter((t) => t.title),
+        ...(w.report && typeof w.report === 'object' ? { report: cleanReport(w.report as Record<string, unknown>) } : {}),
       }));
     this.d.db.prepare('UPDATE assignments_out SET progress = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(progress), Date.now(), r.id);
     this.d.todos.settleProject(r.project_id);
@@ -567,6 +571,9 @@ export class AssignmentService extends EventEmitter {
   }
 
   /** 나눠 받은 일의 진행을 나눠 준 사람에게 보낸다. 그 사람에게 공개된 워크스페이스의 것만 간다. */
+  /** 진행이나 작업 보고가 바뀌었을 수 있다 (커밋, 확인 명령, 리뷰). */
+  poke(): void { this.progressSoon(); }
+
   private progressSoon(): void {
     clearTimeout(this.progressTimer);
     this.progressTimer = setTimeout(() => { void this.progressNow(); }, 800);
@@ -583,7 +590,26 @@ export class AssignmentService extends EventEmitter {
         // 받는 사람이 공개를 끄면 진행도 더 보내지 않는다.
         .filter((w) => this.d.peers.visibleTo(w.id, r.from_peer))
         .map((w) => ({ workspaceId: w.id, name: w.name, status: w.status, summary: w.summary, todos: all.filter((t) => t.workspaceId === w.id).map((t) => ({ title: t.title, status: t.status, assignee: t.assignee })) }));
+      // 작업 보고: 받은 사람이 끄지 않았으면 붙인다 (코드는 담지 않는다).
+      if (this.d.report && this.d.reportOn?.() !== false) {
+        for (const w of workspaces) { const rep = await this.d.report(w.workspaceId).catch(() => null); if (rep) (w as AssignProgress).report = rep; }
+      }
       await this.d.peers.sendMember(r.project_id, r.from_peer, { type: 'assign.progress', aid: r.id, workspaces }).catch(() => undefined);
     }
   }
+}
+
+const num = (v: unknown, max = Number.MAX_SAFE_INTEGER): number => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), max) : 0; };
+/** 받은 작업 보고를 다듬는다: 모양과 길이를 맞추고, 남이 쓴 글이므로 한 줄로 자른다. */
+export function cleanReport(r: Record<string, unknown>): WorkReport {
+  const v = r.verify && typeof r.verify === 'object' ? r.verify as Record<string, unknown> : null;
+  const rv = r.review && typeof r.review === 'object' ? r.review as Record<string, unknown> : null;
+  return {
+    commits: (Array.isArray(r.commits) ? r.commits : []).slice(0, 20).map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+      .map((c) => ({ hash: String(c.hash ?? '').replace(/[^0-9a-f]/gi, '').slice(0, 12), subject: oneLine(c.subject, 120), at: num(c.at), files: num(c.files, 100_000) })).filter((c) => c.subject),
+    files: (Array.isArray(r.files) ? r.files : []).slice(0, 40).map((f) => oneLine(f, 200)).filter(Boolean),
+    verify: v ? { passed: v.passed === true, command: oneLine(v.command, 120), at: num(v.at) } : null,
+    review: rv ? { high: num(rv.high, 1000), total: num(rv.total, 1000), at: num(rv.at) } : null,
+    at: num(r.at),
+  };
 }

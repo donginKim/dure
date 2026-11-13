@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { validRepoName } from '@shared/plan';
-import type { AssignChoice, AssignmentIn, AssignmentOut, Brief, Repo } from '@shared/types';
+import type { AssignChoice, AssignmentIn, AssignmentOut, Brief, Repo, WorkReport } from '@shared/types';
 import { assignChoiceProblem, assignProgressLine, ASSIGN_STATE_LABEL } from '../planView';
 import { STATUS_LABEL } from '../tree';
 import { Markdown } from './Markdown';
@@ -141,6 +141,7 @@ export function AssignPanel({ projectId, repos, readOnly }: { projectId: string;
                       <div key={w.workspaceId} className="assign-ws">
                         <div><b>{w.name}</b> <span className="tag">{(STATUS_LABEL as Record<string, string>)[w.status] ?? w.status}</span> {w.summary && <span className="muted">{w.summary}</span>}</div>
                         {w.todos.map((t, i) => <div key={i} className={`assign-todo ${t.status}`}><span className="assign-mark">{t.status === 'done' ? '✓' : t.status === 'doing' ? '▶' : '·'}</span>{t.title}</div>)}
+                        {w.report && <ReportView r={w.report} />}
                       </div>
                     ))}
                   </div>
@@ -150,6 +151,28 @@ export function AssignPanel({ projectId, repos, readOnly }: { projectId: string;
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const when = (at: number): string => { if (!at) return ''; const d = new Date(at); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
+/** 받은 사람이 보낸 작업 보고: 커밋 제목, 바꾼 파일 이름, 확인 명령과 리뷰의 결과 (코드는 오지 않는다). */
+function ReportView({ r }: { r: WorkReport }) {
+  const [files, setFiles] = useState(false);
+  if (r.commits.length === 0 && !r.verify && !r.review) return <div className="assign-report muted">아직 커밋이 없습니다.</div>;
+  return (
+    <div className="assign-report">
+      <div className="assign-report-head">
+        <span>커밋 {r.commits.length}개 · 파일 {r.files.length}개</span>
+        {r.verify && <span className={`tag ${r.verify.passed ? '' : 'warn'}`} title={`${r.verify.command} · ${when(r.verify.at)}`}>확인 명령 {r.verify.passed ? '통과' : '실패'}</span>}
+        {r.review && <span className={`tag ${r.review.high ? 'warn' : ''}`} title={when(r.review.at)}>리뷰 {r.review.total ? `${r.review.total}건 (높음 ${r.review.high})` : '문제 없음'}</span>}
+        <span className="muted">{when(r.at)} 기준</span>
+      </div>
+      {r.commits.slice(0, 8).map((c) => <div key={c.hash} className="assign-commit"><code>{c.hash.slice(0, 7)}</code> {c.subject} <span className="muted">· 파일 {c.files} · {when(c.at)}</span></div>)}
+      {r.commits.length > 8 && <div className="muted">외 {r.commits.length - 8}개</div>}
+      {r.files.length > 0 && <button className="btn ghost" onClick={() => setFiles((v) => !v)}>{files ? '파일 접기' : '바꾼 파일 보기'}</button>}
+      {files && <div className="assign-files">{r.files.map((f) => <div key={f}><code>{f}</code></div>)}</div>}
     </div>
   );
 }

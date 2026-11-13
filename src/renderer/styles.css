@@ -1003,3 +1003,10 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .pcard-badges .badge.danger { color: var(--danger); border-color: var(--danger); }
 .pcard-ship { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pcard-ship.bad { color: var(--danger); }
+
+/* 작업 보고 */
+.assign-report { margin: 6px 0 4px 2px; padding: 6px 8px; border-left: 2px solid var(--line); font-size: 12px; display: flex; flex-direction: column; gap: 3px; }
+.assign-report-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); }
+.assign-commit { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assign-files { max-height: 180px; overflow: auto; font-size: 11.5px; }
+.assign-report .btn.ghost { align-self: flex-start; padding: 0 4px; font-size: 11.5px; }

@@ -482,6 +482,8 @@ export interface Settings {
   verifyTimeoutSec: number;
   /** Mac 에 로그인하면 두레를 저절로 켠다 (창은 최소화해서). 근무시간 기록과 에이전트의 메시지 받기가 빠지지 않게 */
   openAtLogin: boolean;
+  /** 나눠 받은 일의 작업 보고 (커밋 제목, 바꾼 파일 이름, 확인 결과)를 나눠 준 사람에게 보낸다 */
+  shareWorkReport: boolean;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -778,7 +780,20 @@ export interface HeldMessage {
 /** 배정 하나에 든 워크스페이스 (받는 사람의 PC 에 만들어질 것) */
 export interface AssignItem { name: string; role: string; todos: PlanTodo[] }
 /** 나눠 받은 일의 진행. 나눠 준 사람에게 보인다 (읽기 전용) */
-export interface AssignProgress { workspaceId: string; name: string; status: string; summary: string; todos: { title: string; status: string; assignee: string }[] }
+/**
+ * 나눠 받은 일의 작업 보고 (받은 사람 → 나눠 준 사람). 코드는 담지 않는다: 커밋 제목, 바꾼 파일 이름, 확인 명령과 리뷰의 결과만.
+ * 받은 사람이 설정에서 끄면 보내지 않는다.
+ */
+export interface WorkReport {
+  /** 기준 브랜치에서 갈라진 뒤의 커밋 (새것부터) */
+  commits: { hash: string; subject: string; at: number; files: number }[];
+  /** 그 커밋들이 바꾼 파일 이름 */
+  files: string[];
+  verify: { passed: boolean; command: string; at: number } | null;
+  review: { high: number; total: number; at: number } | null;
+  at: number;
+}
+export interface AssignProgress { workspaceId: string; name: string; status: string; summary: string; todos: { title: string; status: string; assignee: string }[]; report?: WorkReport }
 /** 내가 나눠 준 일 */
 export interface AssignmentOut {
   id: string; projectId: string; peerId: string; peerName: string;

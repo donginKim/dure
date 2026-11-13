@@ -529,3 +529,38 @@ test('제안한 사람이 꺼져 있어도 결과는 남아 있다가, 다시 �
   await pm.core.assignments.resendResults();
   expect(dev.core.messages.undelivered(cDev.id).filter((m) => m.body.includes('거절했다')).length).toBe(1);
 });
+
+test('작업 보고: 받은 사람의 커밋 제목과 바꾼 파일 이름이 나눠 준 사람에게 간다 (코드는 가지 않는다). 끄면 보내지 않는다', async () => {
+  const pm = await node('기획', '10.0.0.1'); const dev = await node('개발', '10.0.0.2');
+  await team(pm, dev);
+  pm.core.coordinator.ensure(pm.projectId);
+  const p = await pm.core.coordinator.propose(pm.projectId, { summary: 's', workspaces: [W('로그인 API', { owner: '개발', todos: ['POST /login'] })] });
+  await pm.core.coordinator.approve(p.id, { items: p.items, projectTodos: [] });
+  const [ws] = await dev.core.assignments.accept(dev.core.assignments.incoming()[0]!.id, [{ repoId: dev.repo.id }]);
+  const { writeFileSync } = await import('node:fs');
+  const { execFileSync } = await import('node:child_process');
+  writeFileSync(join(ws!.worktreePath, 'login.ts'), 'export const SECRET_CODE_BODY = 1;\n');
+  execFileSync('git', ['-C', ws!.worktreePath, 'add', '-A']);
+  execFileSync('git', ['-C', ws!.worktreePath, '-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '-m', 'feat: 로그인 API']);
+  await dev.core.assignments.progressNow();
+  await until(() => (pm.core.assignments.outgoing(pm.projectId)[0]!.progress[0]?.report?.commits.length ?? 0) > 0);
+  const rep = pm.core.assignments.outgoing(pm.projectId)[0]!.progress[0]!.report!;
+  expect(rep.commits).toMatchObject([{ subject: 'feat: 로그인 API', files: 1 }]);
+  expect(rep.files).toEqual(['login.ts']);
+  expect(JSON.stringify(rep)).not.toContain('SECRET_CODE_BODY');
+  // 끄면 보고 없이 진행만 간다
+  dev.core.settings.update({ shareWorkReport: false });
+  await dev.core.assignments.progressNow();
+  await until(() => pm.core.assignments.outgoing(pm.projectId)[0]!.progress[0]?.report === undefined);
+});
+
+test('cleanReport: 남이 보낸 보고의 모양과 길이를 맞춘다', async () => {
+  const { cleanReport } = await import('@core/assignments');
+  const r = cleanReport({ commits: [{ hash: 'abc123;rm -rf', subject: 'x\n'.repeat(200), at: -5, files: '3' }, { subject: '' }], files: ['a.ts', 7, ''], verify: { passed: 'yes', command: 'pnpm test' }, review: { high: 2, total: 1e9 }, at: 1 });
+  expect(r.commits).toHaveLength(1);
+  expect(r.commits[0]).toMatchObject({ hash: 'abc123f', at: 0, files: 3 });
+  expect(r.commits[0]!.subject.length).toBeLessThanOrEqual(120);
+  expect(r.files).toEqual(['a.ts', '7']);
+  expect(r.verify).toMatchObject({ passed: false, command: 'pnpm test' });
+  expect(r.review).toMatchObject({ high: 2, total: 1000 });
+});

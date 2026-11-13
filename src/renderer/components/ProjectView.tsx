@@ -11,6 +11,7 @@ import { ConversationList, type ConversationData } from './ConversationPanel';
 import { ConfirmDialog, NewWorkspaceDialog } from './dialogs';
 import { Ticks, TodoList } from './TodoPanel';
 import { BoardSection } from './BoardSection';
+import { VerifyCommand } from './VerifyParts';
 import { remoteGroups } from '../boardView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -145,6 +146,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
                     {st?.ok && <>✓ git 저장소 확인됨 · 현재 브랜치 <code>{st.branch}</code></>}
                     {st && !st.ok && <>⚠ {st.reason}</>}
                   </div>
+                  <VerifyCommand repo={r} readOnly={done} onError={setError} />
                 </div>
                 <span className={`tag${n === 0 ? ' warn' : ''}`}>{n === 0 ? '워크스페이스 없음' : `워크스페이스 ${n}개`}</span>
                 {!done && <button className={`btn${n === 0 ? ' primary' : ''}`} disabled={st ? !st.ok : false} onClick={() => setCreatingFor(r.id)}>워크스페이스 만들기</button>}

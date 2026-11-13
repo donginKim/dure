@@ -138,6 +138,9 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return core.git.listBranches(repo.path);
     },
     'repos.status': (repoId: string) => core.repoStatus(repoId),
+    'repos.setVerify': (repoId: string, command: string) => { const r = core.repos.get(String(repoId)); if (r) assertOpen(r.projectId); core.verify.setCommand(String(repoId), String(command ?? '')); changed('repos'); },
+    'verify.statuses': (projectId: string) => core.verify.statuses(String(projectId)),
+    'verify.run': async (workspaceId: string) => { await core.verify.check(String(workspaceId), { force: true }); return core.verify.status(String(workspaceId)); },
     'repos.remove': (id: string) => {
       try {
         core.repos.remove(id);
@@ -347,6 +350,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.notes.on('changed', onNotesChanged);
   core.checkpoints.on('changed', onCheckpointsChanged);
   core.worktime.on('changed', onWorktimeChanged);
+  core.verify.on('changed', onTodosChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -372,6 +376,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.notes.off('changed', onNotesChanged);
     core.checkpoints.off('changed', onCheckpointsChanged);
     core.worktime.off('changed', onWorktimeChanged);
+    core.verify.off('changed', onTodosChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

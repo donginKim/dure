@@ -357,6 +357,18 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  -- 저장소의 확인 명령 (사용자가 정한다) 과, 워크스페이스마다의 마지막 확인 결과
+  ALTER TABLE repos ADD COLUMN verify_command TEXT NOT NULL DEFAULT '';
+  CREATE TABLE verifications (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    state TEXT NOT NULL,
+    tree TEXT NOT NULL DEFAULT '',
+    command TEXT NOT NULL,
+    output TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

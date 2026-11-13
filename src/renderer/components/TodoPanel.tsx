@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { Todo, Workspace } from '@shared/types';
 import { childrenOf, progress, TODO_STATUS_LABEL } from '../todoView';
+import { VerifyStatus } from './VerifyParts';
 
 /** 항목들 사이의 이음을 그리는 데 쓰는 것: 프로젝트 전체의 항목과 워크스페이스 */
 export interface TodoLinks { all: Todo[]; workspaces: Workspace[] }
@@ -211,6 +212,7 @@ export function TodoBody({ workspace, items, pending, readOnly, links }: { works
   return (
     <>
       <Ticks items={items} />
+      <VerifyStatus workspace={workspace} readOnly={readOnly} />
       {undelivered > 0 && pending && (
         <div className="todo-pending">
           <div className="grow">

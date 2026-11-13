@@ -59,6 +59,11 @@ const api: DureApi = {
     branches: (repoId) => call('repos.branches', repoId),
     status: (repoId) => call('repos.status', repoId),
     remove: (id) => call('repos.remove', id),
+    setVerify: (repoId, command) => call('repos.setVerify', repoId, command),
+  },
+  verify: {
+    statuses: (projectId) => call('verify.statuses', projectId),
+    run: (workspaceId) => call('verify.run', workspaceId),
   },
   workspaces: {
     list: (projectId) => call('workspaces.list', projectId),

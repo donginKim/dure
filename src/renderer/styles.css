@@ -853,3 +853,12 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .share-rule { display: flex; align-items: flex-start; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
 .share-rule .muted { font-size: 12px; line-height: 1.5; margin-top: 2px; }
 .share-rule select { flex: none; }
+
+/* 끝난 일의 확인 */
+.verify-cmd { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+.verify-cmd input { flex: 1; min-width: 0; max-width: 520px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font: 12px/1.5 var(--mono, ui-monospace, monospace); outline: none; }
+.verify-cmd input:focus { border-color: var(--accent); }
+.verify { margin: 6px 10px 2px; font-size: 12px; }
+.verify-line { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.verify.failed .verify-line { color: var(--danger, #c25b5b); }
+.verify-out { margin: 6px 0 0; max-height: 220px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 11.5px/1.5 var(--mono, ui-monospace, monospace); white-space: pre-wrap; color: var(--text); }

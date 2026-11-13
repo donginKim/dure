@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -81,6 +81,15 @@ export interface DureApi {
     /** 등록된 저장소가 지금도 유효한지와 현재 브랜치 */
     status(repoId: string): Promise<RepoStatus>;
     remove(id: string): Promise<void>;
+    /** 저장소의 확인 명령을 정한다 (빈 글이면 없앤다). 에이전트가 TODO 를 완료로 바꿀 때 두레가 돌린다 */
+    setVerify(repoId: string, command: string): Promise<void>;
+  };
+  /** 끝난 일의 확인 */
+  verify: {
+    /** 워크스페이스 id → 마지막 확인 (확인 명령이 있는 것만) */
+    statuses(projectId: string): Promise<Record<string, VerifyState>>;
+    /** 지금 확인 명령을 돌린다 */
+    run(workspaceId: string): Promise<VerifyState | null>;
   };
   workspaces: {
     list(projectId: string): Promise<Workspace[]>;
@@ -332,7 +341,7 @@ export const IPC_CHANNELS = [
   'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide',
   'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
-  'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove',
+  'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
   'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',

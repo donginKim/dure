@@ -110,7 +110,7 @@ export function SettingsView() {
   const row = (key: Key): { changed: boolean; error?: string; onReset: () => void } => ({
     changed: s[key] !== defaults[key], error: errors[key], onReset: () => save(key, defaults[key]),
   });
-  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize' | 'peerPort' | 'workGraceMin' | 'workDayHours') => (v: string): void => {
+  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize' | 'peerPort' | 'workGraceMin' | 'workDayHours' | 'verifyTimeoutSec') => (v: string): void => {
     const n = Number(v.trim());
     if (!v.trim() || Number.isNaN(n)) { setErrors((e) => ({ ...e, [key]: '숫자를 쓰세요.' })); return; }
     save(key, n);
@@ -156,6 +156,9 @@ export function SettingsView() {
           <Row label="새 저장소를 만드는 위치" help="조율 에이전트의 계획안에 든 새 저장소가 이 아래에 프로젝트 이름으로 만들어집니다. 비워 두면 기본 위치(~/dure/repos)입니다. 이미 만든 저장소는 옮기지 않습니다." {...row('repoRoot')}>
             <TextInput wide value={s.repoRoot} placeholder="~/dure/repos" onCommit={(v) => save('repoRoot', v)} />
             <button className="btn" onClick={pick('repoRoot')}>고르기</button>
+          </Row>
+          <Row label="확인 명령의 시간 제한" help="저장소에 정해 둔 확인 명령(시험, 빌드 등)이 이 시간 안에 끝나지 않으면 멈추고 실패로 봅니다. 확인 명령은 프로젝트의 현황 탭에서 저장소마다 적습니다." {...row('verifyTimeoutSec')}>
+            <TextInput numeric value={String(s.verifyTimeoutSec)} onCommit={number('verifyTimeoutSec')} /><span className="set-unit">초</span>
           </Row>
           <Row label="에이전트의 브라우저 사용" help="에이전트가 두레의 내장 브라우저로 자기가 만든 화면을 열어 확인할 수 있습니다. 로컬 주소(localhost, 127.0.0.1)와 아래에 적은 주소만 됩니다. '묻기' 로 두면 처음 여는 주소(호스트와 포트)마다 허용을 받습니다: 이 PC 에 떠 있는 다른 프로그램의 화면을 에이전트가 건드리지 않게 합니다. 에이전트가 본 페이지의 내용은 그 에이전트의 대화에 들어갑니다." {...row('agentBrowser')}>
             <select value={s.agentBrowser} onChange={(e) => save('agentBrowser', e.target.value as 'ask' | 'local' | 'off')}>

@@ -28,7 +28,15 @@ export interface Repo {
   projectId: string;
   name: string;
   path: string;
+  /**
+   * 확인 명령 (시험, 빌드, 린트 등. 예: "pnpm test"). 사용자가 정한다. 있으면 이 저장소의 워크스페이스에서
+   * 에이전트가 TODO 를 완료로 바꿀 때 두레가 작업 폴더에서 돌리고, 실패하면 완료를 받지 않는다. 없으면 빈 글
+   */
+  verifyCommand: string;
 }
+
+/** 워크스페이스의 마지막 확인 (확인 명령을 돌린 결과). none: 아직 돌린 적이 없다 */
+export interface VerifyState { state: 'none' | 'running' | 'passed' | 'failed'; command: string; /** 출력의 끝부분 */ output: string; at: number }
 
 /** 등록된 저장소가 지금도 쓸 수 있는 상태인지. 화면이 등록 결과를 보여주는 데 쓴다. */
 export type RepoStatus = { ok: true; branch: string } | { ok: false; reason: string };
@@ -372,6 +380,8 @@ export interface Settings {
   workGraceMin: number;
   /** 하루에 채울 근무시간 (시간, 휴게 시간을 뺀 것). 채우면 "퇴근 가능!" 을 보인다. 0 이면 보이지 않는다 */
   workDayHours: number;
+  /** 확인 명령의 시간 제한 (초). 넘으면 멈추고 실패로 본다 */
+  verifyTimeoutSec: number;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */

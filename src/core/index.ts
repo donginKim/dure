@@ -6,6 +6,7 @@ import type { Repo, RepoStatus } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
+import { VerifyService, type VerifyRunner } from './verify';
 import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
 import { coordinatorTools } from './mcp/tools/coordinator';
@@ -67,6 +68,7 @@ export interface Core {
   usage: UsageStore;
   checkpoints: CheckpointService;
   prs: PrService;
+  verify: VerifyService;
   worktime: WorkTimeService;
   browser: BrowserService;
   peers: PeerService;
@@ -120,6 +122,8 @@ export interface CoreOptions {
   /** 시험에서 가짜 슬랙으로 바꾼다 */
   slackFetch?: ConstructorParameters<typeof SlackService>[0]['fetch'];
   dbWaitMs?: number;
+  /** 확인 명령을 돌리는 쪽 (시험에서 바꾼다) */
+  verifyRunner?: VerifyRunner;
   /** 한 사람의 계획 제안을 받는 최소 간격 (ms). 시험에서 줄인다 */
   suggestEveryMs?: number;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
@@ -153,6 +157,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const usage = new UsageStore(db, workspaces);
   const checkpoints = new CheckpointService({ db, workspaces, git });
   const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
+  // 끝난 일의 확인: 에이전트가 TODO 를 완료로 바꿀 때 저장소의 확인 명령을 돌린다.
+  const verify = new VerifyService({ db, repos, workspaces, git, env: o.baseEnv, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, runner: o.verifyRunner });
   const worktime = new WorkTimeService({ db, settings: () => settings.get(), probe: o.networkProbe ?? undefined });
   // 시험에서는 저절로 재지 않는다 (가짜 네트워크를 줄 때만).
   if (o.networkProbe !== null) worktime.start();
@@ -176,6 +182,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     notesForAgents: () => settings.get().notesForAgents,
     notesWriteForAgents: () => settings.get().notesWriteForAgents,
     prs,
+    verify,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -311,7 +318,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

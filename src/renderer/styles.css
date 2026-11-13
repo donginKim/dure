@@ -869,3 +869,6 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .todo-after .done { text-decoration: line-through; opacity: 0.7; }
 .todo-after-x { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 3px; font: inherit; }
 .todo-after-x:hover { color: var(--text); }
+
+/* 잠깐 보이는 알림 (모델을 바꿨을 때 등) */
+.note-pop { background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: var(--radius); padding: 8px 12px; font-size: 12.5px; line-height: 1.5; }

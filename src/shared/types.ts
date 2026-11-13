@@ -61,6 +61,8 @@ export interface Workspace {
   agentKind: AgentKind;
   permissionMode: PermissionMode;
   engine: AgentEngine;
+  /** 이 워크스페이스의 모델 (Claude Code). 빈 글이면 설정의 모델을 따른다 */
+  model: string;
   status: WorkspaceStatus;
   createdAt: number;
 }

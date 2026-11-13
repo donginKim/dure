@@ -245,6 +245,15 @@ export class ChatEngine extends EventEmitter {
     this.mustGet(workspaceId).session.say(text, images);
   }
 
+  /** 도는 중인 에이전트의 모델을 바꾼다 (다음 응답부터). 대화는 그대로 이어진다. 에이전트가 없으면 false */
+  async setModel(workspaceId: string, model: string): Promise<boolean> {
+    const l = this.live.get(workspaceId);
+    if (!l?.session.alive) return false;
+    // 빈 글은 "기본" 으로 되돌린다.
+    await l.session.control({ subtype: 'set_model', ...(model ? { model } : {}) }, 15_000);
+    return true;
+  }
+
   async interrupt(workspaceId: string): Promise<void> {
     const l = this.live.get(workspaceId);
     if (!l?.session.alive) return;

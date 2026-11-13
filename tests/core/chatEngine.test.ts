@@ -24,6 +24,11 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
   const m = JSON.parse(line);
   if (m.type === 'control_request') {
     if (m.request.subtype === 'initialize') return out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: { commands: [{ name: 'compact', description: '대화를 줄인다', argumentHint: '' }, { name: 'model', description: '모델을 바꾼다', argumentHint: '<name>' }, { bad: 1 }], models: [{ value: 'default', displayName: 'Default (recommended)', description: '기본', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] }, { value: 'claude-opus-5-5', displayName: 'Opus 5.5', description: '복잡한 일', supportsEffort: false, supportedEffortLevels: ['low'] }, { nope: true }] } } });
+    if (m.request.subtype === 'set_model') {
+      fs.appendFileSync(path.join(dir, 'models.log'), JSON.stringify(m.request.model ?? null) + '\\n');
+      if (m.request.model === 'bad-model') return out({ type: 'control_response', response: { subtype: 'error', request_id: m.request_id, error: 'unknown model' } });
+      return out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: {} } });
+    }
     if (m.request.subtype === 'interrupt') {
       out({ type: 'control_response', response: { subtype: 'success', request_id: m.request_id, response: { still_queued: [] } } });
       if (busy) { clearTimeout(busy); busy = null; out({ type: 'result', subtype: 'error_during_execution' }); }
@@ -582,4 +587,31 @@ test('채팅 방식의 에이전트가 뜨면 그때 받은 모델 목록도 저
   await started('models-live');
   await until(() => core.engine.models().length === 2);
   expect(core.settings.savedModels().length).toBe(2);
+});
+
+test('모델 바꾸기: 도는 중이면 대화를 끊지 않고 바꾸고, 꺼져 있으면 다음에 시작할 때 그 모델로 뜬다', async () => {
+  const ws = await started('model');
+  const models = (): unknown[] => (existsSync(cfg(ws.id, 'models.log')) ? readFileSync(cfg(ws.id, 'models.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+  expect(await core.service.setModel(ws.id, 'claude-sonnet-5-5')).toEqual({ applied: 'now' });
+  expect(models()).toEqual(['claude-sonnet-5-5']);
+  expect(core.workspaces.get(ws.id)!.model).toBe('claude-sonnet-5-5');
+  // 같은 프로세스로 이어진다 (다시 띄우지 않았다)
+  expect(argvLog(ws.id).length).toBe(1);
+  // 에이전트가 받지 않으면 저장하지 않는다
+  await expect(core.service.setModel(ws.id, 'bad-model')).rejects.toThrow('에이전트가 모델을 바꾸지 못했습니다');
+  expect(core.workspaces.get(ws.id)!.model).toBe('claude-sonnet-5-5');
+  // 잘못된 이름
+  await expect(core.service.setModel(ws.id, 'a b; rm -rf')).rejects.toThrow('모델 이름이 올바르지 않습니다');
+  // 끄고 다시 켜면 그 모델로 뜬다
+  core.service.stopAgent(ws.id);
+  await until(() => !core.engine.has(ws.id));
+  expect(await core.service.setModel(ws.id, 'claude-haiku-5-5')).toEqual({ applied: 'next' });
+  expect(await core.service.startAgent(ws.id, SIZE)).toBeNull();
+  await until(() => status(ws.id) === 'idle');
+  const last = argvLog(ws.id).at(-1)!;
+  expect(last[last.indexOf('--model') + 1]).toBe('claude-haiku-5-5');
+  // 비우면 설정의 모델로 돌아간다
+  core.settings.update({ claudeModel: 'claude-opus-5-5' });
+  expect(await core.service.setModel(ws.id, '')).toEqual({ applied: 'now' });
+  expect(models().at(-1)).toBe('claude-opus-5-5');
 });

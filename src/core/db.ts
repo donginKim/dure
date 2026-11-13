@@ -378,6 +378,10 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX todo_deps_after ON todo_deps (after_id);
   `,
+  `
+  -- 워크스페이스마다의 모델 (비어 있으면 설정의 모델). 에이전트가 도는 중에도 바꿀 수 있다
+  ALTER TABLE workspaces ADD COLUMN model TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

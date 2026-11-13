@@ -4,7 +4,7 @@ import type { Project, Workspace } from '@shared/types';
 const project = (id: string, createdAt: number): Project => ({ id, name: id, createdAt, status: 'active', completedAt: null });
 const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
   id, projectId, role: 'worker', repoId: 'r', name: id, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
-  worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', status: 'stopped', createdAt,
+  worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', model: '', status: 'stopped', createdAt,
 });
 
 test('buildTree 는 워크스페이스를 프로젝트 아래에 createdAt 순으로 묶는다', () => {

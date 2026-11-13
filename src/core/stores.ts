@@ -7,7 +7,7 @@ interface RepoRow { id: string; project_id: string; name: string; path: string; 
 interface WorkspaceRow {
   id: string; project_id: string; repo_id: string; name: string; name_locked: number; summary: string;
   branch: string; base_branch: string; worktree_path: string; agent_kind: string; permission_mode: string;
-  status: string; token: string; created_at: number; engine: string; session_id: string | null; role: string;
+  status: string; token: string; created_at: number; engine: string; session_id: string | null; role: string; model?: string;
 }
 
 const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at, status: r.status === 'done' ? 'done' : 'active', completedAt: r.completed_at });
@@ -17,7 +17,7 @@ const toWorkspace = (r: WorkspaceRow): Workspace => ({
   id: r.id, projectId: r.project_id, role: r.role === 'coordinator' ? 'coordinator' : 'worker', repoId: r.repo_id, name: r.name, nameLocked: r.name_locked === 1,
   summary: r.summary, branch: r.branch, baseBranch: r.base_branch, worktreePath: r.worktree_path,
   agentKind: r.agent_kind as Workspace['agentKind'], permissionMode: r.permission_mode as Workspace['permissionMode'],
-  engine: r.engine as Workspace['engine'], status: r.status as Workspace['status'], createdAt: r.created_at,
+  engine: r.engine as Workspace['engine'], model: r.model ?? '', status: r.status as Workspace['status'], createdAt: r.created_at,
 });
 
 export class ProjectStore {
@@ -96,9 +96,9 @@ export class RepoStore {
   }
 }
 
-export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine' | 'role'> & { token: string; engine?: Workspace['engine']; role?: Workspace['role'] };
+export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine' | 'role' | 'model'> & { token: string; engine?: Workspace['engine']; role?: Workspace['role'] };
 
-const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine' } as const;
+const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine', model: 'model' } as const;
 export type WorkspacePatch = Partial<Pick<Workspace, keyof typeof PATCH_COLUMNS>>;
 
 export class WorkspaceStore {

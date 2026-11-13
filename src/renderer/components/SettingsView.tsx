@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { Help } from './Help';
 import type { ClaudeEffort, ModelChoice, Settings } from '@shared/types';
 import { BYPASS_WARNING } from './dialogs';
 import { SlackSettings } from './SlackSettings';
@@ -19,7 +20,7 @@ function Row({ label, help, changed, error, onReset, children }: {
     <div className="set-row">
       <div className="set-text">
         <div className="set-label">{label}{changed && <span className="set-changed" title="기본값과 다릅니다">바꿈</span>}</div>
-        {help && <div className="set-help">{help}</div>}
+        {help && <Help className="set-help">{help}</Help>}
         {error && <div className="set-error">{error}</div>}
       </div>
       <div className="set-control">

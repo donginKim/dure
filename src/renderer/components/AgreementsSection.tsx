@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Empty } from './Empty';
 import type { Agreement, AgreementKind } from '@shared/types';
 import { Markdown } from './Markdown';
 
@@ -29,7 +30,7 @@ export function AgreementsSection({ projectId, readOnly }: { projectId: string; 
     <div className="section">
       <div className="section-head">
         <h2>약속 <span className="count">{active.length}</span></h2>
-        {!readOnly && !editing && <button className="btn" onClick={() => setEditing({ kind: 'api', title: '', body: '' })}>약속 적기</button>}
+        {!readOnly && !editing && (active.length > 0 || proposed.length > 0) && <button className="btn" onClick={() => setEditing({ kind: 'api', title: '', body: '' })}>약속 적기</button>}
       </div>
       {error && <div className="error">{error}</div>}
       {proposed.map((a) => {
@@ -63,7 +64,7 @@ export function AgreementsSection({ projectId, readOnly }: { projectId: string; 
           </div>
         </div>
       )}
-      {active.length === 0 && proposed.length === 0 && !editing && <div className="rows-empty">아직 약속이 없습니다. API 형식이나 이름 규칙처럼 모든 워크스페이스가 지켜야 할 것을 적으면, 에이전트들이 읽고 따릅니다. 에이전트도 제안할 수 있습니다.</div>}
+      {active.length === 0 && proposed.length === 0 && !editing && <Empty hint="API 형식이나 이름 규칙처럼 모든 워크스페이스가 지켜야 할 것을 적으면, 에이전트들이 읽고 따릅니다. 에이전트도 제안할 수 있습니다." actions={!readOnly && <button className="btn" onClick={() => setEditing({ kind: 'api', title: '', body: '' })}>약속 적기</button>}>아직 약속이 없습니다.</Empty>}
       {active.map((a) => (
         <div key={a.id} className="agreement">
           <div className="agreement-head">

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Help } from './Help';
 import type { CleanupItem, CompletionChoice, CompletionPlan, Project } from '@shared/types';
 import { choiceSummary, defaultChoice, formatBytes, ignoredNote, seenCounts, worktreeRisk } from '../cleanupView';
 import { clock } from '../conversationView';
@@ -45,7 +46,7 @@ export function CleanupList({ project, readOnly }: { project: Project; readOnly:
             ))}
           </div>
         )}
-      <div className="help">지운 것이 아니라 저장소 밖에 옮겨 둔 것입니다. 커밋에 들어가지 않습니다. 프로젝트를 완료 처리할 때 목록을 보고 지웁니다.</div>
+      <Help>지운 것이 아니라 저장소 밖에 옮겨 둔 것입니다. 커밋에 들어가지 않습니다. 프로젝트를 완료 처리할 때 목록을 보고 지웁니다.</Help>
     </div>
   );
 }
@@ -112,7 +113,7 @@ export function CompleteDialog({ project, onClose, onDone }: { project: Project;
                 );
               })}
             </div>
-            <div className="help">작업 폴더만 지웁니다. 브랜치와 커밋은 저장소에 그대로 남습니다.</div>
+            <Help>작업 폴더만 지웁니다. 브랜치와 커밋은 저장소에 그대로 남습니다.</Help>
             <div className="complete-title">
               정리 대기
               {plan.items.length > 0 && (
@@ -131,7 +132,7 @@ export function CompleteDialog({ project, onClose, onDone }: { project: Project;
                 </label>
               ))}
             </div>
-            <div className="help">체크하지 않은 것은 정리 대기에 그대로 남습니다.</div>
+            <Help>체크하지 않은 것은 정리 대기에 그대로 남습니다.</Help>
           </>
         )}
         <div className="dialog-actions">

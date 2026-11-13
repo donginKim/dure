@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Help } from './Help';
 import type { Board, BoardWork } from '@shared/types';
 import { boardAge, boardTotals, workStateLabel } from '../boardView';
 import { TODO_STATUS_LABEL } from '../todoView';
@@ -79,7 +80,7 @@ export function BoardSection({ projectId, title = '전체 현황' }: { projectId
           <div className="plan-summary"><Markdown text={board.summary} /></div>
         </details>
       )}
-      {!board.mine && <div className="help">워크스페이스의 이름과 진행(끝낸 수/전체)만 보입니다. 일을 나누거나 바꾸는 것은 {board.leaderName} 이(가) 합니다.</div>}
+      {!board.mine && <Help>워크스페이스의 이름과 진행(끝낸 수/전체)만 보입니다. 일을 나누거나 바꾸는 것은 {board.leaderName} 이(가) 합니다.</Help>}
     </div>
   );
 }

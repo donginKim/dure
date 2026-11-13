@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Help } from './Help';
+import { Empty } from './Empty';
 import type { AssignmentOut, Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
 import { groupTodos } from '../todoView';
 import { countByRepo, STATUS_LABEL, type Selection } from '../tree';
@@ -132,10 +134,10 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       <div className="section">
         <div className="section-head">
           <h2>저장소</h2>
-          {!done && <button className="btn" onClick={() => void addRepo()}>저장소 추가</button>}
+          {!done && repos.length > 0 && <button className="btn" onClick={() => void addRepo()}>저장소 추가</button>}
         </div>
         <div className="rows">
-          {repos.length === 0 && <div className="rows-empty">등록된 저장소가 없습니다. 로컬 git 저장소 폴더를 추가하세요.</div>}
+          {repos.length === 0 && <Empty hint="이미 있는 코드라면 그 git 폴더를 고르세요. 새로 시작하면 조율 탭에서 기획서를 주면 됩니다 (조율 에이전트가 새 저장소를 제안합니다)." actions={!done && <button className="btn primary" onClick={() => void addRepo()}>저장소 추가</button>}>등록된 저장소가 없습니다.</Empty>}
           {repos.map((r) => {
             const st = statuses[r.id];
             const n = counts[r.id] ?? 0;
@@ -158,16 +160,16 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
             );
           })}
         </div>
-        <div className="help">저장소를 등록하는 것만으로는 에이전트가 일하지 않습니다. 저장소마다 워크스페이스를 만들면 그 저장소의 작업 폴더에서 에이전트가 일합니다. 등록한 저장소는 신뢰하는 것으로 보고, 에이전트가 처음 묻는 “이 폴더를 신뢰하는가” 에 두레가 대신 “신뢰함” 으로 답합니다. 내용을 모르는 저장소는 등록하기 전에 살펴보세요.</div>
+        <Help>저장소를 등록하는 것만으로는 에이전트가 일하지 않습니다. 저장소마다 워크스페이스를 만들면 그 저장소의 작업 폴더에서 에이전트가 일합니다. 등록한 저장소는 신뢰하는 것으로 보고, 에이전트가 처음 묻는 “이 폴더를 신뢰하는가” 에 두레가 대신 “신뢰함” 으로 답합니다. 내용을 모르는 저장소는 등록하기 전에 살펴보세요.</Help>
       </div>
 
       <div className="section">
         <div className="section-head">
           <h2>워크스페이스</h2>
-          {!done && <button className="btn" disabled={repos.length === 0} onClick={() => setCreatingFor('')}>워크스페이스 만들기</button>}
+          {!done && workspaces.length > 0 && <button className="btn" disabled={repos.length === 0} onClick={() => setCreatingFor('')}>워크스페이스 만들기</button>}
         </div>
         <div className="rows">
-          {workspaces.length === 0 && <div className="rows-empty">워크스페이스가 없습니다.</div>}
+          {workspaces.length === 0 && <Empty hint="워크스페이스마다 에이전트 하나가 그 저장소의 작업 폴더에서 일합니다." actions={!done && repos.length > 0 && <button className="btn primary" onClick={() => setCreatingFor('')}>워크스페이스 만들기</button>}>워크스페이스가 없습니다.</Empty>}
           {workspaces.map((w) => (
             <div className="row clickable" key={w.id} onClick={() => onSelect({ type: 'workspace', id: w.id, projectId: project.id })}>
               <span className={`dot ${w.status}`} />
@@ -237,7 +239,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
             );
           })}
         </div>
-        <div className="help">프로젝트 항목은 프로젝트에서 이뤄야 하는 큰 일입니다. 워크스페이스 항목을 그 아래에 달면 (항목에 마우스를 올려 고릅니다), 딸린 일이 다 끝났을 때 프로젝트 항목이 저절로 완료됩니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</div>
+        <Help>프로젝트 항목은 프로젝트에서 이뤄야 하는 큰 일입니다. 워크스페이스 항목을 그 아래에 달면 (항목에 마우스를 올려 고릅니다), 딸린 일이 다 끝났을 때 프로젝트 항목이 저절로 완료됩니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</Help>
       </div>
 
       <CleanupList project={project} readOnly={done} />

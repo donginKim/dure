@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Help } from './Help';
+import { Empty } from './Empty';
 import type { FoundPeer, Peer, PeerMode, PeerRequest, PeerStatus, Project, ShareInvite } from '@shared/types';
 import { MODE_HELP, MODE_LABEL, normalizeAddress, spokenCode, statusLine } from '../peersView';
 
@@ -107,7 +109,7 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
       <div className="section">
         <div className="section-head"><h2>같은 네트워크에서 보이는 두레 <span className="count">{found.length}</span></h2></div>
         <div className="rows">
-          {!on && <div className="rows-empty">"다른 사람과 연결" 을 켜야 찾을 수 있습니다.</div>}
+          {!on && <Empty actions={<button className="btn primary" onClick={onOpenSettings}>설정에서 켜기</button>}>"다른 사람과 연결" 을 켜야 찾을 수 있습니다.</Empty>}
           {on && found.length === 0 && <div className="rows-empty">보이는 두레가 없습니다. 상대도 "다른 사람과 연결" 을 켰는지 확인하세요. 회사 네트워크가 자동 찾기를 막으면 아래에 주소를 직접 적어 연결할 수 있습니다.</div>}
           {found.map((f) => (
             <div key={f.peerId} className="row">
@@ -123,10 +125,10 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
           </div>
         )}
         {on && (status.addresses?.length ?? 0) > 0 && (
-          <div className="help">
+          <Help>
             내 주소: {status.addresses!.map((a) => <span key={a.address}><code>{a.address}</code>{a.kind === 'vpn' ? ' (VPN)' : ''} </span>)}
             <br />다른 네트워크에 있는 사람(집과 회사 등)과는 두 PC 모두 Tailscale 같은 VPN 에 들어간 뒤, VPN 주소(100.x.x.x)를 서로 알려 주고 위 칸에 적어 연결하세요. 두레는 서버를 거치지 않고 두 PC 가 직접 주고받습니다. 회사 VPN 이나 방화벽 정책은 먼저 확인하세요.
-          </div>
+          </Help>
         )}
       </div>
 

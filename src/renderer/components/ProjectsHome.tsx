@@ -43,7 +43,7 @@ export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNo
               <div className="pcard-meta">저장소 {projectRepos.length}개 · 워크스페이스 {workspaces.length}개{running > 0 ? ` · 실행 중 ${running}개` : ''}</div>
               {d && <Summary d={d} />}
               <div className="pcard-list">
-                {projectRepos.length === 0 && <div className="muted">저장소를 추가하세요</div>}
+                {projectRepos.length === 0 && <button className="btn" onClick={(e) => { e.stopPropagation(); onSelect({ type: 'project', id: project.id }); }}>저장소 추가하러 가기</button>}
                 {workspaces.slice(0, 4).map((w) => (
                   <div
                     className="pcard-ws"

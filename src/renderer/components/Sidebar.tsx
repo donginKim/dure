@@ -1,5 +1,5 @@
 import { UpdateNotice } from './UpdateNotice';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Project, Repo, Todo, Workspace } from '@shared/types';
 import { deliveryNote } from '../conversationView';
 import { progress } from '../todoView';
@@ -21,6 +21,15 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   /** 확인할 것의 수 */
   attention?: number;
 }) {
+  // 팀 현황은 다른 사람이 리더인 함께하는 프로젝트가 있을 때만 보인다.
+  const [hasTeam, setHasTeam] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = (): void => { window.dure.projects.dashboard().then((d) => { if (alive) setHasTeam(d.some((x) => x.share && !x.share.mine)); }).catch(() => undefined); };
+    load();
+    const off = window.dure.onChanged((topic) => { if (topic === 'peers' || topic === 'projects') load(); });
+    return () => { alive = false; off(); };
+  }, []);
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
@@ -121,7 +130,12 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
       )}
       {error && <div className="error" style={{ margin: '0 10px 8px' }}>{error}</div>}
       <div className="tree">
-        {active.length === 0 && <div className="tree-empty" style={{ paddingLeft: 10 }}>{done.length ? '진행 중인 프로젝트가 없습니다.' : '프로젝트가 없습니다. 위의 "+ 새 프로젝트"로 만드세요.'}</div>}
+        {active.length === 0 && !adding && (
+          <div className="tree-empty" style={{ paddingLeft: 10 }}>
+            {done.length ? '진행 중인 프로젝트가 없습니다.' : '프로젝트가 없습니다.'}
+            <div><button className="btn primary" style={{ marginTop: 8 }} onClick={() => setAdding(true)}>+ 새 프로젝트</button></div>
+          </div>
+        )}
         {active.map(({ project, workspaces }) => renderProject(project, workspaces))}
         {done.length > 0 && (
           <>
@@ -133,21 +147,26 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
         )}
       </div>
       <UpdateNotice />
-      <button className={`side-settings side-notes${notesOpen ? ' selected' : ''}`} title="메모장을 열거나 닫습니다 (⌘⇧M). 프로젝트와 상관없이 어디서든 씁니다" onClick={onToggleNotes}>
-        <span className="gear" aria-hidden>✎</span>메모
-      </button>
-      <button className={`side-settings side-notes${selection?.type === 'team' ? ' selected' : ''}`} title="함께하는 프로젝트들의 현황을 한 화면에 모아 봅니다 (다른 사람이 리더인 것, 보기만 하는 것)" onClick={() => onSelect({ type: 'team' })}>
-        <span className="gear" aria-hidden>▦</span>팀 현황
-      </button>
-      <button className={`side-settings side-notes${selection?.type === 'worktime' ? ' selected' : ''}`} title="근무지의 와이파이에 붙어 있던 시간을 달력으로 봅니다" onClick={() => onSelect({ type: 'worktime' })}>
-        <span className="gear" aria-hidden>◷</span>근무시간
-      </button>
-      <button className={`side-settings side-people${selection?.type === 'people' ? ' selected' : ''}`} title="두레를 쓰는 다른 사람과 연결합니다" onClick={() => onSelect({ type: 'people' })}>
-        <span className="gear" aria-hidden>◎</span>사람{peopleAlert > 0 && <span className="pip" title="확인할 요청이나 초대가 있습니다" />}
-      </button>
-      <button className={`side-settings${selection?.type === 'settings' ? ' selected' : ''}`} onClick={() => onSelect({ type: 'settings' })}>
-        <span className="gear" aria-hidden>⚙</span>설정
-      </button>
+      {/* 도구: 한 줄 아이콘으로 (세로로 쌓으면 프로젝트 목록 자리를 먹는다) */}
+      <div className="side-tools">
+        <button className={`side-tool${notesOpen ? ' selected' : ''}`} title="메모장을 열거나 닫습니다 (⌘⇧M). 프로젝트와 상관없이 어디서든 씁니다" onClick={onToggleNotes}>
+          <span className="side-tool-icon" aria-hidden>✎</span><span>메모</span>
+        </button>
+        {hasTeam && (
+          <button className={`side-tool${selection?.type === 'team' ? ' selected' : ''}`} title="함께하는 프로젝트들의 현황을 한 화면에 모아 봅니다 (다른 사람이 리더인 것, 보기만 하는 것)" onClick={() => onSelect({ type: 'team' })}>
+            <span className="side-tool-icon" aria-hidden>▦</span><span>팀 현황</span>
+          </button>
+        )}
+        <button className={`side-tool${selection?.type === 'worktime' ? ' selected' : ''}`} title="근무지의 와이파이에 붙어 있던 시간을 달력으로 봅니다" onClick={() => onSelect({ type: 'worktime' })}>
+          <span className="side-tool-icon" aria-hidden>◷</span><span>근무시간</span>
+        </button>
+        <button className={`side-tool${selection?.type === 'people' ? ' selected' : ''}`} title="두레를 쓰는 다른 사람과 연결합니다" onClick={() => onSelect({ type: 'people' })}>
+          <span className="side-tool-icon" aria-hidden>◎{peopleAlert > 0 && <span className="pip" title="확인할 요청이나 초대가 있습니다" />}</span><span>사람</span>
+        </button>
+        <button className={`side-tool${selection?.type === 'settings' ? ' selected' : ''}`} title="설정" onClick={() => onSelect({ type: 'settings' })}>
+          <span className="side-tool-icon" aria-hidden>⚙</span><span>설정</span>
+        </button>
+      </div>
     </aside>
   );
 }

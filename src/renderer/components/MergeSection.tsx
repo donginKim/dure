@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Help } from './Help';
 import type { MergePlan, MergeStep } from '@shared/types';
 import { ConfirmDialog } from './dialogs';
 
@@ -80,7 +81,7 @@ export function MergeSection({ projectId, readOnly }: { projectId: string; readO
           </div>
         );
       })}
-      <div className="help">에이전트 사이의 순서(앞의 일)를 따라, 없으면 만든 순서로 합칩니다. 미리 보기와 "합쳐서 확인하기" 는 기준 브랜치와 작업 폴더를 건드리지 않습니다 (합친 결과는 브랜치가 아닌 두레의 ref 에 둡니다). 커밋하지 않은 변경은 들어가지 않습니다.</div>
+      <Help>에이전트 사이의 순서(앞의 일)를 따라, 없으면 만든 순서로 합칩니다. 미리 보기와 "합쳐서 확인하기" 는 기준 브랜치와 작업 폴더를 건드리지 않습니다 (합친 결과는 브랜치가 아닌 두레의 ref 에 둡니다). 커밋하지 않은 변경은 들어가지 않습니다.</Help>
       {confirm && (
         <ConfirmDialog
           title={`${confirm.base} 로 옮기기`}

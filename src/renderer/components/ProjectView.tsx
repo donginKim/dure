@@ -104,7 +104,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
           <button role="tab" aria-selected={tab === 'share'} className={tab === 'share' ? 'on' : ''} onClick={() => switchTab('share')} title="이 프로젝트를 다른 사람과 함께 열고, 워크스페이스마다 누구에게 보일지 정합니다">함께</button>
         </div>
       </div>
-      {tab === 'coord' && <CoordinatorPane project={project} repos={repos} everyone={everyone} conversation={conversation} readOnly={done} />}
+      {tab === 'coord' && <CoordinatorPane project={project} repos={repos} everyone={everyone} conversation={conversation} readOnly={done} onOpenWorkspace={(id) => { const w = everyone.find((x) => x.id === id); if (w) onSelect({ type: 'workspace', id: w.id, projectId: w.projectId }); }} />}
       {tab === 'share' && <SharePanel project={project} workspaces={workspaces} everyone={everyone} readOnly={done} onOpenPeople={() => onSelect({ type: 'people' })} />}
       {tab === 'db' && <DbPanel projectId={project.id} workspaces={everyone} readOnly={done} />}
       {tab === 'status' && (

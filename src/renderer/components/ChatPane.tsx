@@ -128,7 +128,7 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
 });
 
 /** 에이전트가 여러 선택지 중에서 고르라고 묻는 카드 (채팅 방식). */
-function QuestionCard({ question, onAnswer, onDismiss }: { question: ChatQuestion; onAnswer: (answers: Record<string, string>) => void; onDismiss: () => void }) {
+export function QuestionCard({ question, onAnswer, onDismiss }: { question: ChatQuestion; onAnswer: (answers: Record<string, string>) => void; onDismiss: () => void }) {
   // 질문 번호 → 고른 선택지들, 직접 쓴 답
   const [picked, setPicked] = useState<Record<number, string[]>>({});
   const [typed, setTyped] = useState<Record<number, string>>({});

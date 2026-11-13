@@ -42,6 +42,8 @@ export interface DureApi {
     /** 계획안을 승인한다. decision 은 검토 화면에서 고친 최종 계획. 두레가 워크스페이스와 TODO 를 그대로 만든다 */
     approve(proposalId: string, decision: PlanDecision): Promise<PlanResult>;
     reject(proposalId: string, reason?: string): Promise<void>;
+    /** 계획안의 일부만 고쳐 달라고 조율 에이전트에게 보낸다 (계획안은 남는다). decision: 검토 화면에서 고친 지금의 모양 */
+    revise(proposalId: string, feedback: string, target: string, decision: PlanDecision): Promise<void>;
     /** 기획서 파일을 고르는 창을 띄운다. 글 파일이면 내용까지 돌려준다. 취소하면 null */
     pickSpec(): Promise<SpecFile | null>;
   };
@@ -355,7 +357,7 @@ export interface DureApi {
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
-  'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',

@@ -63,6 +63,10 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
   // 일을 받지 않는 사람에게도 기획서 정리를 보낼지 (함께하는 사람이 있을 때만 묻는다)
   const [shareSummary, setShareSummary] = useState(true);
   const [reason, setReason] = useState('');
+  // 일부만 고쳐 달라기: 고칠 곳과 사용자의 말. 보낸 뒤에는 알림을 보인다 (새 계획안이 오면 이 화면이 바뀐다).
+  const [revising, setRevising] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const [sentRevision, setSentRevision] = useState('');
 
   // 저장소마다 고를 수 있는 브랜치를 받아 둔다.
   const repoIds = [...new Set([...repos.map((r) => r.id), ...plan.items.map((i) => i.repoId)])].filter((id) => !isNewRepoId(id) && !isFolderRepoId(id)).join(',');
@@ -89,6 +93,16 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
   // 워크스페이스는 새 저장소를 key 로 가리키므로, 이름을 고쳐도 그 저장소를 쓰는 워크스페이스는 그대로 따라온다.
   const renameRepo = (i: number, name: string): void => setPlan((d) => ({ ...d, newRepos: d.newRepos.map((r, k) => (k === i ? { ...r, name } : r)) }));
   const decision = fromDraft(plan);
+  const revise = async (): Promise<void> => {
+    setBusy(true);
+    setError('');
+    try {
+      await window.dure.coordinator.revise(proposal.id, feedback, revising ?? '', tidyPlan(decision));
+      setSentRevision(`조율 에이전트에게 ${revising ? `"${revising}" 부분을` : '일부를'} 고쳐 달라고 보냈습니다. 새 계획안이 오면 이 화면이 바뀝니다.`);
+      setRevising(null);
+      setFeedback('');
+    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  };
   const approve = async (): Promise<void> => {
     setBusy(true); setError('');
     try { await window.dure.coordinator.approve(proposal.id, { ...tidyPlan(decision), shareSummary: people.length > 0 && shareSummary }); } catch (e) { setError(describeError((e as Error).message)); } finally { setBusy(false); }
@@ -210,6 +224,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
                       )}
                     </>
                   )}
+                  <button className="btn ghost" title="이 워크스페이스만 다시 짜 달라고 조율 에이전트에게 말합니다 (나머지는 그대로)" onClick={() => { setRevising(it.name || '이 워크스페이스'); setRejecting(false); }}>이 부분 다시</button>
                   <button className="btn ghost" title={it.existing ? '이 워크스페이스에는 TODO 를 더하지 않습니다' : '이 워크스페이스와 그 TODO 는 만들지 않습니다'} onClick={() => setPlan((d) => ({ ...d, items: d.items.filter((_, k) => k !== i) }))}>빼기</button>
                 </div>
                 {!it.existing && <input type="text" className="plan-role" value={it.role} placeholder="맡을 일" onChange={(e) => patchItem(i, { role: e.target.value })} />}
@@ -236,7 +251,22 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
               함께하는 사람 모두에게 기획서 정리를 보냅니다 (일을 맡기지 않은 사람 포함: {people.map((p) => p.name).join(', ')}). 받는 사람이 읽고 자료로 받거나 버립니다
             </label>
           )}
-          {rejecting ? (
+          {sentRevision && !revising && <span className="plan-count">{sentRevision}</span>}
+          {revising !== null ? (
+            <>
+              <select className="plan-reason-target" value={revising} onChange={(e) => setRevising(e.target.value)} title="고칠 곳">
+                <option value="">계획안 전체</option>
+                <option value="기획서 정리">기획서 정리</option>
+                <option value="프로젝트 TODO">프로젝트 TODO</option>
+                {plan.items.map((it, i) => <option key={i} value={it.name}>{it.name || `${i + 1}번째 워크스페이스`}</option>)}
+                {revising && !['기획서 정리', '프로젝트 TODO', ...plan.items.map((it) => it.name)].includes(revising) && <option value={revising}>{revising}</option>}
+              </select>
+              <input type="text" autoFocus className="plan-reason" value={feedback} placeholder="어떻게 고칠지 (예: 화면 작업을 둘로 나눠 줘, API 를 먼저 하게 해 줘)"
+                onChange={(e) => setFeedback(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && feedback.trim()) void revise(); }} />
+              <button className="btn primary" disabled={busy || !feedback.trim()} onClick={() => void revise()}>보내기</button>
+              <button className="btn ghost" disabled={busy} onClick={() => setRevising(null)}>취소</button>
+            </>
+          ) : rejecting ? (
             <>
               <input type="text" autoFocus className="plan-reason" value={reason} placeholder="거절하는 이유 (조율 에이전트에게 전해집니다. 비워도 됩니다)" onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) void reject(); }} />
               <button className="btn" disabled={busy} onClick={() => void reject()}>거절하기</button>
@@ -245,6 +275,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
           ) : (
             <>
               <span className="plan-count">{problem ?? (suggestTo ? `${suggestTo} 이(가) 승인해야 반영됩니다. 지금은 아무것도 만들어지지 않습니다` : null) ?? `승인하면 ${counts.added ? `저장소 ${counts.added}개가 등록되고, ` : ''}${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다${counts.handed ? `. 워크스페이스 ${counts.handed}개는 다른 사람에게 나눠 줍니다` : ''}`}</span>
+              <button className="btn" disabled={busy} title="계획안은 그대로 두고, 고칠 곳만 조율 에이전트에게 말합니다. 검토 화면에서 고친 것도 함께 갑니다" onClick={() => setRevising('')}>고쳐 달라기</button>
               <button className="btn" disabled={busy} onClick={() => setRejecting(true)}>거절</button>
               <button className="btn primary" disabled={busy || problem !== null} onClick={() => void approve()}>{busy ? (suggestTo ? '보내는 중…' : '만드는 중…') : suggestTo ? `${suggestTo} 에게 제안 보내기` : approveLabel(decision)}</button>
             </>

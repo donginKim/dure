@@ -647,6 +647,40 @@ export class CoordinatorService extends EventEmitter {
     }
   }
 
+  /**
+   * 사용자가 계획안의 일부만 고쳐 달라고 한다. 계획안은 그대로 두고 (검토 화면에 남는다) 조율 에이전트에게 보낸다:
+   * 사용자가 검토 화면에서 고친 지금의 모양을 함께 보내, 그것을 바탕으로 말한 곳만 고쳐 다시 올리게 한다.
+   * target: 고칠 곳 (워크스페이스 이름, "프로젝트 TODO", "기획서 정리"). 비우면 계획안 전체에 대한 말이다.
+   */
+  requestRevision(proposalId: string, feedback: string, o: { target?: string; decision?: PlanDecision } = {}): void {
+    if (this.deciding.has(proposalId)) throw new Error('이미 처리하는 중입니다.');
+    const r = this.d.db.prepare('SELECT * FROM proposals WHERE id = ?').get(proposalId) as Row | undefined;
+    if (!r || r.status !== 'pending') throw new Error('승인을 기다리는 계획안이 아닙니다.');
+    const what = text(feedback, 2000);
+    if (!what) throw new Error('무엇을 어떻게 고칠지 적으세요.');
+    const target = oneLine(o.target, 100);
+    const p = toProposal(r);
+    // 사용자가 검토 화면에서 고친 것이 있으면 그것이 지금의 계획이다.
+    const items = Array.isArray(o.decision?.items) ? o.decision!.items : p.items;
+    const projectTodos = Array.isArray(o.decision?.projectTodos) ? o.decision!.projectTodos : p.projectTodos;
+    const current = {
+      project_todos: projectTodos.map((t) => ({ title: t.title, ...(t.assignee === 'user' ? { assignee: 'user' } : {}) })),
+      workspaces: items.map((it) => ({
+        name: it.name, ...(it.owner ? { owner: this.d.assign?.people(r.project_id).find((x) => x.peerId === it.owner)?.name ?? it.owner } : { repo: this.d.repos.get(it.repoId)?.name ?? it.repoId }),
+        role: it.role, todos: it.todos.map((t) => ({ title: t.title, ...(t.assignee === 'user' ? { assignee: 'user' } : {}), ...(t.under ? { under: t.under } : {}), ...(t.after?.length ? { after: t.after } : {}) })),
+      })),
+    };
+    this.tell(r.project_id, [
+      `사용자가 계획안을 보고 ${target ? `"${target}" 부분을` : '일부를'} 고쳐 달라고 했다. 계획안은 아직 승인도 거절도 되지 않았다 (검토 화면에 남아 있다).`,
+      `사용자의 말: ${what}`,
+      '아래는 사용자가 검토 화면에서 고친 것을 포함한 지금의 계획이다. 이것을 바탕으로 사용자가 말한 곳만 고치고, 나머지(이름, 저장소, TODO, 순서)는 그대로 두어 plan_propose 로 다시 올려라. 기획서 정리(summary)도 바뀐 것이 없으면 그대로 다시 넣어라. 무엇을 바꿨는지 note 에 짧게 적어라.',
+      '```json',
+      JSON.stringify(current, null, 1).slice(0, 20_000),
+      '```',
+    ].join('\n'));
+    this.emit('changed', r.project_id);
+  }
+
   /** 사용자가 계획안을 거절한다. 이유가 있으면 조율 에이전트에게 전한다. */
   reject(proposalId: string, reason?: string): void {
     if (this.deciding.has(proposalId)) throw new Error('이미 처리하는 중입니다.');

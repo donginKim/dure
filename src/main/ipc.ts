@@ -55,6 +55,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'coordinator.revise': (proposalId: string, feedback: string, target: string, decision: PlanDecision) => core.coordinator.requestRevision(String(proposalId), String(feedback ?? ''), { target: String(target ?? ''), decision: decision && typeof decision === 'object' ? decision : undefined }),
     'worktime.status': () => core.worktime.status(),
     'worktime.month': (year: number, month: number) => core.worktime.month(Number(year), Number(month)),
     'worktime.clockIn': () => core.worktime.clockIn(),

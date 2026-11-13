@@ -904,3 +904,5 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .merge-step .tag.merge-ok { color: var(--ok); }
 .merge-conflict { flex-basis: 100%; margin-left: 26px; color: var(--muted); font-size: 11.5px; }
 .merge-note { margin-top: 6px; font-size: 12px; }
+
+.plan-reason-target { flex: none; max-width: 200px; }

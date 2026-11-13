@@ -32,6 +32,7 @@ const api: DureApi = {
     approve: (proposalId, decision) => call('coordinator.approve', proposalId, decision),
     pickSpec: () => call('coordinator.pickSpec'),
     reject: (proposalId, reason) => call('coordinator.reject', proposalId, reason),
+    revise: (proposalId, feedback, target, decision) => call('coordinator.revise', proposalId, feedback, target, decision),
   },
   db: {
     list: (projectId) => call('db.list', projectId),

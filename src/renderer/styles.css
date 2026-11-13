@@ -872,3 +872,8 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 
 /* 잠깐 보이는 알림 (모델을 바꿨을 때 등) */
 .note-pop { background: var(--panel-2); border: 1px solid var(--accent); color: var(--text); border-radius: var(--radius); padding: 8px 12px; font-size: 12.5px; line-height: 1.5; }
+
+/* 사용 한도 띠 */
+.limit-band { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--panel-2); font-size: 12.5px; line-height: 1.5; }
+.limit-band.rejected { border-color: var(--danger, #c25b5b); }
+.limit-band.warning { border-color: var(--accent); color: var(--muted); }

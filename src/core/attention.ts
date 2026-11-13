@@ -18,6 +18,8 @@ export interface AttentionSources {
   briefs(projectId: string): { id: string; fromName: string }[];
   pairs(): { id: string; name: string; direction: string; confirmed: boolean }[];
   invites(): { id: string; name: string; fromName: string }[];
+  /** 사용 한도에 걸려 멈춘 워크스페이스 */
+  limited?(projectId: string): { workspaceId: string; info: { kind: string; resetsAt: number | null } }[];
 }
 
 /**
@@ -45,6 +47,11 @@ export class AttentionService extends EventEmitter {
       let plan: ReturnType<AttentionSources['plan']> = null;
       try { plan = this.s.plan(p.id); } catch { /* 계획안 없음 */ }
       if (plan) add('plan', plan.id, ws.find((w) => w.role === 'coordinator')?.id ?? null, '계획안이 승인을 기다립니다', `워크스페이스 ${plan.items.length}개, 프로젝트 TODO ${plan.projectTodos.length}개`);
+      for (const r of safe(() => this.s.limited?.(p.id) ?? [])) {
+        const at = r.info.resetsAt ? new Date(r.info.resetsAt * 1000) : null;
+        const when = at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} 에 풀립니다` : '언제 풀리는지 모릅니다';
+        add('limit', `${r.workspaceId}:${r.info.resetsAt ?? ''}`, r.workspaceId, `${name(r.workspaceId)}가 사용 한도에 걸려 멈췄습니다`, `${when} · 다른 모델로 바꿔 이어 갈 수 있습니다`);
+      }
       for (const w of ws) if (w.status === 'waiting_user') add('agent', w.id, w.id, `${name(w.id)}가 답을 기다립니다`, '권한을 묻거나 질문을 했습니다');
       for (const r of safe(() => this.s.db(p.id))) add('db', r.id, r.workspaceId, `${name(r.workspaceId)}가 DB 를 조회하려 합니다`, r.connectionName);
       for (const r of safe(() => this.s.slack(p.id))) add('slack', r.id, r.workspaceId, `${name(r.workspaceId)}가 슬랙을 읽으려 합니다`, r.what);

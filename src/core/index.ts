@@ -301,6 +301,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
     onActivity: (id) => chat.refreshSoon(id, [0, 300, 1200]),
     onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
+    onLimit: (id, info) => service.noteLimit(id, info),
   });
   service.attachEngine(engine);
   // 받아 둔 모델 목록은 저장해 두고, 다음에 켰을 때 곧바로 보인다.
@@ -321,6 +322,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     projects: () => projects.list(), isClosed: (id) => service.isProjectClosed(id), workspaces: (id) => workspaces.listAll(id),
     plan: (id) => coordinator.pending(id), db: (id) => dbs.pending(id), slack: (id) => slack.pending(id), browser: (id) => browser.pending(id),
     held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), briefs: (id) => assignments.briefs(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
+    limited: (id) => service.limited(id),
   });
   for (const src of [service, coordinator, dbs, slack, browser, peers, assignments]) src.on('changed', () => attention.poke());
   attention.poke();
@@ -420,6 +422,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         question: o.question,
         engine: ws?.engine ?? 'terminal',
         lastError: service.exitError(workspaceId) ?? null,
+        limit: service.limitOf(workspaceId),
         canSend: service.canSendInput(workspaceId),
       };
     },

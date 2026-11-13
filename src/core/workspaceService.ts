@@ -3,7 +3,7 @@ import { USER_NAME } from '@shared/messages';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice } from '@shared/types';
+import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice, type LimitInfo } from '@shared/types';
 import { baseInstructions, coordinatorInstructions } from './agents/instructions';
 import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
@@ -236,6 +236,37 @@ export class WorkspaceService extends EventEmitter {
     this.emit('changed', id);
   }
 
+  // ---- 사용 한도 ----
+  private readonly limits = new Map<string, LimitInfo>();
+
+  /** 에이전트가 알려 온 사용 한도. 풀리면 지운다. */
+  noteLimit(id: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null }): void {
+    const ws = this.d.workspaces.get(id);
+    if (!ws) return;
+    const before = this.limits.get(id);
+    if (info.status === 'allowed') { if (this.limits.delete(id)) this.emit('changed', id); return; }
+    // 걸린 뒤에 온 "가까워짐" 은 걸린 것을 덮지 않는다 (같은 한도면).
+    if (before?.status === 'rejected' && info.status === 'warning' && (!info.kind || info.kind === before.kind)) return;
+    const next: LimitInfo = {
+      status: info.status, kind: info.kind || before?.kind || '', resetsAt: info.resetsAt ?? before?.resetsAt ?? null, utilization: info.utilization,
+      model: ws.model || this.settings().claudeModel || '', at: Date.now(),
+    };
+    this.limits.set(id, next);
+    if (before?.status !== next.status || before?.kind !== next.kind) this.emit('changed', id);
+  }
+
+  limitOf(id: string): LimitInfo | null {
+    const l = this.limits.get(id);
+    // 풀리는 시각이 지났으면 지운다.
+    if (l?.resetsAt && l.resetsAt * 1000 < Date.now()) { this.limits.delete(id); return null; }
+    return l ?? null;
+  }
+
+  /** 한도에 걸려 멈춘 워크스페이스들 (확인할 것에 올린다). */
+  limited(projectId: string): { workspaceId: string; info: LimitInfo }[] {
+    return this.d.workspaces.list(projectId).flatMap((w) => { const l = this.limitOf(w.id); return l?.status === 'rejected' ? [{ workspaceId: w.id, info: l }] : []; });
+  }
+
   /**
    * 이 워크스페이스의 모델을 바꾼다 (빈 글이면 설정의 모델을 따른다). 한도에 걸렸을 때 다른 모델로 이어 가는 데 쓴다.
    * 채팅 방식으로 도는 중이면 대화를 끊지 않고 다음 응답부터 바꾼다. 터미널 방식이거나 꺼져 있으면 다음에 시작할 때 듣는다.
@@ -254,6 +285,8 @@ export class WorkspaceService extends EventEmitter {
       }
     }
     this.d.workspaces.update(id, { model: m });
+    // 다른 모델로 바꿨으니 걸렸던 한도 표시는 거둔다 (새 모델도 걸렸으면 다시 알려 온다).
+    this.limits.delete(id);
     this.emit('changed', id);
     return { applied: live ? 'now' : 'next' };
   }

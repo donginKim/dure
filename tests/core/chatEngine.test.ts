@@ -81,6 +81,14 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', (l
     return; // 덩어리가 끝나지 않은 채로 둔다
   }
   if (text === 'fail') { out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Failed to authenticate' }] } }); out({ type: 'result', subtype: 'success', is_error: true }); return; } // Stop hook 없이 끝난다
+  if (text === 'limit') {
+    out({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed_warning', rateLimitType: 'seven_day_opus', utilization: 0.92, resetsAt: Math.floor(Date.now() / 1000) + 3600 } });
+    out({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day_opus', resetsAt: Math.floor(Date.now() / 1000) + 3600 } });
+    out({ type: 'result', subtype: 'success', is_error: true, result: 'Claude AI usage limit reached' });
+    return;
+  }
+  if (text === 'limit-text') { out({ type: 'result', subtype: 'success', is_error: true, result: "You've hit your limit · resets 3pm" }); return; }
+  if (text === 'unlimit') { out({ type: 'rate_limit_event', rate_limit_info: { status: 'allowed' } }); hook('Stop'); out({ type: 'result', subtype: 'success' }); return; }
   if (text === 'finish') { out({ type: 'assistant', message: { content: [{ type: 'text', text: '안녕하세요' }] } }); hook('Stop'); out({ type: 'result', subtype: 'success' }); return; }
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'echo:' + text }] } });
   hook('Stop'); out({ type: 'result', subtype: 'success' });
@@ -614,4 +622,27 @@ test('모델 바꾸기: 도는 중이면 대화를 끊지 않고 바꾸고, 꺼�
   core.settings.update({ claudeModel: 'claude-opus-5-5' });
   expect(await core.service.setModel(ws.id, '')).toEqual({ applied: 'now' });
   expect(models().at(-1)).toBe('claude-opus-5-5');
+});
+
+test('사용 한도: 걸리면 채팅 보기와 확인할 것에 올리고, 다른 모델로 바꾸거나 풀리면 거둔다', async () => {
+  const ws = await started('limit');
+  core.service.noteLimit(ws.id, { status: 'allowed', kind: '', resetsAt: null, utilization: null });
+  expect(core.chatView(ws.id).limit).toBeNull();
+  await core.service.sendUserInput(ws.id, 'limit');
+  await until(() => core.chatView(ws.id).limit?.status === 'rejected');
+  expect(core.chatView(ws.id).limit).toMatchObject({ status: 'rejected', kind: 'seven_day_opus' });
+  expect(core.chatView(ws.id).limit!.resetsAt).toBeGreaterThan(Date.now() / 1000);
+  await until(() => core.attention.list().some((i) => i.kind === 'limit'));
+  expect(core.attention.list().find((i) => i.kind === 'limit')).toMatchObject({ workspaceId: ws.id, title: '"limit" 에이전트가 사용 한도에 걸려 멈췄습니다' });
+  // 다른 모델로 바꾸면 거둔다
+  await until(() => status(ws.id) === 'idle');
+  await core.service.setModel(ws.id, 'claude-sonnet-5-5');
+  expect(core.chatView(ws.id).limit).toBeNull();
+  expect(core.attention.list().some((i) => i.kind === 'limit')).toBe(false);
+  // 한도 이벤트 없이 글로만 알려 와도 잡는다. 풀렸다는 이벤트가 오면 거둔다
+  await core.service.sendUserInput(ws.id, 'limit-text');
+  await until(() => core.chatView(ws.id).limit?.status === 'rejected');
+  await until(() => status(ws.id) === 'idle');
+  await core.service.sendUserInput(ws.id, 'unlimit');
+  await until(() => core.chatView(ws.id).limit === null);
 });

@@ -313,7 +313,15 @@ export type ChatView = ChatSnapshot & {
   question: ChatQuestion | null;
   /** 에이전트가 오류로 끝났을 때 남긴 글 (채팅 방식) */
   lastError: string | null;
+  /** 사용 한도 (채팅 방식). 걸렸거나 가까우면 있다 */
+  limit: LimitInfo | null;
 };
+
+/**
+ * 에이전트의 사용 한도. rejected: 걸려서 멈췄다 (다른 모델로 바꾸면 이어 갈 수 있을 때가 있다). warning: 가까워졌다.
+ * kind 는 한도의 종류 (five_hour, seven_day, seven_day_opus, seven_day_sonnet …). 모델마다 따로인 한도면 다른 모델로 이어 갈 수 있다.
+ */
+export interface LimitInfo { status: 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; model: string; at: number }
 
 /** Claude Code 의 effort 단계. 빈 값은 "Claude Code 의 기본" */
 export type ClaudeEffort = '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -773,7 +781,7 @@ export interface NoteSummary { id: string; title: string; preview: string; updat
  * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
  * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
  */
-export type AttentionKind = 'agent' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
+export type AttentionKind = 'agent' | 'limit' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
 export interface AttentionItem {
   /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
   id: string; kind: AttentionKind;

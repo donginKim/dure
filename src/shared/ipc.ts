@@ -107,6 +107,8 @@ export interface DureApi {
   };
   workspaces: {
     list(projectId: string): Promise<Workspace[]>;
+    /** 워크스페이스마다 지금 하는 일 (마지막 도구 사용을 짧은 말로). 일하는 중일 때만 있다 */
+    doing(): Promise<Record<string, { text: string; at: number }>>;
     create(input: CreateWorkspaceInput): Promise<Workspace>;
     remove(id: string, options: { deleteWorktree: boolean }): Promise<void>;
     /** 작업 폴더에 커밋하지 않은 변경이 몇 건인지 */
@@ -404,7 +406,7 @@ export const IPC_CHANNELS = [
   'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.schemas', 'db.columns', 'db.query', 'db.requests', 'db.decide',
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
-  'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
+  'workspaces.list', 'workspaces.doing', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
   'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.dismissStuck', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',

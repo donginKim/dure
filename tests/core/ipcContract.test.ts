@@ -9,7 +9,7 @@ test('IPC_CHANNELS 는 DureApi 의 모든 메서드를 한 번씩 담는다', ()
     'activity.list', 'figures.list', 'figures.remove', 'agreements.accept', 'agreements.list', 'agreements.remove', 'agreements.save', 'merge.advance', 'merge.askToResolve', 'merge.plans', 'merge.prepare', 'review.run', 'review.sendToAgent', 'review.status', 'repos.add', 'repos.branches', 'repos.list', 'repos.pickFolder', 'repos.remove', 'repos.setVerify', 'repos.status', 'verify.run', 'verify.statuses',
     'terminals.buffer', 'terminals.kill', 'terminals.list', 'terminals.openShell', 'terminals.resize',
     'terminals.startAgent', 'terminals.write',
-    'workspaces.create', 'workspaces.list', 'workspaces.remove', 'workspaces.uncommitted',
+    'workspaces.create', 'workspaces.list', 'workspaces.doing', 'workspaces.remove', 'workspaces.uncommitted',
     'todos.add', 'todos.list', 'todos.move', 'todos.nudge', 'todos.pending', 'todos.remove', 'todos.setAfter', 'todos.setParent', 'todos.update',
     'messages.threads', 'messages.list', 'messages.send', 'messages.pauseThread', 'messages.flow', 'messages.pauseProject',
     'messages.resume', 'messages.delivery', 'workspaces.interrupt', 'artifacts.list', 'artifacts.get',

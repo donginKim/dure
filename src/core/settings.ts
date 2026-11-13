@@ -8,6 +8,7 @@ import type { ModelChoice, Settings } from '@shared/types';
 export const DEFAULT_SETTINGS: Settings = {
   defaultAgent: 'claude',
   defaultEngine: 'chat',
+  theme: 'dark',
   defaultPermissionMode: 'ask',
   worktreeRoot: '',
   repoRoot: '',
@@ -133,6 +134,7 @@ const model = (v: unknown): string => {
 const CHECKS: { [K in keyof Settings]: Check<K> } = {
   defaultAgent: oneOf('기본 에이전트', 'claude', 'codex'),
   defaultEngine: oneOf('기본 방식', 'chat', 'terminal'),
+  theme: oneOf('화면 모양', 'dark', 'light', 'system'),
   defaultPermissionMode: oneOf('기본 권한 모드', 'ask', 'bypass'),
   worktreeRoot: path('작업 폴더 위치'),
   repoRoot: path('새 저장소 위치'),

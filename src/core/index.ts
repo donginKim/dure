@@ -23,6 +23,7 @@ import { SlackService } from './slackService';
 import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
 import { AttentionService } from './attention';
+import { DoingService } from './doing';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
@@ -106,6 +107,8 @@ export interface Core {
   autoShip: AutoShipService;
   budget: BudgetService;
   activity: ActivityService;
+  /** 워크스페이스마다 지금 하는 일 (마지막 도구 사용) */
+  doing: DoingService;
   /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
   dashboard(): ProjectDashboard[];
   pty: PtyManager;
@@ -254,6 +257,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event !== 'Notification' || isPermissionPrompt(payload)) noteHook(workspace.id, event, out !== '');
       // 채팅 보기는 터미널 보기 위에 얹힌 화면이다. 여기서 문제가 나도 hook 응답은 나가야 한다.
       try { chat.noteHook(workspace.id, event, payload, event === 'Stop' && out !== ''); } catch { /* 채팅 보기만 영향받는다 */ }
+      try { doing.note(workspace.id, event, payload); } catch { /* 보기만 영향받는다 */ }
       // 채팅 방식: 승인·질문 대기는 엔진이 안다. hook 이 바꾼 상태를 그에 맞춘다.
       service.reconcileWaiting(workspace.id);
       // 막 띄운 채팅 방식 에이전트가 쉬는 중이 됐다. 그동안 기다리던 메시지를 전달한다.
@@ -363,6 +367,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   noteHook = (id, event, blocked) => service.noteHook(id, event, blocked);
 
   // 확인할 것: 흩어진 요청을 한 목록으로. 다른 서비스가 바뀔 때마다 다시 본다.
+  const doing = new DoingService();
+  // 에이전트가 멈추거나 쉬면 '지금 하는 일' 을 지운다.
+  service.on('changed', () => { for (const id of Object.keys(doing.all())) { const st = workspaces.get(id)?.status; if (st !== 'working' && st !== 'waiting_user') doing.clear(id); } });
   const attention = new AttentionService({
     projects: () => projects.list(), isClosed: (id) => service.isProjectClosed(id), workspaces: (id) => workspaces.listAll(id),
     plan: (id) => coordinator.pending(id), db: (id) => dbs.pending(id), slack: (id) => slack.pending(id), browser: (id) => browser.pending(id),
@@ -455,7 +462,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     dashboard() {
       const att = new Map<string, number>();
       for (const a of attention.list()) if (a.projectId) att.set(a.projectId, (att.get(a.projectId) ?? 0) + 1);
@@ -605,6 +612,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       updates.dispose();
       worktime.dispose();
       attention.dispose();
+      doing.dispose();
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();

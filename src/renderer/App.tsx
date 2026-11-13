@@ -7,6 +7,7 @@ import type { Artifact, Message, Project, ProjectFlow, Repo, Thread, Todo, Works
 import type { ConversationData } from './components/ConversationPanel';
 import type { PendingInfo } from './components/TodoPanel';
 import { ProjectsHome } from './components/ProjectsHome';
+import { CommandPalette } from './components/CommandPalette';
 import { TeamView } from './components/TeamView';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
@@ -117,11 +118,28 @@ export function App() {
   const coordinatorIds = useMemo(() => new Set(workspaces.filter((w) => w.role === 'coordinator').map((w) => w.id)), [workspaces]);
   useEffect(() => window.dure.attention.onOpen((item) => setSelection(attentionTarget(item, coordinatorIds))), [coordinatorIds]);
 
+  // 화면 모양: 설정을 따라 <html data-theme> 를 정한다. "시스템" 이면 macOS 의 모양이 바뀔 때 따라간다.
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    let want: 'dark' | 'light' | 'system' = 'dark';
+    const apply = (): void => { document.documentElement.dataset.theme = want === 'system' ? (mq.matches ? 'light' : 'dark') : want; };
+    const load = (): void => { window.dure.settings.get().then((st) => { want = st.theme ?? 'dark'; apply(); }).catch(() => undefined); };
+    load();
+    mq.addEventListener('change', apply);
+    const off = window.dure.onChanged((topic) => { if (topic === 'settings') load(); });
+    return () => { mq.removeEventListener('change', apply); off(); };
+  }, []);
+
   // 메모장: 어느 화면에서든 오른쪽에 열어 쓴다 (⌘⇧M).
   const [notesOpen, setNotesOpen] = useState(false);
+  const [palette, setPalette] = useState(false);
+  const [newProjectTick, setNewProjectTick] = useState(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && e.code === 'KeyM') { e.preventDefault(); setNotesOpen((v) => !v); }
+      // ⌘K: 명령 창. ⌘, : 설정
+      if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.code === 'KeyK') { e.preventDefault(); setPalette((v) => !v); }
+      if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key === ',') { e.preventDefault(); setSelection({ type: 'settings' }); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -138,7 +156,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} attention={attention} />
+      <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} newProjectTick={newProjectTick} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} attention={attention} />
       <BrowserHost workspaces={workspaces} loaded={loaded} />
       <main className="main">
         {error && <div className="error" style={{ margin: 12 }}>{error}</div>}
@@ -176,6 +194,10 @@ export function App() {
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
+      {palette && (
+        <CommandPalette tree={tree} onSelect={setSelection} onClose={() => setPalette(false)}
+          onNewProject={() => setNewProjectTick((n) => n + 1)} onToggleNotes={() => setNotesOpen((v) => !v)} />
+      )}
       {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
       {!notesOpen && current?.type !== 'worktime' && <WorkBadge onOpen={() => setSelection({ type: 'worktime' })} />}
     </div>

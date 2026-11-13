@@ -133,6 +133,15 @@ export function SettingsView() {
       <div className="sub">두레 전체에 적용됩니다. 바꾸면 바로 저장됩니다.{saved && <span className="set-saved">저장됨</span>}</div>
 
       <div className="section">
+        <div className="section-head"><h2>화면</h2></div>
+        <div className="set-box">
+          <Row label="화면 모양" help="밝게는 밝은 사무실이나 발표 화면에 좋습니다. 시스템은 macOS 의 모양(다크 모드)을 따릅니다. 터미널은 늘 어둡게 보입니다." {...row('theme')}>
+            <Choice value={s.theme} onChange={(v) => save('theme', v)} options={[{ value: 'dark', label: '어둡게' }, { value: 'light', label: '밝게' }, { value: 'system', label: '시스템' }]} />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
         <div className="section-head"><h2>새 워크스페이스</h2></div>
         <div className="set-box">
           <Row label="기본 에이전트" help="워크스페이스를 만들 때 처음 골라져 있는 에이전트입니다." {...row('defaultAgent')}>

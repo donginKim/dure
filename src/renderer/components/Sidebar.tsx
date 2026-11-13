@@ -6,7 +6,9 @@ import { progress } from '../todoView';
 import type { ConversationData } from './ConversationPanel';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
-export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting, peerWaiting, peopleAlert = 0, notesOpen = false, onToggleNotes, attention = 0 }: {
+export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreateProject, dbWaiting, browserWaiting, peerWaiting, peopleAlert = 0, notesOpen = false, onToggleNotes, attention = 0, newProjectTick = 0 }: {
+  /** 바뀌면 새 프로젝트 칸을 연다 (명령 창에서) */
+  newProjectTick?: number;
   /** 다른 사람의 메시지가 넘겨주기를 기다리는 워크스페이스 */
   peerWaiting?: Set<string>;
   /** 받은 연결 요청과 초대의 수 */
@@ -21,6 +23,16 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   /** 확인할 것의 수 */
   attention?: number;
 }) {
+  useEffect(() => { if (newProjectTick > 0) setAdding(true); }, [newProjectTick]);
+  // 일하는 에이전트가 지금 하는 일 (마지막 도구 사용). 한 줄로 보인다.
+  const [doing, setDoing] = useState<Record<string, { text: string; at: number }>>({});
+  useEffect(() => {
+    let alive = true;
+    const load = (): void => { window.dure.workspaces.doing().then((d) => { if (alive) setDoing(d); }).catch(() => undefined); };
+    load();
+    const off = window.dure.onChanged((topic) => { if (topic === 'workspaces') load(); });
+    return () => { alive = false; off(); };
+  }, []);
   // 팀 현황은 다른 사람이 리더인 함께하는 프로젝트가 있을 때만 보인다.
   const [hasTeam, setHasTeam] = useState(false);
   useEffect(() => {
@@ -88,7 +100,9 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
                   <span className={`dot ${w.status}`} />
                   <div style={{ minWidth: 0 }}>
                     <div className="ws-name">{w.name}{progressOf(w.id) && <span className="ws-progress" title="TODO 진행도">{progressOf(w.id)}</span>}</div>
-                    <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>
+                    {doing[w.id] && (w.status === 'working' || w.status === 'waiting_user')
+                      ? <div className="ws-doing" title={doing[w.id]!.text}>{doing[w.id]!.text}</div>
+                      : <div className="ws-meta">{repoName(w.repoId)} · {w.summary || STATUS_LABEL[w.status]}</div>}
                     {dbWaiting?.has(w.id) && <div className="ws-wait" title="에이전트가 DB 조회 승인을 기다립니다. 워크스페이스를 열어 허용하거나 거부하세요">DB 조회 승인 대기</div>}
                     {browserWaiting?.has(w.id) && <div className="ws-wait" title="에이전트가 브라우저로 주소를 열어도 되는지 묻고 있습니다. 워크스페이스를 열어 허용하거나 거부하세요">브라우저 주소 허용 대기</div>}
                     {peerWaiting?.has(w.id) && <div className="ws-wait" title="다른 사람의 에이전트가 보낸 메시지가 있습니다. 워크스페이스를 열어 넘겨주거나 버리세요">다른 사람의 메시지 확인 대기</div>}

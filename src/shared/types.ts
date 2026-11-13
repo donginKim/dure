@@ -26,7 +26,16 @@ export interface Project {
    * main: 그다음 기준 브랜치(main 등)까지 저절로 옮긴다. push 는 늘 사람이 한다
    */
   autoShip: AutoShipMode;
+  /** 하루에 쓸 토큰의 상한 (입력 + 출력, 캐시에서 읽은 것은 빼고). 0 이면 없다 */
+  budgetDaily: number;
+  /** 프로젝트 전체에 쓸 토큰의 상한. 0 이면 없다 */
+  budgetTotal: number;
 }
+/**
+ * 프로젝트의 예산. 토큰은 입력 + 출력 (캐시에서 읽은 것은 빼고 센다: 값이 훨씬 싸다).
+ * state: ok, warning (80% 넘음), over (넘어서 멈췄다). overrideUntil: 사용자가 "오늘만 더 쓰기" 를 누른 때까지는 멈추지 않는다
+ */
+export interface BudgetStatus { projectId: string; today: number; total: number; dailyLimit: number; totalLimit: number; state: 'ok' | 'warning' | 'over'; overrideUntil: number }
 export type AutoShipMode = 'off' | 'commit' | 'main';
 /** 자동 반영의 한 단계 기록 */
 export interface ShipEvent { id: string; projectId: string; workspaceId: string; workspaceName: string; at: number; stage: 'verify' | 'review' | 'secret' | 'commit' | 'merge' | 'advance' | 'done'; ok: boolean; message: string }
@@ -833,7 +842,7 @@ export interface NoteSummary { id: string; title: string; preview: string; updat
  * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
  * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
  */
-export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'agreement' | 'ship' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
+export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'agreement' | 'ship' | 'budget' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
 export interface AttentionItem {
   /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
   id: string; kind: AttentionKind;

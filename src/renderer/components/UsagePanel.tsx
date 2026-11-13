@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { UsageSummary } from '@shared/types';
 import { inputAll, share, tokens } from '../usageView';
+import { BudgetBox } from './BudgetBox';
 
 const RANGES: { label: string; days: number }[] = [{ label: '오늘', days: 1 }, { label: '7일', days: 7 }, { label: '전체', days: 0 }];
 
@@ -22,6 +23,7 @@ export function UsagePanel({ projectId }: { projectId: string }) {
         <h2>사용량 <span className="plan-hint">에이전트가 쓴 토큰 (두레가 본 대화부터 셉니다. 금액은 요금제에 따라 달라 표시하지 않습니다)</span></h2>
         <div className="seg">{RANGES.map((r) => <button key={r.days} className={days === r.days ? 'on' : ''} onClick={() => setDays(r.days)}>{r.label}</button>)}</div>
       </div>
+      <BudgetBox projectId={projectId} />
       {data.total.requests === 0 ? <div className="rows"><div className="rows-empty">이 기간에 쓴 것이 없습니다.</div></div> : (
         <div className="rows usage">
           <div className="row usage-head"><div className="grow">워크스페이스</div><div className="usage-num">입력</div><div className="usage-num">그중 캐시</div><div className="usage-num">출력</div><div className="usage-num">요청</div></div>

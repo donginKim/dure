@@ -9,6 +9,7 @@ import { AssignmentService } from './assignments';
 import { ReviewService, type ReviewRunner } from './review';
 import { MergeService } from './merge';
 import { AutoShipService } from './autoship';
+import { BudgetService } from './budget';
 import { shellRunner, VerifyService, type VerifyRunner } from './verify';
 import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
@@ -100,6 +101,7 @@ export interface Core {
   agreements: AgreementService;
   figures: FigureService;
   autoShip: AutoShipService;
+  budget: BudgetService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -171,6 +173,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const git = createGit(o.baseEnv);
   const notes = new NoteStore(db);
   const usage = new UsageStore(db, workspaces);
+  // 예산: 하루·전체 상한을 넘으면 그 프로젝트의 에이전트를 멈추고 새로 일을 시키지 않는다.
+  const budget = new BudgetService(db, projects);
   const checkpoints = new CheckpointService({ db, workspaces, git });
   const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
   // 일의 순서: 앞의 일이 다 끝난 항목이 생기면 그 워크스페이스에 알린다 (꺼져 있으면 이 알림으로 뜬다).
@@ -202,7 +206,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   let onStatus: (workspaceId: string) => void = () => undefined;
   let noteHook: (workspaceId: string, event: string, blocked: boolean) => void = () => undefined;
   const chat = new ChatService({ workspaces, // Claude Code 는 CLAUDE_CONFIG_DIR 가 있으면 그 폴더에 대화 기록을 둔다. 에이전트가 물려받는 환경과 같은 값을 쓴다.
-    allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id), onUsage: (id, u) => usage.record(id, u) });
+    allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id), onUsage: (id, u) => { usage.record(id, u); const w = workspaces.get(id); if (w) budget.check(w.projectId); } });
   const mcp = await startMcpServer({
     workspaces, projects, repos, todos, messages, commitDrafts, cleanup, git,
     // 조율 서비스는 워크스페이스 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
@@ -328,6 +332,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     onTurnOk: (id) => service.noteTurnOk(id),
   });
   service.attachEngine(engine);
+  service.attachBudget((projectId) => budget.blocked(projectId));
+  // 막 넘었으면 일하던 에이전트를 멈춘다 (프로세스는 끄지 않는다: 상한을 올리면 이어서 시킬 수 있다).
+  budget.on('over', (projectId: string) => {
+    for (const w of workspaces.listAll(projectId)) if (w.status === 'working' || w.status === 'waiting_user') { try { service.interrupt(w.id); } catch { /* 이미 멈춤 */ } }
+  });
   // 막힘 알아채기: 일하는 중인데 이만큼 움직임이 없으면 확인할 것에 올린다.
   service.watchQuiet(o.stuckQuietMs ?? 10 * 60_000, Math.min(60_000, o.stuckQuietMs ?? 60_000));
   // 받아 둔 모델 목록은 저장해 두고, 다음에 켰을 때 곧바로 보인다.
@@ -352,6 +361,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     stuck: (id) => service.stuckIn(id),
     agreements: (id) => agreements.list(id, { proposed: true }).filter((a) => a.status === 'proposed'),
     ships: (id) => autoShip.failures(id),
+    budget: (id) => budget.alerts(id),
   });
   for (const src of [service, coordinator, dbs, slack, browser, peers, assignments, agreements]) src.on('changed', () => attention.poke());
   attention.poke();
@@ -360,6 +370,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 리뷰 에이전트: 커밋 초안이 올라오면 다른 에이전트가 변경을 읽고 문제를 찾는다.
   const review = new ReviewService({
     db, workspaces, git, env: o.baseEnv, runner: o.reviewRunner,
+    onUsage: (id, u) => { usage.record(id, { messageId: `review:${crypto.randomUUID()}`, model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead, at: Date.now() }); const w = workspaces.get(id); if (w) budget.check(w.projectId); },
+    blocked: (projectId) => budget.blocked(projectId),
     changes: async (id) => {
       const st = await commit.state(id);
       return Promise.all(st.files.map(async (f) => { const d = await commit.diff(id, f.path).catch(() => ({ text: '', binary: false, truncated: false })); return { path: f.path, status: f.status, ...d }; }));
@@ -387,6 +399,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 자동 반영: 확인 명령, 리뷰, 비밀 값을 거쳐 커밋하고, 설정이면 기준 브랜치까지 옮긴다.
   const autoShip = new AutoShipService({ projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
   autoShip.on('changed', () => attention.poke());
+  budget.on('changed', () => attention.poke());
   const reviewTimers = new Map<string, NodeJS.Timeout>();
   commitDrafts.on('changed', (id: string) => {
     const ws = workspaces.get(id);
@@ -402,7 +415,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

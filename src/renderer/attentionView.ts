@@ -23,5 +23,5 @@ export function groupAttention(items: AttentionItem[]): { projectId: string | nu
 /** 이 화면에서 바로 결정할 수 있는 종류 (그 프로젝트의 승인 카드를 그대로 보여 준다). */
 export const INLINE_KINDS: AttentionItem['kind'][] = ['db', 'slack', 'browser', 'held'];
 export const KIND_LABEL: Record<AttentionItem['kind'], string> = {
-  agent: '에이전트', limit: '사용 한도', stuck: '막힘', agreement: '약속', ship: '자동 반영', plan: '계획안', db: 'DB', slack: '슬랙', browser: '브라우저', held: '받은 메시지', assign: '받은 일', brief: '기획서 정리', pair: '연결 요청', invite: '초대',
+  agent: '에이전트', limit: '사용 한도', stuck: '막힘', agreement: '약속', ship: '자동 반영', budget: '예산', plan: '계획안', db: 'DB', slack: '슬랙', browser: '브라우저', held: '받은 메시지', assign: '받은 일', brief: '기획서 정리', pair: '연결 요청', invite: '초대',
 };

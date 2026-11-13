@@ -10,7 +10,7 @@ let ws: Workspace;
 let calls: { prompt: string; cwd: string; model: string }[] = [];
 let answer: { ok: boolean; text: string; error?: string } = { ok: true, text: '' };
 const runner: ReviewRunner = async (o) => { calls.push({ prompt: o.prompt, cwd: o.cwd, model: o.model }); return answer; };
-const until = async (cond: () => boolean | Promise<boolean>, ms = 6000): Promise<void> => { const end = Date.now() + ms; while (!(await cond())) { if (Date.now() > end) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 20)); } };
+const until = async (cond: () => boolean | Promise<boolean>, ms = 20000): Promise<void> => { const end = Date.now() + ms; while (!(await cond())) { if (Date.now() > end) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 20)); } };
 const findings = (o: unknown): string => `살펴봤습니다.\n\`\`\`json\n${JSON.stringify(o)}\n\`\`\``;
 
 beforeEach(async () => {
@@ -77,13 +77,13 @@ test('끄면 저절로 리뷰하지 않는다. 직접 받을 수 있다. 리뷰�
   await expect(core.review.review(clean.id)).rejects.toThrow('바뀐 것이 없습니다');
 }, 15_000);
 
-test('저절로 하는 리뷰: 같은 작업 폴더는 실패해도 되풀이하지 않고, 한 시간 상한이 있다', async () => {
+test('저절로 하는 리뷰: 같은 작업 폴더는 실패해도 되풀이하지 않고, 한 시간 상한이 있다', { timeout: 30_000 }, async () => {
   writeFileSync(join(ws.worktreePath, 'a.ts'), 'x\n');
   answer = { ok: false, text: '', error: '실패' };
   expect(core.review.auto(ws.id)).toBe(true);
   await until(async () => (await core.review.status(ws.id))?.state === 'failed');
   expect(core.review.auto(ws.id)).toBe(true);
-  await new Promise((r) => setTimeout(r, 200));
+  await until(async () => (await core.review.status(ws.id))?.state !== 'running');
   expect(calls.length).toBe(1);
   // 사용자가 누르면 다시 한다
   await core.review.review(ws.id, { force: true });

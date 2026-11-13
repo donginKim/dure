@@ -1,7 +1,7 @@
 import { buildTree, reconcileSelection, STATUS_LABEL } from '../../src/renderer/tree';
 import type { Project, Workspace } from '@shared/types';
 
-const project = (id: string, createdAt: number): Project => ({ id, name: id, createdAt, status: 'active', completedAt: null, autoShip: 'off' });
+const project = (id: string, createdAt: number): Project => ({ id, name: id, createdAt, status: 'active', completedAt: null, autoShip: 'off', budgetDaily: 0, budgetTotal: 0 });
 const ws = (id: string, projectId: string, createdAt: number): Workspace => ({
   id, projectId, role: 'worker', repoId: 'r', name: id, nameLocked: false, summary: '', branch: 'b', baseBranch: 'main',
   worktreePath: '/w', agentKind: 'claude', permissionMode: 'ask', engine: 'chat', model: '', status: 'stopped', createdAt,

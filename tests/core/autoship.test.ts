@@ -7,6 +7,9 @@ import type { VerifyRunner } from '@core/verify';
 import type { Repo, Workspace } from '@shared/types';
 import { gitOut, makeRepo, tempDir } from '../helpers/repo';
 
+// git 을 많이 돌린다: 시험을 한꺼번에 돌릴 때 느려질 수 있다.
+vi.setConfig({ testTimeout: 90_000 });
+
 let core: Core;
 let projectId: string;
 let repo: Repo;
@@ -15,7 +18,7 @@ let pass = true;
 let findings: unknown[] = [];
 const verifyRunner: VerifyRunner = async () => ({ code: pass ? 0 : 1, output: pass ? 'ok' : 'FAIL', timedOut: false });
 const reviewRunner: ReviewRunner = async () => ({ ok: true, text: `\`\`\`json\n${JSON.stringify({ summary: 's', findings })}\n\`\`\`` });
-const until = async (cond: () => boolean, ms = 8000): Promise<void> => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 20)); } };
+const until = async (cond: () => boolean, ms = 20000): Promise<void> => { const end = Date.now() + ms; while (!cond()) { if (Date.now() > end) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 20)); } };
 
 beforeEach(async () => {
   pass = true; findings = [];
@@ -34,7 +37,7 @@ test('findSecrets: 비밀 값처럼 보이는 파일과 글을 찾는다 (값은
   expect(JSON.stringify(findSecrets([{ path: 'a.ts', text: '+ghp_abcdefghijklmnopqrstuvwxyz0123456789' }]))).not.toContain('ghp_');
 });
 
-test('main 까지: 확인 명령·리뷰·비밀 값을 거쳐 커밋하고 main 을 앞으로 감는다', async () => {
+test('main 까지: 확인 명령·리뷰·비밀 값을 거쳐 커밋하고 main 을 앞으로 감는다', { timeout: 30_000 }, async () => {
   core.projects.setAutoShip(projectId, 'main');
   const before = gitOut(repo.path, 'rev-parse', 'main');
   writeFileSync(join(ws.worktreePath, 'api.ts'), 'export const api = 1;\n');

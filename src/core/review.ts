@@ -14,7 +14,7 @@ const SEVERITIES = ['높음', '중간', '낮음'] as const;
 const plain = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, max);
 
 /** 리뷰어를 돌리는 쪽 (시험에서 바꾼다). 리뷰어가 낸 글을 돌려준다. */
-export type ReviewRunner = (o: { prompt: string; cwd: string; model: string; env: Record<string, string>; timeoutMs: number; command: string }) => Promise<{ ok: boolean; text: string; error?: string }>;
+export type ReviewRunner = (o: { prompt: string; cwd: string; model: string; env: Record<string, string>; timeoutMs: number; command: string }) => Promise<{ ok: boolean; text: string; error?: string; usage?: { input: number; output: number; cacheWrite: number; cacheRead: number; model: string } }>;
 
 /**
  * Claude Code 를 한 번 돌려 리뷰를 받는다 (-p). 리뷰어는 작업 폴더의 파일을 읽기만 한다 (Read, Grep, Glob).
@@ -33,9 +33,11 @@ const claudeRunner: ReviewRunner = ({ prompt, cwd, model, env, timeoutMs, comman
   child.on('close', (code) => {
     clearTimeout(timer);
     try {
-      const o = JSON.parse(out) as { result?: unknown; is_error?: unknown };
-      if (o.is_error === true) resolve({ ok: false, text: '', error: plain(o.result, 500) || '리뷰어가 오류로 끝났습니다.' });
-      else resolve({ ok: true, text: String(o.result ?? '') });
+      const o = JSON.parse(out) as { result?: unknown; is_error?: unknown; usage?: Record<string, unknown>; modelUsage?: Record<string, unknown> };
+      const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+      const usage = o.usage ? { input: n(o.usage.input_tokens), output: n(o.usage.output_tokens), cacheWrite: n(o.usage.cache_creation_input_tokens), cacheRead: n(o.usage.cache_read_input_tokens), model: Object.keys(o.modelUsage ?? {})[0] ?? model } : undefined;
+      if (o.is_error === true) resolve({ ok: false, text: '', error: plain(o.result, 500) || '리뷰어가 오류로 끝났습니다.', usage });
+      else resolve({ ok: true, text: String(o.result ?? ''), usage });
     } catch {
       resolve({ ok: false, text: '', error: code === null ? `리뷰가 ${Math.round(timeoutMs / 1000)}초 안에 끝나지 않아 멈췄습니다.` : plain(err, 500) || `리뷰어가 끝났습니다 (코드 ${code}).` });
     }
@@ -92,6 +94,10 @@ export class ReviewService extends EventEmitter {
     model(): string;
     runner?: ReviewRunner;
     timeoutMs?: number;
+    /** 리뷰어가 쓴 토큰 (사용량과 예산에 센다) */
+    onUsage?(workspaceId: string, u: { input: number; output: number; cacheWrite: number; cacheRead: number; model: string }): void;
+    /** 예산이 넘었으면 까닭 (리뷰하지 않는다) */
+    blocked?(projectId: string): string | null;
   }) {
     super();
     this.run = d.runner ?? claudeRunner;
@@ -155,6 +161,8 @@ export class ReviewService extends EventEmitter {
   private async doReview(workspaceId: string, force: boolean): Promise<ReviewState> {
     const ws = this.d.workspaces.get(workspaceId);
     if (!ws || ws.role === 'coordinator') throw new Error('리뷰할 수 있는 워크스페이스가 아닙니다.');
+    const why = this.d.blocked?.(ws.projectId);
+    if (why) throw new Error(why);
     const tree = await this.d.git.snapshotTree(ws.worktreePath).catch(() => '');
     const last = this.row(workspaceId);
     // 같은 작업 폴더는 다시 리뷰하지 않는다 (실패한 것도: 같은 실패를 되풀이해 사용량을 쓰지 않게. 사용자가 누르면 다시 한다).
@@ -187,6 +195,7 @@ export class ReviewService extends EventEmitter {
       ...parts,
     ].join('\n');
     const r = await this.run({ prompt, cwd: ws.worktreePath, model: this.d.model(), env: this.d.env, timeoutMs: this.d.timeoutMs ?? TIMEOUT_MS, command: this.d.runner ? '' : this.d.executable() });
+    if (r.usage) { try { this.d.onUsage?.(workspaceId, r.usage); } catch { /* 사용량만 빠진다 */ } }
     const parsed = r.ok ? parseReview(r.text) : null;
     const state = parsed ? 'done' : 'failed';
     const error = parsed ? '' : r.error ?? '리뷰어의 답에서 결과를 읽지 못했습니다.';

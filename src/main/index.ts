@@ -52,7 +52,9 @@ function createWindow(): void {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
   }
   // 검증용: 창을 최소화한 채로 띄운다 (가려진 창에서의 동작을 확인할 때).
-  if (process.env.DURE_START_MINIMIZED) win.once('ready-to-show', () => win.minimize());
+  // 로그인할 때 저절로 켜진 것이면 창을 최소화한 채로 둔다 (일하던 화면을 가리지 않게).
+  const atLogin = process.argv.includes('--at-login') || (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin);
+  if (process.env.DURE_START_MINIMIZED || atLogin) win.once('ready-to-show', () => win.minimize());
 }
 
 // 두레 창이 다른 창에 가려지거나 최소화돼도 Chromium 이 화면 그리기를 멈추지 않게 한다 (에이전트의 브라우저 조작과 화면 찍기가 그때도 돼야 한다).
@@ -115,6 +117,17 @@ async function start(): Promise<void> {
     dialog.showErrorBox('두레를 시작하지 못했습니다', e instanceof Error ? e.message : String(e));
     app.exit(1);
     return;
+  }
+  // 로그인할 때 켜기: 설정을 macOS 의 로그인 항목에 맞춘다 (묶인 앱에서만. 개발 중에는 건드리지 않는다).
+  if (app.isPackaged && process.platform === 'darwin') {
+    const applyLogin = (): void => {
+      try {
+        const want = core!.settings.get().openAtLogin;
+        if (app.getLoginItemSettings().openAtLogin !== want) app.setLoginItemSettings({ openAtLogin: want, args: ['--at-login'] });
+      } catch { /* 로그인 항목을 바꾸지 못해도 두레는 돈다 */ }
+    };
+    applyLogin();
+    core.settings.on('changed', applyLogin);
   }
   unregisterIpc = registerIpc(core, browserHost);
   createWindow();

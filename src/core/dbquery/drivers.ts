@@ -315,8 +315,13 @@ const SCHEMA_LIMITS: DbLimits = { maxRows: 3000, timeoutMs: 15_000 };
  * Oracle 의 표와 뷰. 큰 DB 에서는 사전(all_tables)을 훑는 데 오래 걸린다: 접속한 계정의 것을 먼저 받고 (빠르다),
  * 다른 계정의 것은 따로 받는다. 다른 계정의 것을 제때 받지 못해도 내 것은 보인다. 서버에서 정렬시키지 않는다.
  */
-async function oracleTables(t: DbTarget): Promise<DbTable[]> {
+async function oracleTables(t: DbTarget, schema?: string): Promise<DbTable[]> {
   const toTable = (x: DbCell[]): DbTable => ({ schema: String(x[0] ?? ''), name: String(x[1] ?? ''), type: String(x[2] ?? '') === 'VIEW' ? 'view' : 'table' });
+  // 계정을 고르면 그 계정의 것만 받는다 (이름은 값으로 넘긴다).
+  if (schema?.trim()) {
+    const r = await runReadOnly(t, "SELECT owner, table_name, 'TABLE' FROM all_tables WHERE owner = :1 UNION ALL SELECT owner, view_name, 'VIEW' FROM all_views WHERE owner = :2", [schema.trim(), schema.trim()], { maxRows: SCHEMA_LIMITS.maxRows, timeoutMs: 30_000 });
+    return r.rows.map(toTable).sort((a, b) => a.name.localeCompare(b.name));
+  }
   const own = (await runReadOnly(t, "SELECT USER, table_name, 'TABLE' FROM user_tables UNION ALL SELECT USER, view_name, 'VIEW' FROM user_views", [], SCHEMA_LIMITS)).rows.map(toTable);
   const others = await runReadOnly(t, `SELECT owner, table_name, 'TABLE' FROM all_tables WHERE owner <> USER AND owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%'
        UNION ALL SELECT owner, view_name, 'VIEW' FROM all_views WHERE owner <> USER AND owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%'`, [], { maxRows: SCHEMA_LIMITS.maxRows, timeoutMs: 30_000 })
@@ -346,10 +351,17 @@ async function oracleColumns(t: DbTarget, schema: string, table: string): Promis
   }));
 }
 
-/** 표와 뷰의 목록. 시스템 스키마는 뺀다. */
-export async function listTables(t: DbTarget): Promise<DbTable[]> {
+/** 고를 수 있는 스키마(Oracle 의 계정) 목록. 시스템 계정은 뺀다. Oracle 이 아니면 빈 목록. */
+export async function listSchemas(t: DbTarget): Promise<string[]> {
+  if (t.kind !== 'oracle') return [];
+  const r = await runReadOnly(t, `SELECT username FROM all_users WHERE username NOT IN (${ORACLE_SYSTEM}) AND username NOT LIKE 'APEX%' ORDER BY username`, [], SCHEMA_LIMITS);
+  return r.rows.map((x) => String(x[0] ?? '')).filter(Boolean);
+}
+
+/** 표와 뷰의 목록. 시스템 스키마는 뺀다. Oracle 은 계정(스키마)을 골라 그 계정의 것만 받을 수 있다. */
+export async function listTables(t: DbTarget, schema?: string): Promise<DbTable[]> {
   if (t.kind === 'mongo') return mongoTables(mongoOf(t));
-  if (t.kind === 'oracle') return oracleTables(t);
+  if (t.kind === 'oracle') return oracleTables(t, schema);
   const sql = t.kind === 'postgres'
     ? "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name"
     : 'SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name';

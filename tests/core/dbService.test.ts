@@ -37,7 +37,8 @@ async function boot(waitMs = 60): Promise<void> {
     dbRunner: {
       run: async (target, sql, _params, lim) => { ran.push({ target, sql, maxRows: lim.maxRows }); return answer(sql); },
       risks: async () => risks,
-      tables: async () => [{ schema: 'public', name: 'items', type: 'table' }],
+      tables: async (_t, schema) => [{ schema: schema ?? 'public', name: 'items', type: 'table' }],
+      schemas: async (t) => (t.kind === 'oracle' ? ['HR', 'SHOP'] : []),
       columns: async (_t, schema, table) => [{ name: `${schema}.${table}.id`, type: 'integer', nullable: false, default: null, key: 'PRIMARY KEY' }],
     },
   });
@@ -182,6 +183,15 @@ describe('에이전트의 DB 도구', () => {
     // 표 목록과 스키마는 승인 없이 본다
     expect(await call(ws.id, 'db_tables', { connection: '운영 DB' })).toContain('items');
     expect(await call(ws.id, 'db_columns', { connection: '운영 DB', table: 'items' })).toContain('public.items.id');
+  });
+
+  test('Oracle 은 계정(스키마)을 골라 표를 받는다. 다른 종류는 고를 스키마가 없다', async () => {
+    const pg = core.dbs.save(input());
+    const ora = core.dbs.save(input({ name: '오라클', kind: 'oracle', port: 1521, database: 'ORCL' }));
+    expect(await core.dbs.schemas(pg.id)).toEqual([]);
+    expect(await core.dbs.schemas(ora.id)).toEqual(['HR', 'SHOP']);
+    expect(await core.dbs.tables(ora.id, 'HR')).toEqual([{ schema: 'HR', name: 'items', type: 'table' }]);
+    expect(await call(ws.id, 'db_tables', { connection: '오라클', schema: 'SHOP' })).toContain('SHOP');
   });
 
   test('거절하면 실행되지 않고 에이전트는 거절을 받는다. 조회가 아닌 문장은 사용자에게 올라가지도 않는다', async () => {

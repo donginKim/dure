@@ -438,6 +438,15 @@ const MIGRATIONS: string[] = [
   ALTER TABLE projects ADD COLUMN budget_daily INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE projects ADD COLUMN budget_total INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- 연결 요청과 초대 (몇 분 동안 산다). 두레를 다시 켜도 남게 적어 둔다
+  CREATE TABLE peer_pending (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (kind, id));
+  -- 자동 반영의 기록 (프로젝트마다 최근 것)
+  CREATE TABLE ship_events (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, workspace_id TEXT NOT NULL, workspace_name TEXT NOT NULL, at INTEGER NOT NULL, stage TEXT NOT NULL, ok INTEGER NOT NULL, message TEXT NOT NULL);
+  CREATE INDEX ship_events_by_project ON ship_events (project_id, at);
+  -- 합치기 도우미가 만들어 둔 결과와 그 확인 (저장소·기준 브랜치마다)
+  CREATE TABLE merge_prepared (key TEXT PRIMARY KEY, commit_id TEXT NOT NULL, verified INTEGER, only TEXT NOT NULL DEFAULT '');
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

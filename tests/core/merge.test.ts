@@ -11,6 +11,8 @@ import { gitOut, makeRepo, tempDir } from '../helpers/repo';
 vi.setConfig({ testTimeout: 90_000 });
 
 let core: Core;
+let dataDir = '';
+let wtRoot = '';
 let projectId: string;
 let repo: Repo;
 let ran: string[] = [];
@@ -25,11 +27,17 @@ const make = async (name: string): Promise<Workspace> => core.service.create({ p
 
 beforeEach(async () => {
   ran = []; pass = true;
-  core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), verifyRunner: runner });
+  dataDir = join(tempDir(), 'data'); wtRoot = join(tempDir(), 'wt');
+  core = await createCore({ dataDir, worktreeRoot: wtRoot, baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), verifyRunner: runner });
   projectId = core.projects.create('쇼핑몰').id;
   repo = await core.addRepo(projectId, makeRepo('shop'));
 });
 afterEach(async () => { await core.dispose(); });
+/** 같은 데이터 폴더로 두레를 다시 켠다. */
+const restart = async (): Promise<void> => {
+  await core.dispose();
+  core = await createCore({ dataDir, worktreeRoot: wtRoot, baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), verifyRunner: runner });
+};
 
 test('mergeOrder: 다른 워크스페이스의 일을 기다리면 그 워크스페이스를 먼저, 아니면 만든 순서', () => {
   const ws = [{ id: 'ui', createdAt: 1 }, { id: 'api', createdAt: 2 }, { id: 'docs', createdAt: 3 }];
@@ -140,4 +148,22 @@ test('기준 브랜치가 다른 작업 폴더에 체크아웃돼 있으면 그 
 test('합친 결과의 ref 는 워크스페이스 브랜치와 겹치지 않고, 이름이 비슷한 기준 브랜치끼리도 겹치지 않는다', () => {
   expect(mergeRefOf('main')).toMatch(/^refs\/dure\/merge\/main-[0-9a-f]{8}$/);
   expect(mergeRefOf('feature/x')).not.toBe(mergeRefOf('feature-x'));
+});
+
+test('합친 결과와 확인 명령의 결과는 두레를 다시 켜도 남아, 다시 만들지 않고 옮길 수 있다', async () => {
+  core.verify.setCommand(repo.id, 'pnpm test');
+  const api = await make('API');
+  commitIn(api.worktreePath, 'api.ts', 'x\n', 'api');
+  pass = false;
+  await core.merges.prepare(projectId, repo.id, 'main');
+  await restart();
+  // 실패한 결과도 그대로 남아 옮길 수 없다
+  await expect(core.merges.advance(projectId, repo.id, 'main')).rejects.toThrow('확인 명령이 통과하지 않았습니다');
+  pass = true;
+  await core.merges.prepare(projectId, repo.id, 'main');
+  const merged = gitOut(repo.path, 'rev-parse', mergeRefOf('main'));
+  await restart();
+  expect((await core.merges.plans(projectId))[0]!.ready).toBe(true);
+  expect(await core.merges.advance(projectId, repo.id, 'main')).toContain('main 를');
+  expect(gitOut(repo.path, 'rev-parse', 'main')).toBe(merged);
 });

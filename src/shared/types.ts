@@ -464,6 +464,8 @@ export interface Settings {
   workDayHours: number;
   /** 확인 명령의 시간 제한 (초). 넘으면 멈추고 실패로 본다 */
   verifyTimeoutSec: number;
+  /** Mac 에 로그인하면 두레를 저절로 켠다 (창은 최소화해서). 근무시간 기록과 에이전트의 메시지 받기가 빠지지 않게 */
+  openAtLogin: boolean;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */

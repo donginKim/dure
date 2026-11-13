@@ -28,9 +28,9 @@ const secrets = { encrypt: (s: string) => `enc(${Buffer.from(s).toString('base64
 
 interface Node { core: Core; host: string; projectId: string; ws: Workspace; ws2: Workspace }
 const nodes: Node[] = [];
-async function node(name: string, host: string): Promise<Node> {
+async function node(name: string, host: string, dataDir = join(tempDir(), 'data')): Promise<Node> {
   const core = await createCore({
-    dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(),
+    dataDir, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(),
     secrets, peerTransport: transport(host),
   });
   core.settings.update({ peerName: name, autoStartOnMessage: false });
@@ -678,5 +678,40 @@ describe('사람에게 묻기', () => {
     // 공개한 워크스페이스는 자료도 붙일 수 있다
     a.core.peers.setSharing(a.ws2.id, 'all');
     await ask({ from: a.ws2.id, artifactIds: [art.id], body: 'x'.repeat(3000) });
+  });
+});
+
+describe('다시 켜도 남는 것', () => {
+  test('받은 연결 요청과 초대는 두레를 다시 켜도 남아 있고, 이어서 확인할 수 있다', async () => {
+    const dataDir = join(tempDir(), 'data');
+    const a = await node('가', '10.0.0.1'); const b = await node('나', '10.0.0.2', dataDir);
+    await on(a); await on(b);
+    const out = await a.core.peers.connect('10.0.0.2:47800');
+    const before = b.core.peers.requests()[0]!;
+    // 나를 끄고 같은 데이터 폴더로 다시 켠다
+    await b.core.dispose();
+    nodes.splice(nodes.indexOf(b), 1);
+    const core = await createCore({ dataDir, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), secrets, peerTransport: transport('10.0.0.2') });
+    const b2 = { ...b, core };
+    nodes.push(b2);
+    await on(b2);
+    expect(b2.core.peers.requests()).toMatchObject([{ id: before.id, direction: 'in', name: '가', code: before.code }]);
+    await b2.core.peers.accept(before.id);
+    await a.core.peers.accept(out.id);
+    expect(a.core.peers.peers()).toMatchObject([{ name: '나' }]);
+    expect(b2.core.peers.peers()).toMatchObject([{ name: '가' }]);
+    // 초대도 남는다
+    const share = a.core.peers.createShare(a.projectId);
+    await a.core.peers.invite(share.id, b2.core.peers.status().id);
+    expect(b2.core.peers.shareInvites().length).toBe(1);
+    await b2.core.dispose();
+    nodes.splice(nodes.indexOf(b2), 1);
+    const core3 = await createCore({ dataDir, worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), secrets, peerTransport: transport('10.0.0.2') });
+    const b3 = { ...b, core: core3 };
+    nodes.push(b3);
+    await on(b3);
+    expect(b3.core.peers.shareInvites()).toMatchObject([{ id: expect.any(String) }]);
+    await b3.core.peers.acceptInvite(b3.core.peers.shareInvites()[0]!.id, b3.projectId);
+    await until(() => a.core.peers.share(a.projectId)!.members.length >= 2);
   });
 });

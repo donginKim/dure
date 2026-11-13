@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
@@ -52,8 +53,20 @@ export function mergeOrder(ws: Pick<Workspace, 'id' | 'createdAt'>[], todos: Pic
  */
 export class MergeService extends EventEmitter {
   private readonly busy = new Set<string>();
-  /** 마지막으로 만든 합치기 결과와 그 확인 결과 (`저장소|기준` → 커밋, 통과 여부). 옮길 때 다시 본다 */
-  private readonly prepared = new Map<string, { commit: string; verified: boolean | null; only: string }>();
+  /** 마지막으로 만든 합치기 결과와 그 확인 결과 (`저장소|기준` → 커밋, 통과 여부). 옮길 때 다시 본다. 적어 두어 다시 켜도 남는다 */
+  private readonly prepared = {
+    get: (key: string): { commit: string; verified: boolean | null; only: string } | undefined => {
+      const r = this.d.db?.prepare('SELECT * FROM merge_prepared WHERE key = ?').get(key) as { commit_id: string; verified: number | null; only: string } | undefined;
+      if (r) return { commit: r.commit_id, verified: r.verified === null ? null : r.verified === 1, only: r.only };
+      return this.memory.get(key);
+    },
+    set: (key: string, v: { commit: string; verified: boolean | null; only: string }): void => {
+      this.memory.set(key, v);
+      this.d.db?.prepare('INSERT INTO merge_prepared (key, commit_id, verified, only) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET commit_id = excluded.commit_id, verified = excluded.verified, only = excluded.only')
+        .run(key, v.commit, v.verified === null ? null : v.verified ? 1 : 0, v.only);
+    },
+  };
+  private readonly memory = new Map<string, { commit: string; verified: boolean | null; only: string }>();
 
   constructor(private readonly d: {
     repos: RepoStore; workspaces: WorkspaceStore; git: Git; messages: MessageService;
@@ -61,6 +74,8 @@ export class MergeService extends EventEmitter {
     worktreeRoot: string; env: Record<string, string>;
     run: VerifyRunner; timeoutMs: () => number;
     isProjectClosed(projectId: string): boolean;
+    /** 만들어 둔 결과를 적어 둔다 (없으면 메모리에만) */
+    db?: Database.Database;
   }) {
     super();
   }

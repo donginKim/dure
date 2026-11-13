@@ -64,7 +64,9 @@ export interface DureApi {
     remove(id: string): Promise<void>;
     /** 접속해 보고, 계정이 조회 말고 할 수 있는 것을 확인한다 */
     test(id: string): Promise<{ ms: number; warnings: string[] }>;
-    tables(id: string): Promise<DbTable[]>;
+    tables(id: string, schema?: string): Promise<DbTable[]>;
+    /** 고를 수 있는 스키마 (Oracle 의 계정). 다른 종류는 빈 목록. */
+    schemas(id: string): Promise<string[]>;
     columns(id: string, schema: string, table: string): Promise<DbColumn[]>;
     /** 조회 전용. 1000행, 30초까지 */
     query(id: string, sql: string): Promise<DbResult>;
@@ -392,7 +394,7 @@ export const IPC_CHANNELS = [
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',
   'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide',
-  'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.columns', 'db.query', 'db.requests', 'db.decide',
+  'db.list', 'db.canStoreSecrets', 'db.save', 'db.remove', 'db.test', 'db.tables', 'db.schemas', 'db.columns', 'db.query', 'db.requests', 'db.decide',
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',

@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3';
 import { EventEmitter } from 'node:events';
 import type { ShipEvent } from '@shared/types';
 import type { CommitService } from './commitService';
@@ -80,8 +81,19 @@ export class AutoShipService extends EventEmitter {
     projects: ProjectStore; repos: RepoStore; workspaces: WorkspaceStore; drafts: CommitDraftStore; messages: MessageService;
     commit: CommitService; verify: VerifyService; review: ReviewService; merges: MergeService; git: Git;
     isProjectClosed(projectId: string): boolean;
+    /** 기록을 적어 둔다 (없으면 메모리에만) */
+    db?: Database.Database;
   }) {
     super();
+    // 적어 둔 기록을 읽는다 (두레를 다시 켜도 남게).
+    if (d.db) {
+      const rows = d.db.prepare('SELECT * FROM ship_events ORDER BY at').all() as { id: string; project_id: string; workspace_id: string; workspace_name: string; at: number; stage: string; ok: number; message: string }[];
+      for (const r of rows) {
+        const list = this.log.get(r.project_id) ?? [];
+        list.push({ id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, workspaceName: r.workspace_name, at: r.at, stage: r.stage as ShipEvent['stage'], ok: r.ok === 1, message: r.message });
+        this.log.set(r.project_id, list.slice(-KEEP));
+      }
+    }
   }
 
   events(projectId: string): ShipEvent[] { return [...(this.log.get(projectId) ?? [])].reverse(); }
@@ -100,8 +112,15 @@ export class AutoShipService extends EventEmitter {
 
   private note(projectId: string, workspaceId: string, stage: ShipEvent['stage'], ok: boolean, message: string): void {
     const list = this.log.get(projectId) ?? [];
-    list.push({ id: crypto.randomUUID(), projectId, workspaceId, workspaceName: this.d.workspaces.get(workspaceId)?.name ?? '', at: Date.now(), stage, ok, message });
+    const e: ShipEvent = { id: crypto.randomUUID(), projectId, workspaceId, workspaceName: this.d.workspaces.get(workspaceId)?.name ?? '', at: Date.now(), stage, ok, message };
+    list.push(e);
     this.log.set(projectId, list.slice(-KEEP));
+    if (this.d.db) {
+      try {
+        this.d.db.prepare('INSERT INTO ship_events (id, project_id, workspace_id, workspace_name, at, stage, ok, message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(e.id, projectId, workspaceId, e.workspaceName, e.at, stage, ok ? 1 : 0, message);
+        this.d.db.prepare('DELETE FROM ship_events WHERE project_id = ? AND id NOT IN (SELECT id FROM ship_events WHERE project_id = ? ORDER BY at DESC LIMIT ?)').run(projectId, projectId, KEEP);
+      } catch { /* 기록만 빠진다 */ }
+    }
     this.emit('changed', projectId);
   }
 

@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   workGraceMin: 5,
   workDayHours: 8,
   verifyTimeoutSec: 300,
+  openAtLogin: false,
   terminalFontSize: 13,
   chatFontSize: 13.5,
 };
@@ -172,6 +173,7 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   workGraceMin: int('출근 여유', 0, 29),
   workDayHours: int('하루 근무시간', 0, 24),
   verifyTimeoutSec: int('확인 명령의 시간 제한', 10, 3600),
+  openAtLogin: bool('로그인할 때 켜기'),
   workTimeUnit: (v) => { if (v !== 'minute' && v !== 'half') throw new Error('근무시간을 세는 단위가 올바르지 않습니다.'); return v; },
   workWifi: (v) => String(v ?? '').replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 64),
   terminalFontSize: size('터미널 글자 크기', 9, 28),

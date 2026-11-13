@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import type { DbAccess, DbColumn, DbConnection, DbConnectionInput, DbKind, DbRequest, DbResult, DbTable } from '@shared/types';
 import { checkReadOnly } from './dbquery/guard';
 import { mongoUriParts } from './dbquery/mongo';
-import { listColumns, listTables, riskyPrivileges, runReadOnly, type DbLimits, type DbTarget } from './dbquery/drivers';
+import { listColumns, listSchemas, listTables, riskyPrivileges, runReadOnly, type DbLimits, type DbTarget } from './dbquery/drivers';
 import type { MessageService } from './messages';
 import type { ProjectStore, WorkspaceStore } from './stores';
 
@@ -49,7 +49,7 @@ const toConnection = (r: Row): DbConnection => ({
   hasPassword: r.secret !== '', createdAt: r.created_at,
 });
 
-type Runner = { run: typeof runReadOnly; tables: typeof listTables; columns: typeof listColumns; risks: typeof riskyPrivileges };
+type Runner = { run: typeof runReadOnly; tables: typeof listTables; columns: typeof listColumns; risks: typeof riskyPrivileges; schemas?: typeof listSchemas };
 /** 어디에 누구로 접속하는지. 승인을 기다리는 사이에 연결이 바뀌었는지 볼 때 쓴다 */
 const fingerprint = (r: Row): string => [r.kind, r.host, r.port, r.database, r.user, r.ssl].join('\n');
 /**
@@ -194,7 +194,9 @@ export class DbService extends EventEmitter {
     return { ms: r.ms, warnings };
   }
 
-  tables(id: string): Promise<DbTable[]> { return this.runner.tables(this.target(this.row(id))); }
+  tables(id: string, schema?: string): Promise<DbTable[]> { return this.runner.tables(this.target(this.row(id)), schema); }
+  /** 고를 수 있는 스키마 (Oracle 의 계정). 다른 종류는 빈 목록. */
+  schemas(id: string): Promise<string[]> { return (this.runner.schemas ?? listSchemas)(this.target(this.row(id))); }
 
   columns(id: string, schema: string, table: string): Promise<DbColumn[]> {
     return this.runner.columns(this.target(this.row(id)), oneLine(schema, 200), oneLine(table, 200));
@@ -220,9 +222,9 @@ export class DbService extends EventEmitter {
     return r;
   }
 
-  async agentTables(projectId: string, name: string): Promise<DbTable[]> {
+  async agentTables(projectId: string, name: string, schema?: string): Promise<DbTable[]> {
     const r = this.forAgent(projectId, name);
-    try { return await this.runner.tables(this.target(r)); } catch (e) { throw agentError(e); }
+    try { return await this.runner.tables(this.target(r), schema); } catch (e) { throw agentError(e); }
   }
 
   async agentColumns(projectId: string, name: string, schema: string, table: string): Promise<DbColumn[]> {

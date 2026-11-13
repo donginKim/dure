@@ -11,6 +11,8 @@ import { gitOut, makeRepo, tempDir } from '../helpers/repo';
 vi.setConfig({ testTimeout: 90_000 });
 
 let core: Core;
+let dataDir = '';
+let wtRoot = '';
 let projectId: string;
 let repo: Repo;
 let ws: Workspace;
@@ -22,13 +24,19 @@ const until = async (cond: () => boolean, ms = 20000): Promise<void> => { const 
 
 beforeEach(async () => {
   pass = true; findings = [];
-  core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), verifyRunner, reviewRunner });
+  dataDir = join(tempDir(), 'data'); wtRoot = join(tempDir(), 'wt');
+  core = await createCore({ dataDir, worktreeRoot: wtRoot, baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), verifyRunner, reviewRunner });
   projectId = core.projects.create('쇼핑몰').id;
   repo = await core.addRepo(projectId, makeRepo('shop'));
   core.verify.setCommand(repo.id, 'pnpm test');
   ws = await core.service.create({ projectId, repoId: repo.id, name: 'API', baseBranch: 'main', agentKind: 'claude' });
 });
 afterEach(async () => { await core.dispose(); });
+/** 같은 데이터 폴더로 두레를 다시 켠다. */
+const restart = async (): Promise<void> => {
+  await core.dispose();
+  core = await createCore({ dataDir, worktreeRoot: wtRoot, baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), verifyRunner, reviewRunner });
+};
 
 test('findSecrets: 비밀 값처럼 보이는 파일과 글을 찾는다 (값은 담지 않는다)', () => {
   expect(findSecrets([{ path: '.env', text: '' }, { path: '.env.example', text: '' }, { path: 'a.ts', text: '+const k = "AKIAABCDEFGHIJKLMNOP";\n-old' }, { path: 'b.ts', text: '+ok' }]))
@@ -184,4 +192,14 @@ describe('보안 리뷰에서 나온 경우들', () => {
     // 에이전트에게도 까닭을 알렸다
     expect(core.messages.undelivered(ws.id).map((m) => m.body).join('\n')).toContain('자동 반영이 멈췄다');
   });
+});
+
+test('자동 반영 기록은 두레를 다시 켜도 남는다', async () => {
+  core.projects.setAutoShip(projectId, 'commit');
+  writeFileSync(join(ws.worktreePath, 'x.ts'), 'x\n');
+  core.commitDrafts.save(ws.id, 'feat: x');
+  await until(() => core.autoShip.events(projectId).length > 0);
+  const before = core.autoShip.events(projectId);
+  await restart();
+  expect(core.autoShip.events(projectId)).toEqual(before);
 });

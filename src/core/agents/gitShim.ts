@@ -60,8 +60,15 @@ while [ -n "$sub" ] && [ "$sub" != commit ] && [ "$sub" != push ] && [ "$n" -lt 
   n=$((n + 1))
 done
 
+# git merge 는 --no-commit 으로만 받는다: 합치기를 마무리하는 커밋은 사용자가 한다 (--continue 도 커밋을 만든다).
+if [ "$sub" = merge ]; then
+  mergeok=0
+  for a in "$@"; do case "$a" in --no-commit|--abort|--quit) mergeok=1 ;; esac; done
+  [ "$mergeok" = 1 ] || sub=merge-commit
+fi
+
 case "$sub" in
-  commit|push)
+  commit|push|merge-commit)
     # 어느 저장소에 대한 것인지 본다. 이 워크스페이스의 저장소가 아니면 막지 않는다.
     target=""
     if [ "$unsure" = 0 ]; then
@@ -80,7 +87,11 @@ $COMMONS
 DURE_COMMONS
     fi
     if [ "$blocked" = 1 ]; then
-      if [ "$sub" = commit ]; then
+      if [ "$sub" = merge-commit ]; then
+        printf '%s\\n' \\
+          '[두레] git merge 는 --no-commit --no-ff 로만 한다 (예: git merge --no-commit --no-ff 브랜치). 충돌을 풀고 git add 까지 하라.' \\
+          '합치기를 마무리하는 커밋은 사용자가 두레의 커밋 창에서 한다: commit_draft_save 로 메시지를 저장하고 알려라.' >&2
+      elif [ "$sub" = commit ]; then
         printf '%s\\n' \\
           '[두레] git commit 은 사용자가 두레 화면에서 직접 한다. 에이전트는 커밋하지 않는다.' \\
           '지금 할 일: 커밋 메시지를 commit_draft_save 도구로 저장하고, 사용자에게 커밋할 준비가 됐다고 알려라.' >&2

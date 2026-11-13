@@ -321,6 +321,16 @@ export function SettingsView() {
           <Row label="커밋·push 뒤 에이전트에게 알리기" help="커밋 창에서 커밋하거나 push 하면 켜져 있는 에이전트에게 알려, 관련 할 일을 정리하게 합니다." {...row('notifyAgentOnCommit')}>
             <Toggle on={s.notifyAgentOnCommit} onChange={(v) => save('notifyAgentOnCommit', v)} label="커밋·push 뒤 에이전트에게 알리기" />
           </Row>
+          <Row label="커밋 초안 리뷰" help="에이전트가 커밋 초안을 올리면 리뷰 에이전트가 변경을 읽고 버그, 보안 문제, 빠진 시험을 찾습니다. 커밋 창에서 그 의견과 함께 보고, 에이전트에게 고치게 할 수 있습니다. 리뷰마다 Claude 사용량이 듭니다. 꺼 두어도 커밋 창에서 직접 받을 수 있습니다." {...row('reviewOnDraft')}>
+            <Toggle on={s.reviewOnDraft} onChange={(v) => save('reviewOnDraft', v)} label="커밋 초안 리뷰" />
+          </Row>
+          <Row label="리뷰 에이전트의 모델" help="비워 두면 Claude Code 의 모델 설정을 따릅니다. 일하는 에이전트와 다른 모델로 두면 다른 눈으로 봅니다." {...row('reviewModel')}>
+            <select className="set-select" value={s.reviewModel} onChange={(e) => save('reviewModel', e.target.value)}>
+              <option value="">Claude Code 의 모델을 따름</option>
+              {s.reviewModel && !models.some((m) => m.value === s.reviewModel) && <option value={s.reviewModel}>{s.reviewModel}</option>}
+              {models.filter((m) => m.value !== 'default').map((m) => <option key={m.value} value={m.value}>{m.name}</option>)}
+            </select>
+          </Row>
         </div>
       </div>
 

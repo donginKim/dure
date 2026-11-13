@@ -224,6 +224,23 @@ describe('계획안', () => {
     expect(told).toContain('앞의 일이 끝났다 (워크스페이스 "로그인 API"): "POST /login". 이제 "API 붙이기" 을(를) 시작할 수 있다');
   });
 
+  test('일부만 고쳐 달라기: 계획안은 남기고, 사용자가 고친 지금의 모양과 말을 조율 에이전트에게 보낸다', async () => {
+    const c = core.coordinator.ensure(projectId);
+    const p = await core.coordinator.propose(projectId, { summary: 's', project_todos: ['로그인 기능'], workspaces: [W('로그인 화면', 'shop-front', { todos: [{ title: '폼', under: '로그인 기능' }] }), W('로그인 API', 'shop-back', { todos: ['POST /login'] })] });
+    // 사용자가 검토 화면에서 이름을 고친 뒤, API 부분만 다시 짜 달라고 한다
+    const edited = { items: p.items.map((it) => (it.name === '로그인 화면' ? { ...it, name: '로그인 페이지' } : it)), projectTodos: p.projectTodos };
+    core.coordinator.requestRevision(p.id, 'API 를 둘로 나눠 줘', { target: '로그인 API', decision: edited });
+    expect(core.coordinator.pending(projectId)!.id).toBe(p.id);
+    const told = core.messages.undelivered(c.id).map((m) => m.body).join('\n');
+    expect(told).toContain('"로그인 API" 부분을 고쳐 달라고 했다');
+    expect(told).toContain('사용자의 말: API 를 둘로 나눠 줘');
+    expect(told).toContain('"로그인 페이지"');
+    expect(told).toContain('"under": "로그인 기능"');
+    expect(() => core.coordinator.requestRevision(p.id, '  ')).toThrow('무엇을 어떻게 고칠지');
+    core.coordinator.reject(p.id);
+    expect(() => core.coordinator.requestRevision(p.id, 'x')).toThrow('승인을 기다리는 계획안이 아닙니다');
+  });
+
   test('승인하면 사용자가 고친 최종 계획대로 워크스페이스와 TODO 를 만들고, 조율 에이전트에게 알린다', async () => {
     core.settings.update({ defaultPermissionMode: 'bypass' });
     const c = core.coordinator.ensure(projectId);

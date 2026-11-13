@@ -55,6 +55,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       return res.canceled || res.filePaths.length === 0 ? null : core.coordinator.readSpec(res.filePaths[0]!);
     },
     'coordinator.reject': (proposalId: string, reason?: string) => core.coordinator.reject(proposalId, reason),
+    'coordinator.revise': (proposalId: string, feedback: string, target: string, decision: PlanDecision) => core.coordinator.requestRevision(String(proposalId), String(feedback ?? ''), { target: String(target ?? ''), decision: decision && typeof decision === 'object' ? decision : undefined }),
     'worktime.status': () => core.worktime.status(),
     'worktime.month': (year: number, month: number) => core.worktime.month(Number(year), Number(month)),
     'worktime.clockIn': () => core.worktime.clockIn(),
@@ -157,6 +158,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'workspaces.stopAgent': (id: string) => core.service.stopAgent(id),
     'workspaces.setEngine': (id: string, engine: 'chat' | 'terminal') => core.service.setEngine(id, engine),
     'workspaces.setModel': (id: string, model: string) => core.service.setModel(String(id), String(model ?? '')),
+    'workspaces.dismissStuck': (id: string) => core.service.dismissStuck(String(id)),
     'workspaces.rename': (id: string, name: string) => core.service.rename(id, name),
     'workspaces.setAutoName': (id: string, on: boolean) => core.service.setAutoName(id, on === true),
     'terminals.list': (workspaceId: string) => core.pty.listWithExited(workspaceId),
@@ -245,6 +247,26 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'browser.decide': (requestId: string, allow: boolean) => core.browser.decide(String(requestId), allow === true),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
+    'figures.list': (workspaceId: string) => core.figures.list(String(workspaceId)),
+    'figures.remove': (id: string) => core.figures.remove(String(id)),
+    'agreements.list': (projectId: string, proposed?: boolean) => core.agreements.list(String(projectId), { proposed: proposed === true }),
+    'agreements.save': (projectId: string, input: { id?: string; kind: string; title: string; body: string }) => { assertOpen(String(projectId)); return core.agreements.save(String(projectId), input ?? {}); },
+    'agreements.accept': (id: string) => { const a = core.agreements.get(String(id)); if (a) assertOpen(a.projectId); return core.agreements.accept(String(id)); },
+    'agreements.remove': (id: string) => { const a = core.agreements.get(String(id)); if (a) assertOpen(a.projectId); core.agreements.remove(String(id)); },
+    'merge.plans': (projectId: string) => core.merges.plans(String(projectId)),
+    'merge.prepare': (projectId: string, repoId: string, base: string) => { assertOpen(String(projectId)); return core.merges.prepare(String(projectId), String(repoId), String(base)); },
+    'merge.advance': (projectId: string, repoId: string, base: string) => { assertOpen(String(projectId)); return core.merges.advance(String(projectId), String(repoId), String(base)); },
+    'merge.askToResolve': (projectId: string, repoId: string, base: string, workspaceId: string) => { assertOpen(String(projectId)); return core.merges.askToResolve(String(projectId), String(repoId), String(base), String(workspaceId)); },
+    'review.status': (workspaceId: string) => core.review.status(String(workspaceId)),
+    'review.run': (workspaceId: string) => core.review.review(String(workspaceId), { force: true }),
+    'review.sendToAgent': async (workspaceId: string, picked?: number[]) => {
+      const ws = core.workspaces.get(String(workspaceId));
+      if (!ws) throw new Error('워크스페이스가 없습니다.');
+      assertOpen(ws.projectId);
+      const s = await core.review.status(ws.id);
+      if (!s || s.state !== 'done' || s.findings.length === 0) throw new Error('보낼 리뷰 결과가 없습니다.');
+      core.messages.send({ projectId: ws.projectId, from: { kind: 'system' }, toWorkspaceId: ws.id, title: '리뷰', body: core.review.fixRequest(s, Array.isArray(picked) ? picked.map(Number) : undefined) });
+    },
     'commit.run': (workspaceId: string, input: { files: string[]; message: string }) => core.commit.commit(workspaceId, input),
     'commit.push': (workspaceId: string) => core.commit.push(workspaceId),
     'settings.get': () => core.settings.get(),
@@ -353,6 +375,13 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.checkpoints.on('changed', onCheckpointsChanged);
   core.worktime.on('changed', onWorktimeChanged);
   core.verify.on('changed', onTodosChanged);
+  const onReviewChanged = (): void => changed('commit');
+  core.review.on('changed', onReviewChanged);
+  core.merges.on('changed', onReviewChanged);
+  const onAgreementsChanged = (): void => changed('todos');
+  core.agreements.on('changed', onAgreementsChanged);
+  const onFiguresChanged = (): void => changed('figures');
+  core.figures.on('changed', onFiguresChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -379,6 +408,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.checkpoints.off('changed', onCheckpointsChanged);
     core.worktime.off('changed', onWorktimeChanged);
     core.verify.off('changed', onTodosChanged);
+    core.review.off('changed', onReviewChanged);
+    core.merges.off('changed', onReviewChanged);
+    core.agreements.off('changed', onAgreementsChanged);
+    core.figures.off('changed', onFiguresChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

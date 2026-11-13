@@ -60,7 +60,16 @@ export interface EngineHooks {
   /** 대화 기록이 바뀌었을 것이다 (에이전트의 글·도구 결과가 나왔다) */
   onActivity(workspaceId: string): void;
   onExit(workspaceId: string, code: number | null, stderr: string): void;
+  /** 도구 결과가 왔다 (error: 실패했다. text: 결과의 앞부분). 막힘을 알아채는 데 쓴다 */
+  onToolResult?(workspaceId: string, error: boolean, text: string): void;
+  /** 한 차례가 오류 없이 끝났다 (한도가 풀렸다는 뜻이다) */
+  onTurnOk?(workspaceId: string): void;
+  /** 사용 한도가 바뀌었다 (status: allowed 면 풀렸다) */
+  onLimit?(workspaceId: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null }): void;
 }
+
+/** 한도에 걸려 끝났을 때 Claude Code 가 남기는 글 */
+const LIMIT_TEXT = /usage limit reached|hit your (usage |weekly |session )?limit|out of (extra )?usage/i;
 
 const DENIED = '사용자가 거부했습니다.';
 
@@ -192,6 +201,14 @@ export class ChatEngine extends EventEmitter {
       case 'assistant':
       case 'user':
         if (e.parent_tool_use_id) return;
+        // 도구 결과: 실패를 되풀이하는지 본다.
+        if (e.type === 'user' && isObj(e.message) && Array.isArray(e.message.content)) {
+          for (const b of e.message.content) {
+            if (!isObj(b) || b.type !== 'tool_result') continue;
+            const body = typeof b.content === 'string' ? b.content : Array.isArray(b.content) ? b.content.map((c) => (isObj(c) ? str(c.text) : '')).join('\n') : '';
+            this.hooks.onToolResult?.(workspaceId, b.is_error === true, body.slice(0, 600));
+          }
+        }
         // 한 덩어리가 끝나 기록에 남았다. 쓰는 중이던 글은 기록에서 읽은 것으로 바뀐다.
         if (e.type === 'assistant') l.streaming = null;
         this.hooks.onActivity(workspaceId);
@@ -223,7 +240,17 @@ export class ChatEngine extends EventEmitter {
         }
         return;
       }
+      case 'rate_limit_event': {
+        const i = isObj(e.rate_limit_info) ? e.rate_limit_info : {};
+        const status = i.status === 'rejected' ? 'rejected' : i.status === 'allowed_warning' ? 'warning' : 'allowed';
+        const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+        this.hooks.onLimit?.(workspaceId, { status, kind: str(i.rateLimitType), resetsAt: num(i.resetsAt), utilization: num(i.utilization) });
+        return;
+      }
       case 'result':
+        // 한도에 걸려 끝났다 (한도 이벤트가 오지 않는 판도 있다).
+        if (e.is_error === true && LIMIT_TEXT.test(str(e.result))) this.hooks.onLimit?.(workspaceId, { status: 'rejected', kind: '', resetsAt: null, utilization: null });
+        else if (e.is_error !== true && e.subtype === 'success') this.hooks.onTurnOk?.(workspaceId);
         l.streaming = null;
         l.pending = [];
         this.hooks.onActivity(workspaceId);

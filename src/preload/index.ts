@@ -32,6 +32,7 @@ const api: DureApi = {
     approve: (proposalId, decision) => call('coordinator.approve', proposalId, decision),
     pickSpec: () => call('coordinator.pickSpec'),
     reject: (proposalId, reason) => call('coordinator.reject', proposalId, reason),
+    revise: (proposalId, feedback, target, decision) => call('coordinator.revise', proposalId, feedback, target, decision),
   },
   db: {
     list: (projectId) => call('db.list', projectId),
@@ -74,6 +75,7 @@ const api: DureApi = {
     stopAgent: (id) => call('workspaces.stopAgent', id),
     setEngine: (id, engine) => call('workspaces.setEngine', id, engine),
     setModel: (id, model) => call('workspaces.setModel', id, model),
+    dismissStuck: (id) => call('workspaces.dismissStuck', id),
     rename: (id, name) => call('workspaces.rename', id, name),
     setAutoName: (id, on) => call('workspaces.setAutoName', id, on),
   },
@@ -114,6 +116,27 @@ const api: DureApi = {
     diff: (workspaceId, file) => call('commit.diff', workspaceId, file),
     run: (workspaceId, input) => call('commit.run', workspaceId, input),
     push: (workspaceId) => call('commit.push', workspaceId),
+  },
+  figures: {
+    list: (workspaceId) => call('figures.list', workspaceId),
+    remove: (id) => call('figures.remove', id),
+  },
+  agreements: {
+    list: (projectId, proposed) => call('agreements.list', projectId, proposed),
+    save: (projectId, input) => call('agreements.save', projectId, input),
+    accept: (id) => call('agreements.accept', id),
+    remove: (id) => call('agreements.remove', id),
+  },
+  merge: {
+    plans: (projectId) => call('merge.plans', projectId),
+    prepare: (projectId, repoId, base) => call('merge.prepare', projectId, repoId, base),
+    advance: (projectId, repoId, base) => call('merge.advance', projectId, repoId, base),
+    askToResolve: (projectId, repoId, base, workspaceId) => call('merge.askToResolve', projectId, repoId, base, workspaceId),
+  },
+  review: {
+    status: (workspaceId) => call('review.status', workspaceId),
+    run: (workspaceId) => call('review.run', workspaceId),
+    sendToAgent: (workspaceId, picked) => call('review.sendToAgent', workspaceId, picked),
   },
   chat: {
     get: (workspaceId) => call('chat.get', workspaceId),

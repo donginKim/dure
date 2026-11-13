@@ -23,7 +23,7 @@ interface Row { workspace_id: string; state: string; tree: string; command: stri
 /** 명령을 돌리는 쪽 (시험에서 바꾼다). 끝나면 종료 코드와 출력의 끝부분을 돌려준다. */
 export type VerifyRunner = (o: { command: string; cwd: string; env: Record<string, string>; timeoutMs: number }) => Promise<{ code: number | null; output: string; timedOut: boolean }>;
 
-const shellRunner: VerifyRunner = ({ command, cwd, env, timeoutMs }) => new Promise((resolve) => {
+export const shellRunner: VerifyRunner = ({ command, cwd, env, timeoutMs }) => new Promise((resolve) => {
   // 로그인 셸로 돌린다: 사용자가 터미널에서 치는 것과 같은 PATH 를 쓴다 (node, pnpm 등).
   const child = spawn(env.SHELL || '/bin/zsh', ['-lc', command], { cwd, env: { ...env, CI: '1' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';

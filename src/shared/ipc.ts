@@ -9,11 +9,11 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
-export type ChangeTopic = 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
+export type ChangeTopic = 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -42,6 +42,8 @@ export interface DureApi {
     /** 계획안을 승인한다. decision 은 검토 화면에서 고친 최종 계획. 두레가 워크스페이스와 TODO 를 그대로 만든다 */
     approve(proposalId: string, decision: PlanDecision): Promise<PlanResult>;
     reject(proposalId: string, reason?: string): Promise<void>;
+    /** 계획안의 일부만 고쳐 달라고 조율 에이전트에게 보낸다 (계획안은 남는다). decision: 검토 화면에서 고친 지금의 모양 */
+    revise(proposalId: string, feedback: string, target: string, decision: PlanDecision): Promise<void>;
     /** 기획서 파일을 고르는 창을 띄운다. 글 파일이면 내용까지 돌려준다. 취소하면 null */
     pickSpec(): Promise<SpecFile | null>;
   };
@@ -105,6 +107,8 @@ export interface DureApi {
     setEngine(id: string, engine: AgentEngine): Promise<void>;
     /** 모델을 바꾼다 (빈 글이면 설정의 모델). 채팅 방식으로 도는 중이면 바로(now), 아니면 다음에 시작할 때(next) */
     setModel(id: string, model: string): Promise<{ applied: 'now' | 'next' }>;
+    /** 막혔다는 표시를 거둔다 (그대로 두기) */
+    dismissStuck(id: string): Promise<void>;
     /** 표시 이름을 바꾼다 (브랜치와 작업 폴더는 그대로). 직접 지은 이름은 에이전트가 바꾸지 못한다 */
     rename(id: string, name: string): Promise<Workspace>;
     /** 에이전트가 작업에 맞게 이름을 바꿔도 되는가 */
@@ -159,6 +163,39 @@ export interface DureApi {
     run(workspaceId: string, input: { files: string[]; message: string }): Promise<CommitResult>;
     /** git 이 낸 글을 돌려준다 */
     push(workspaceId: string): Promise<string>;
+  };
+  /** 에이전트가 그린 그림 */
+  figures: {
+    list(workspaceId: string): Promise<Figure[]>;
+    remove(id: string): Promise<void>;
+  };
+  /** 프로젝트의 약속 */
+  agreements: {
+    /** proposed: 에이전트의 제안도 함께 */
+    list(projectId: string, proposed?: boolean): Promise<Agreement[]>;
+    /** 사용자가 적는다 (바로 약속이 되고 모든 에이전트에게 알린다). id 를 주면 고친다 */
+    save(projectId: string, input: { id?: string; kind: AgreementKind; title: string; body: string }): Promise<Agreement>;
+    accept(id: string): Promise<Agreement>;
+    remove(id: string): Promise<void>;
+  };
+  /** 합치기 도우미 */
+  merge: {
+    /** 저장소마다, 기준 브랜치마다의 합치기 계획 (차례로 합쳐 본 결과). 아무것도 바꾸지 않는다 */
+    plans(projectId: string): Promise<MergePlan[]>;
+    /** 합치기 브랜치를 만들고 (있으면 옮기고) 확인 명령을 돌린다. 기준 브랜치는 건드리지 않는다 */
+    prepare(projectId: string, repoId: string, base: string): Promise<{ plan: MergePlan; verify: { ok: boolean; output: string } | null }>;
+    /** 합치기 브랜치를 기준 브랜치로 옮긴다 (앞으로 감기만) */
+    advance(projectId: string, repoId: string, base: string): Promise<string>;
+    /** 충돌한 워크스페이스의 에이전트에게 풀라고 보낸다 */
+    askToResolve(projectId: string, repoId: string, base: string, workspaceId: string): Promise<void>;
+  };
+  /** 커밋 전의 리뷰 (리뷰 에이전트) */
+  review: {
+    status(workspaceId: string): Promise<ReviewState | null>;
+    /** 지금 리뷰를 받는다 (작업 폴더가 바뀌지 않았어도 다시) */
+    run(workspaceId: string): Promise<ReviewState>;
+    /** 리뷰가 찾은 것을 그 워크스페이스의 에이전트에게 보내 고치게 한다. picked: 보낼 것의 번호 (없으면 전부) */
+    sendToAgent(workspaceId: string, picked?: number[]): Promise<void>;
   };
   /** 채팅 보기. 에이전트는 터미널에서 돌고, 여기서 보내는 것은 그 터미널에 써 넣는 것이다 */
   chat: {
@@ -334,7 +371,7 @@ export interface DureApi {
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
   'projects.list', 'projects.create', 'projects.remove', 'projects.reopen',
-  'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.pickSpec',
+  'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
@@ -347,7 +384,7 @@ export const IPC_CHANNELS = [
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
   'workspaces.list', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
-  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.rename', 'workspaces.setAutoName',
+  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.dismissStuck', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
   'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.setAfter', 'todos.pending', 'todos.nudge',
@@ -359,7 +396,7 @@ export const IPC_CHANNELS = [
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',
-  'commit.state', 'commit.diff', 'commit.run', 'commit.push',
+  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent', 'figures.list', 'figures.remove', 'agreements.list', 'agreements.save', 'agreements.accept', 'agreements.remove', 'merge.plans', 'merge.prepare', 'merge.advance', 'merge.askToResolve',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;

@@ -19,7 +19,7 @@ export function ModelPicker({ workspace, readOnly, onError, onNote }: { workspac
       .finally(() => setBusy(false));
   };
   return (
-    <select className="engine-select" value={workspace.model} disabled={busy} onChange={(e) => change(e.target.value)}
+    <select className="engine-select model-select" value={workspace.model} disabled={busy} onChange={(e) => change(e.target.value)}
       title="이 워크스페이스의 모델. 사용 한도에 걸리면 다른 모델로 바꿔 이어 갈 수 있습니다. 채팅 방식으로 도는 중이면 대화를 끊지 않고 바뀝니다">
       <option value="">모델: 설정의 기본</option>
       {!known && workspace.model && <option value={workspace.model}>모델: {workspace.model}</option>}

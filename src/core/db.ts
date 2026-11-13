@@ -382,6 +382,49 @@ const MIGRATIONS: string[] = [
   -- 워크스페이스마다의 모델 (비어 있으면 설정의 모델). 에이전트가 도는 중에도 바꿀 수 있다
   ALTER TABLE workspaces ADD COLUMN model TEXT NOT NULL DEFAULT '';
   `,
+  `
+  -- 커밋 전의 리뷰 (리뷰 에이전트가 찾은 것). 워크스페이스마다 마지막 하나
+  CREATE TABLE reviews (
+    workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+    state TEXT NOT NULL,
+    tree TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    findings TEXT NOT NULL DEFAULT '[]',
+    error TEXT NOT NULL DEFAULT '',
+    at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- 프로젝트의 약속 (API 형식, 이름 규칙, 정한 것). 에이전트는 제안만 하고 (proposed) 사용자가 받아들인다
+  CREATE TABLE agreements (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL,
+    author TEXT NOT NULL,
+    replaces TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX agreements_by_project ON agreements (project_id, status);
+  `,
+  `
+  -- 에이전트가 그린 그림 (SVG, Mermaid). 고치면 같은 group_id 의 새 판
+  CREATE TABLE figures (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    group_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX figures_by_workspace ON figures (workspace_id, created_at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

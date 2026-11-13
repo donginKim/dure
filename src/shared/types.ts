@@ -186,6 +186,32 @@ export interface CommitDraft {
   updatedAt: number;
 }
 
+/**
+ * 합치기 계획의 한 단계 (워크스페이스 하나). state: ok 충돌 없이 합쳐진다, conflict 충돌한다, merged 이미 기준 브랜치에 들어 있다,
+ * empty 합칠 커밋이 없다, missing 브랜치가 없다. with: 함께 충돌하는 앞의 워크스페이스. uncommitted: 커밋하지 않은 변경 (합치기에 들어가지 않는다)
+ */
+export interface MergeStep { workspaceId: string; name: string; branch: string; ahead: number; uncommitted: number; state: 'ok' | 'conflict' | 'merged' | 'empty' | 'missing'; conflicts: string[]; with: string[] }
+/** 한 저장소·기준 브랜치의 합치기 계획. ready: 합치기 브랜치가 지금의 결과와 같다 (기준 브랜치로 옮길 수 있다) */
+export interface MergePlan {
+  projectId: string; repoId: string; repoName: string; base: string; baseHead: string; steps: MergeStep[];
+  /** 충돌 없는 것을 다 합친 커밋. 합칠 것이 없으면 null */
+  result: string | null;
+  mergeBranch: string; mergeBranchHead: string | null; ready: boolean; verifyCommand: string;
+}
+
+/** 프로젝트의 약속 하나. api: API 형식, naming: 이름 규칙, decision: 정한 것. proposed: 에이전트가 제안했고 사용자가 아직 받아들이지 않았다 */
+export type AgreementKind = 'api' | 'naming' | 'decision' | 'other';
+export interface Agreement { id: string; projectId: string; kind: AgreementKind; title: string; body: string; status: 'active' | 'proposed'; author: string; replaces: string | null; updatedAt: number }
+
+/** 에이전트가 그린 그림. 고치면 같은 groupId 의 새 판(version)으로 쌓인다 */
+export type FigureKind = 'svg' | 'mermaid';
+export interface Figure { id: string; projectId: string; workspaceId: string; groupId: string; version: number; title: string; kind: FigureKind; source: string; note: string; createdAt: number }
+
+/** 리뷰 에이전트가 찾은 것 하나 */
+export interface ReviewFinding { severity: '높음' | '중간' | '낮음'; file: string; line: number | null; title: string; detail: string }
+/** 커밋 전의 리뷰. stale: 리뷰한 뒤에 작업 폴더가 바뀌었다 */
+export interface ReviewState { state: 'running' | 'done' | 'failed'; summary: string; findings: ReviewFinding[]; error: string; at: number; stale: boolean }
+
 export interface CommitResult {
   hash: string;
   subject: string;
@@ -313,7 +339,23 @@ export type ChatView = ChatSnapshot & {
   question: ChatQuestion | null;
   /** 에이전트가 오류로 끝났을 때 남긴 글 (채팅 방식) */
   lastError: string | null;
+  /** 사용 한도 (채팅 방식). 걸렸거나 가까우면 있다 */
+  limit: LimitInfo | null;
+  /** 에이전트가 막힌 것 같다 (채팅 방식). 없으면 null */
+  stuck: StuckInfo | null;
 };
+
+/**
+ * 에이전트가 막힌 것 같을 때. repeat: 같은 도구 오류를 되풀이한다. quiet: 일하는 중인데 오래 아무 움직임이 없다.
+ * detail: 되풀이한 오류의 앞부분 (에이전트가 받은 글이다)
+ */
+export interface StuckInfo { reason: 'repeat' | 'quiet'; since: number; count: number; detail: string }
+
+/**
+ * 에이전트의 사용 한도. rejected: 걸려서 멈췄다 (다른 모델로 바꾸면 이어 갈 수 있을 때가 있다). warning: 가까워졌다.
+ * kind 는 한도의 종류 (five_hour, seven_day, seven_day_opus, seven_day_sonnet …). 모델마다 따로인 한도면 다른 모델로 이어 갈 수 있다.
+ */
+export interface LimitInfo { status: 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; model: string; at: number }
 
 /** Claude Code 의 effort 단계. 빈 값은 "Claude Code 의 기본" */
 export type ClaudeEffort = '' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -363,6 +405,10 @@ export interface Settings {
   autoStartOnMessage: boolean;
   /** 커밋·push 뒤에 에이전트에게 알린다 */
   notifyAgentOnCommit: boolean;
+  /** 에이전트가 커밋 초안을 올리면 리뷰 에이전트가 변경을 읽고 문제를 찾는다 (Claude 사용량이 든다) */
+  reviewOnDraft: boolean;
+  /** 리뷰 에이전트의 모델. 빈 글이면 Claude Code 의 모델 설정을 따른다 */
+  reviewModel: string;
   /** 에이전트가 메모를 찾아 읽을 수 있다 (읽기만) */
   notesForAgents: boolean;
   /** 에이전트가 새 메모를 쓰고 메모에 덧붙일 수 있다 (고치거나 지우지는 못한다) */
@@ -773,7 +819,7 @@ export interface NoteSummary { id: string; title: string; preview: string; updat
  * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
  * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
  */
-export type AttentionKind = 'agent' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
+export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'agreement' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
 export interface AttentionItem {
   /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
   id: string; kind: AttentionKind;

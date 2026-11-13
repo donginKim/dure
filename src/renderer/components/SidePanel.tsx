@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FigurePanel } from './FigurePanel';
 import type { Todo, Workspace } from '@shared/types';
 import { deliveryNote, threadsFor } from '../conversationView';
 import { progress } from '../todoView';
 import { ConversationList, type ConversationData } from './ConversationPanel';
 import { TodoBody, type PendingInfo } from './TodoPanel';
 
-type Tab = 'todo' | 'talk';
+type Tab = 'todo' | 'talk' | 'figure';
 
 // 접힘 여부와 고른 탭은 워크스페이스를 오가도 유지한다 (앱을 다시 켜면 처음 상태).
 const remembered = new Map<string, { collapsed: boolean; tab: Tab }>();
@@ -27,6 +28,21 @@ export function SidePanel({ workspace, workspaces, todos, projectTodos, pending,
   const attention = (info !== undefined && (info.waiting > 0 || info.held > 0 || info.error !== undefined) && deliveryNote(info).attention)
     || threads.some((t) => t.capped) || conversation.flow.capped;
   const todoLabel = total > 0 ? `${done}/${total}` : '';
+  // 그림: 새 그림이 오면 그림 탭을 연다 (처음 읽을 때는 열지 않는다).
+  const [figures, setFigures] = useState<number | null>(null);
+  const seenFigures = useRef<number | null>(null);
+  const onFigures = useCallback((n: number) => setFigures(n), []);
+  useEffect(() => {
+    const load = (): void => { window.dure.figures.list(workspace.id).then((l) => setFigures(l.length)).catch(() => undefined); };
+    load();
+    return window.dure.onChanged((topic) => { if (topic === 'figures') load(); });
+  }, [workspace.id]);
+  useEffect(() => {
+    if (figures === null) return;
+    if (seenFigures.current !== null && figures > seenFigures.current) setState({ collapsed: false, tab: 'figure' });
+    seenFigures.current = figures;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [figures]);
 
   if (state.collapsed) {
     return (
@@ -45,10 +61,13 @@ export function SidePanel({ workspace, workspaces, todos, projectTodos, pending,
         <button role="tab" aria-selected={state.tab === 'talk'} className={`side-tab${state.tab === 'talk' ? ' on' : ''}`} onClick={() => setState({ ...state, tab: 'talk' })}>
           대화{threads.length > 0 && <span className="n">{threads.length}</span>}{attention && <span className="pip" title="확인이 필요한 대화가 있습니다" />}
         </button>
+        <button role="tab" aria-selected={state.tab === 'figure'} className={`side-tab${state.tab === 'figure' ? ' on' : ''}`} onClick={() => setState({ ...state, tab: 'figure' })}>
+          그림{(figures ?? 0) > 0 && <span className="n">{figures}</span>}
+        </button>
         <span className="spacer" />
         <button className="btn ghost" title="패널 접기" onClick={() => setState({ ...state, collapsed: true })}>접기</button>
       </div>
-      {state.tab === 'todo'
+      {state.tab === 'figure' ? <FigurePanel workspaceId={workspace.id} readOnly={readOnly} onCount={onFigures} /> : state.tab === 'todo'
         ? <TodoBody workspace={workspace} items={todos} pending={pending} readOnly={readOnly} links={projectTodos ? { all: projectTodos, workspaces } : undefined} />
         : (
           <div className="todo-scroll talk">

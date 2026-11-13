@@ -935,3 +935,9 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .coord-figures { flex: none; width: 380px; }
 .model-select { max-width: 170px; flex: 0 1 auto; }
 .ws-head .view-switch button, .ws-head .ws-head-name { white-space: nowrap; }
+
+/* 자동 반영 기록 */
+.ship-log { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.ship-row { display: flex; align-items: baseline; gap: 8px; }
+.ship-row.bad { color: var(--danger, #c25b5b); }
+.ship-at { flex: none; width: 44px; }

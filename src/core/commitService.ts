@@ -83,12 +83,12 @@ export class CommitService extends EventEmitter {
     }
   }
 
-  async commit(workspaceId: string, i: { files: string[]; message: string }): Promise<CommitResult> {
+  async commit(workspaceId: string, i: { files: string[]; message: string }, o: { auto?: boolean } = {}): Promise<CommitResult> {
     const ws = this.mustGet(workspaceId);
     // 실패하면 여기서 던져지고 초안은 그대로 남는다.
     const result = await this.d.git.commitFiles({ path: ws.worktreePath, files: i.files, message: i.message });
     this.d.drafts.clear(workspaceId);
-    this.notify(ws, `사용자가 커밋했다: ${result.hash} ${result.subject}`);
+    this.notify(ws, o.auto ? `두레가 자동 반영 설정에 따라 커밋했다 (확인 명령 통과, 리뷰에 높음 없음): ${result.hash} ${result.subject}` : `사용자가 커밋했다: ${result.hash} ${result.subject}`);
     this.emit('changed', workspaceId);
     return result;
   }

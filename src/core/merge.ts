@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { MergePlan, MergeStep, Todo, Workspace } from '@shared/types';
 import type { Git } from './git';
@@ -53,7 +53,7 @@ export function mergeOrder(ws: Pick<Workspace, 'id' | 'createdAt'>[], todos: Pic
 export class MergeService extends EventEmitter {
   private readonly busy = new Set<string>();
   /** 마지막으로 만든 합치기 결과와 그 확인 결과 (`저장소|기준` → 커밋, 통과 여부). 옮길 때 다시 본다 */
-  private readonly prepared = new Map<string, { commit: string; verified: boolean | null }>();
+  private readonly prepared = new Map<string, { commit: string; verified: boolean | null; only: string }>();
 
   constructor(private readonly d: {
     repos: RepoStore; workspaces: WorkspaceStore; git: Git; messages: MessageService;
@@ -85,10 +85,11 @@ export class MergeService extends EventEmitter {
   }
 
   /** 한 저장소·기준 브랜치의 합치기 계획. 작업 폴더 없이 차례로 합쳐 본다. 아무것도 바꾸지 않는다. */
-  async plan(projectId: string, repoId: string, base: string): Promise<MergePlan> {
+  async plan(projectId: string, repoId: string, base: string, only?: string[]): Promise<MergePlan> {
     const repo = this.d.repos.get(repoId);
     if (!repo || repo.projectId !== projectId) throw new Error('이 프로젝트의 저장소가 아닙니다.');
-    const ws = this.d.workspaces.list(projectId).filter((w) => w.repoId === repoId && w.baseBranch === base);
+    // only: 이 워크스페이스들만 합친다 (자동 반영은 검사를 거친 그 워크스페이스만).
+    const ws = this.d.workspaces.list(projectId).filter((w) => w.repoId === repoId && w.baseBranch === base && (!only || only.includes(w.id)));
     const order = mergeOrder(ws, this.d.todos(projectId));
     const baseHead = await this.git(repo.path, 'rev-parse', '--verify', `refs/heads/${base}`).catch(() => '');
     if (!baseHead) throw new Error(`기준 브랜치 ${base} 가 없습니다.`);
@@ -123,8 +124,9 @@ export class MergeService extends EventEmitter {
     const ref = mergeRefOf(base);
     const existing = await this.git(repo.path, 'rev-parse', '--verify', '--quiet', ref).catch(() => '');
     const prep = this.prepared.get(`${repoId}|${base}`);
+    const sameScope = (prep?.only ?? '') === (only ? [...only].sort().join(',') : '');
     // 옮길 수 있다: 만들어 둔 결과가 지금 다시 합쳐 본 것과 같고, 확인 명령이 있으면 그것이 통과했다.
-    const ready = cur !== baseHead && existing === cur && prep?.commit === cur && (repo.verifyCommand ? prep.verified === true : true);
+    const ready = cur !== baseHead && existing === cur && sameScope && prep?.commit === cur && (repo.verifyCommand ? prep.verified === true : true);
     return {
       projectId, repoId, repoName: repo.name, base, baseHead, steps, result: cur === baseHead ? null : cur,
       mergeBranch: ref, mergeBranchHead: existing || null, ready, verifyCommand: repo.verifyCommand,
@@ -135,18 +137,19 @@ export class MergeService extends EventEmitter {
    * 합치기 브랜치를 만든다: 충돌하지 않는 브랜치들을 차례로 합친 결과를 `dure/merge-<기준>` 에 둔다 (있으면 옮긴다).
    * 저장소에 확인 명령이 있으면 임시 작업 폴더에서 돌린다. 기준 브랜치와 사용자의 작업 폴더는 건드리지 않는다.
    */
-  async prepare(projectId: string, repoId: string, base: string): Promise<{ plan: MergePlan; verify: { ok: boolean; output: string } | null }> {
+  async prepare(projectId: string, repoId: string, base: string, only?: string[]): Promise<{ plan: MergePlan; verify: { ok: boolean; output: string } | null }> {
     if (this.d.isProjectClosed(projectId)) throw new Error('완료된 프로젝트입니다.');
     const key = `${repoId}|${base}`;
     if (this.busy.has(key)) throw new Error('이미 합치는 중입니다.');
     this.busy.add(key);
     this.emit('changed', projectId);
     try {
-      const p = await this.plan(projectId, repoId, base);
+      const p = await this.plan(projectId, repoId, base, only);
       if (!p.result) throw new Error('합칠 것이 없습니다 (충돌 없이 합칠 수 있는 커밋이 없습니다).');
       const repo = this.d.repos.get(repoId)!;
+      const scope = only ? [...only].sort().join(',') : '';
       await this.git(repo.path, 'update-ref', p.mergeBranch, p.result);
-      this.prepared.set(key, { commit: p.result, verified: null });
+      this.prepared.set(key, { commit: p.result, verified: null, only: scope });
       let verify: { ok: boolean; output: string } | null = null;
       if (repo.verifyCommand) {
         const dir = join(this.d.worktreeRoot, '.merge', `${repoId}-${slugOf(base)}`);
@@ -154,10 +157,13 @@ export class MergeService extends EventEmitter {
         await this.d.git.raw(['-C', repo.path, 'worktree', 'prune']).catch(() => undefined);
         mkdirSync(join(this.d.worktreeRoot, '.merge'), { recursive: true });
         await this.git(repo.path, 'worktree', 'add', '--detach', dir, p.result);
+        // 임시 작업 폴더에는 설치된 패키지가 없다: 원본 폴더나 워크스페이스의 node_modules 를 이어 붙인다 (있으면).
+        const deps = [repo.path, ...this.d.workspaces.list(projectId).filter((w) => w.repoId === repoId).map((w) => w.worktreePath)].map((d) => join(d, 'node_modules')).find((d) => existsSync(d));
+        if (deps && !existsSync(join(dir, 'node_modules'))) { try { symlinkSync(deps, join(dir, 'node_modules')); } catch { /* 없이 돌린다 */ } }
         try {
           const r = await this.d.run({ command: repo.verifyCommand, cwd: dir, env: this.d.env, timeoutMs: this.d.timeoutMs() });
           verify = { ok: r.code === 0 && !r.timedOut, output: r.timedOut ? `${r.output}\n(시간 안에 끝나지 않아 멈췄습니다)`.trim() : r.output };
-          this.prepared.set(key, { commit: p.result, verified: verify.ok });
+          this.prepared.set(key, { commit: p.result, verified: verify.ok, only: scope });
         } finally {
           await this.d.git.raw(['-C', repo.path, 'worktree', 'remove', '--force', dir]).catch(() => rmSync(dir, { recursive: true, force: true }));
         }
@@ -173,7 +179,7 @@ export class MergeService extends EventEmitter {
    * 합치기 브랜치를 기준 브랜치로 옮긴다. 앞으로 감기만 한다 (기준 브랜치가 그사이 바뀌었으면 하지 않는다).
    * 기준 브랜치가 사용자의 작업 폴더에 체크아웃돼 있으면 그 폴더가 깨끗할 때만, git merge --ff-only 로 한다.
    */
-  async advance(projectId: string, repoId: string, base: string): Promise<string> {
+  async advance(projectId: string, repoId: string, base: string, only?: string[]): Promise<string> {
     if (this.d.isProjectClosed(projectId)) throw new Error('완료된 프로젝트입니다.');
     const repo = this.d.repos.get(repoId);
     if (!repo || repo.projectId !== projectId) throw new Error('이 프로젝트의 저장소가 아닙니다.');
@@ -182,7 +188,7 @@ export class MergeService extends EventEmitter {
     this.busy.add(key);
     try {
       // 화면이 본 것을 믿지 않고 다시 본다: 지금 다시 합쳐 본 결과가 만들어 둔 것과 같고, 확인 명령이 통과했어야 한다.
-      const p = await this.plan(projectId, repoId, base);
+      const p = await this.plan(projectId, repoId, base, only);
       if (!p.mergeBranchHead) throw new Error('합치기 결과가 없습니다. 먼저 "합치기 브랜치 만들기" 를 누르세요.');
       if (!p.ready) {
         throw new Error(p.result !== p.mergeBranchHead || this.prepared.get(key)?.commit !== p.result

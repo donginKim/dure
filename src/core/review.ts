@@ -44,13 +44,18 @@ const claudeRunner: ReviewRunner = ({ prompt, cwd, model, env, timeoutMs, comman
 });
 
 /** 리뷰어의 글에서 결과를 뽑는다. 마지막 ```json 덩어리, 없으면 글 전체를 JSON 으로 읽어 본다. */
-export function parseReview(text: string): { summary: string; findings: ReviewFinding[] } | null {
+export function parseReview(text: string): { summary: string; findings: ReviewFinding[]; strict: boolean } | null {
   const blocks = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)\n```/g)].map((m) => m[1]!);
   for (const raw of [...blocks.reverse(), text]) {
     let o: unknown;
     try { o = JSON.parse(raw.trim()); } catch { continue; }
     if (!o || typeof o !== 'object') continue;
     const r = o as { summary?: unknown; findings?: unknown };
+    // 엄격하게 읽혔는가 (자동 반영은 이것만 믿는다): 결과 덩어리가 하나뿐이고, findings 가 배열이고, 모든 항목의 심각도와 제목이 정해진 모양이다.
+    const strict = blocks.length === 1 && Array.isArray(r.findings) && (r.findings as unknown[]).every((f) => {
+      const x = (f && typeof f === 'object' ? f : {}) as Record<string, unknown>;
+      return SEVERITIES.includes(x.severity as typeof SEVERITIES[number]) && typeof x.title === 'string' && x.title.trim() !== '';
+    });
     const findings = (Array.isArray(r.findings) ? r.findings : []).slice(0, 30).flatMap((f): ReviewFinding[] => {
       const x = (f && typeof f === 'object' ? f : {}) as Record<string, unknown>;
       const title = plain(x.title, 200);
@@ -60,12 +65,12 @@ export function parseReview(text: string): { summary: string; findings: ReviewFi
       return [{ severity: sev, file: plain(x.file, 300), line: Number.isInteger(line) && line > 0 ? line : null, title, detail: plain(x.detail, 2000) }];
     });
     const order = { 높음: 0, 중간: 1, 낮음: 2 } as const;
-    return { summary: plain(r.summary, 1000), findings: findings.sort((a, b) => order[a.severity] - order[b.severity]) };
+    return { summary: plain(r.summary, 1000), findings: findings.sort((a, b) => order[a.severity] - order[b.severity]), strict };
   }
   return null;
 }
 
-interface Row { workspace_id: string; state: string; tree: string; summary: string; findings: string; error: string; at: number }
+interface Row { workspace_id: string; state: string; tree: string; summary: string; findings: string; error: string; at: number; strict?: number }
 
 /**
  * 리뷰 에이전트: 커밋하기 전의 변경을 다른 에이전트가 읽고 문제를 적는다. 사용자는 커밋 창에서 그 의견과 함께 본다.
@@ -100,12 +105,12 @@ export class ReviewService extends EventEmitter {
     if (!r) return null;
     let findings: ReviewFinding[] = [];
     try { findings = JSON.parse(r.findings) as ReviewFinding[]; } catch { /* 빈 것 */ }
-    return { state: r.state === 'done' ? 'done' : 'failed', summary: r.summary, findings, error: r.error, at: r.at, stale: false };
+    return { state: r.state === 'done' ? 'done' : 'failed', summary: r.summary, findings, error: r.error, at: r.at, stale: false, strict: r.strict === 1, tree: r.tree };
   }
 
   /** 마지막 리뷰. stale: 그 뒤에 작업 폴더가 바뀌었다 */
   async status(workspaceId: string): Promise<ReviewState | null> {
-    if (this.running.has(workspaceId)) return { state: 'running', summary: '', findings: [], error: '', at: Date.now(), stale: false };
+    if (this.running.has(workspaceId)) return { state: 'running', summary: '', findings: [], error: '', at: Date.now(), stale: false, strict: false, tree: '' };
     const r = this.row(workspaceId);
     const s = this.toState(r);
     if (!s || !r) return null;
@@ -185,8 +190,8 @@ export class ReviewService extends EventEmitter {
     const parsed = r.ok ? parseReview(r.text) : null;
     const state = parsed ? 'done' : 'failed';
     const error = parsed ? '' : r.error ?? '리뷰어의 답에서 결과를 읽지 못했습니다.';
-    this.d.db.prepare('INSERT INTO reviews (workspace_id, state, tree, summary, findings, error, at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id) DO UPDATE SET state = excluded.state, tree = excluded.tree, summary = excluded.summary, findings = excluded.findings, error = excluded.error, at = excluded.at')
-      .run(workspaceId, state, tree, parsed?.summary ?? '', JSON.stringify(parsed?.findings ?? []), error, Date.now());
+    this.d.db.prepare('INSERT INTO reviews (workspace_id, state, tree, summary, findings, error, at, strict) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id) DO UPDATE SET state = excluded.state, tree = excluded.tree, summary = excluded.summary, findings = excluded.findings, error = excluded.error, at = excluded.at, strict = excluded.strict')
+      .run(workspaceId, state, tree, parsed?.summary ?? '', JSON.stringify(parsed?.findings ?? []), error, Date.now(), parsed?.strict ? 1 : 0);
     return this.toState(this.row(workspaceId))!;
   }
 

@@ -8,6 +8,7 @@ import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
 import { ReviewService, type ReviewRunner } from './review';
 import { MergeService } from './merge';
+import { AutoShipService } from './autoship';
 import { shellRunner, VerifyService, type VerifyRunner } from './verify';
 import { setOracleClient } from './dbquery/drivers';
 import { CoordinatorService } from './coordinator';
@@ -98,6 +99,7 @@ export interface Core {
   merges: MergeService;
   agreements: AgreementService;
   figures: FigureService;
+  autoShip: AutoShipService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -349,6 +351,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     limited: (id) => service.limited(id),
     stuck: (id) => service.stuckIn(id),
     agreements: (id) => agreements.list(id, { proposed: true }).filter((a) => a.status === 'proposed'),
+    ships: (id) => autoShip.failures(id),
   });
   for (const src of [service, coordinator, dbs, slack, browser, peers, assignments, agreements]) src.on('changed', () => attention.poke());
   attention.poke();
@@ -381,20 +384,25 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       try { messages.send({ projectId: a.projectId, from: { kind: 'system' }, toWorkspaceId: w.id, title: '약속', body }); } catch { /* 알림 실패가 약속을 되돌리지 않는다 */ }
     }
   });
+  // 자동 반영: 확인 명령, 리뷰, 비밀 값을 거쳐 커밋하고, 설정이면 기준 브랜치까지 옮긴다.
+  const autoShip = new AutoShipService({ projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
+  autoShip.on('changed', () => attention.poke());
   const reviewTimers = new Map<string, NodeJS.Timeout>();
   commitDrafts.on('changed', (id: string) => {
     const ws = workspaces.get(id);
-    if (!settings.get().reviewOnDraft || !commitDrafts.get(id) || !ws || service.isProjectClosed(ws.projectId)) return;
+    if (!commitDrafts.get(id) || !ws || service.isProjectClosed(ws.projectId)) return;
+    if (!settings.get().reviewOnDraft && projects.get(ws.projectId)?.autoShip === 'off') return;
     // 초안을 잇달아 고치면 마지막 것만 리뷰한다.
     clearTimeout(reviewTimers.get(id));
-    const t = setTimeout(() => { reviewTimers.delete(id); review.auto(id); }, 3000);
+    // 자동 반영이 켜진 프로젝트면 그쪽이 리뷰까지 차례로 한다.
+    const t = setTimeout(() => { reviewTimers.delete(id); if (projects.get(ws.projectId)?.autoShip !== 'off') void autoShip.run(id); else review.auto(id); }, 3000);
     t.unref?.();
     reviewTimers.set(id, t);
   });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {
@@ -518,6 +526,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();
+      autoShip.dispose();
+      for (const t of reviewTimers.values()) clearTimeout(t);
       await peers.dispose();
       await pty.killAll();
       await mcp.close();

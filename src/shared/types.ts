@@ -438,6 +438,8 @@ export interface PlanTodo {
   assignee: TodoAssignee;
   /** 워크스페이스 TODO 에만: 이 일이 딸릴 프로젝트 TODO 의 제목. 비어 있으면 어디에도 딸리지 않는다 */
   under?: string;
+  /** 나눠 준 쪽의 기록에만: 이 일이 딸린 내 프로젝트 TODO 의 id (승인할 때 두레가 적는다. 상대에게 보내지 않는다) */
+  goal?: string;
 }
 
 /** 계획안에 든 워크스페이스 하나와 그 TODO */
@@ -472,6 +474,8 @@ export interface Proposal {
   id: string;
   projectId: string;
   status: 'pending' | 'approved' | 'rejected';
+  /** 함께하는 사람이 제안해 온 계획안이면 그 사람 (내가 연 프로젝트에서만). 내 조율 에이전트가 올린 것이면 없다 */
+  suggestedBy?: { peerId: string; name: string };
   /** 기획서를 정리한 글 (마크다운): 요구사항, 범위, 불확실한 점 */
   summary: string;
   /** 승인하면 새로 만들 저장소 (맞는 저장소가 등록돼 있지 않을 때) */
@@ -505,6 +509,8 @@ export interface PlanResult {
   repos: Repo[];
   created: Workspace[];
   todos: number;
+  /** 만들지 않고 프로젝트를 연 사람에게 제안으로 보냈다 (내가 연 프로젝트가 아닐 때) */
+  suggested?: boolean;
 }
 
 /** 사용자가 고른 기획서 파일 */
@@ -527,6 +533,11 @@ export interface CoordinatorInfo {
   newRepoDir: string;
   /** 함께하는 사람들 (일을 나눠 줄 수 있는 사람). 함께하는 프로젝트가 아니면 비어 있다 */
   people: { peerId: string; name: string; online: boolean }[];
+  /**
+   * 다른 사람이 연 프로젝트에 참여하고 있을 때: 그 사람(리더)의 이름. 이때 계획안은 승인해도 만들어지지 않고
+   * 리더에게 제안으로 간다. 내가 연 프로젝트이거나 함께하는 프로젝트가 아니면 없다
+   */
+  suggestTo?: string;
 }
 
 // ---- DB 조회 (5단계) ----
@@ -617,6 +628,11 @@ export interface ShareMember { peerId: string; name: string; me: boolean; owner:
 /** 함께하는 프로젝트. 내 프로젝트 하나에 이어 붙어 있다 */
 export interface Share {
   id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[];
+  /**
+   * 참여자가 제안한 계획안을 어떻게 받을지 (내가 연 프로젝트에서 내가 정한다).
+   * review: 내가 검토하고 승인해야 반영된다. auto: 다른 사람에게 일을 나눠 주기만 하는 제안은 승인 없이 반영한다 (내 PC 에 만들거나 프로젝트 TODO 를 더하는 제안은 검토로 남는다)
+   */
+  suggestMode: 'review' | 'auto';
   /** 초대했지만 아직 참여하지 않은 사람 (내가 연 프로젝트에서만) */
   invited: { peerId: string; name: string }[];
 }
@@ -652,6 +668,29 @@ export interface AssignmentOut {
   items: AssignItem[]; progress: AssignProgress[];
   /** 거절한 이유 등 */
   note: string; createdAt: number; updatedAt: number;
+}
+/** 현황판의 큰 일 하나 (리더의 프로젝트 TODO). done/total 은 거기에 딸린 일의 수 (취소한 것은 빼고) */
+export interface BoardGoal { title: string; status: TodoStatus; assignee: TodoAssignee; done: number; total: number }
+/**
+ * 현황판의 워크스페이스 하나. 제목과 수만 담는다 (TODO 의 내용은 담지 않는다).
+ * state: active 진행이 보인다. waiting 맡을 사람의 수락을 기다린다. unknown 맡았지만 진행을 받지 못했다 (공개하지 않았다)
+ */
+export interface BoardWork { name: string; role: string; status: string; done: number; total: number; state: 'active' | 'waiting' | 'unknown' }
+export interface BoardPerson { peerId: string; name: string; me: boolean; leader: boolean; works: BoardWork[] }
+/**
+ * 함께하는 프로젝트의 현황판: 큰 일과 누가 무엇을 맡았는지. 프로젝트를 연 사람(리더)의 두레가 만들어 모두에게 보낸다.
+ * 리더에게는 지금의 것, 나머지에게는 마지막으로 받은 것이다 (updatedAt).
+ */
+export interface Board {
+  projectId: string;
+  /** 내가 리더다 (이 현황판을 내 두레가 만든다) */
+  mine: boolean;
+  leaderName: string;
+  /** 기획서 정리 (가장 최근에 승인된 계획안의 것) */
+  summary: string;
+  goals: BoardGoal[];
+  people: BoardPerson[];
+  updatedAt: number;
 }
 /** 내가 받은 배정 */
 export interface AssignmentIn {

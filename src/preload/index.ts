@@ -186,6 +186,7 @@ const api: DureApi = {
     briefs: (projectId) => call('assignments.briefs', projectId),
     takeBrief: (id) => call('assignments.takeBrief', id),
     dropBrief: (id) => call('assignments.dropBrief', id),
+    board: (projectId) => call('assignments.board', projectId),
   },
   peers: {
     status: () => call('peers.status'),
@@ -199,6 +200,7 @@ const api: DureApi = {
     remove: (peerId) => call('peers.remove', peerId),
     share: (projectId) => call('peers.share', projectId),
     createShare: (projectId) => call('peers.createShare', projectId),
+    setSuggestMode: (projectId, mode) => call('peers.setSuggestMode', projectId, mode),
     invite: (shareId, peerId) => call('peers.invite', shareId, peerId),
     invites: () => call('peers.invites'),
     acceptInvite: (inviteId, projectId) => call('peers.acceptInvite', inviteId, projectId),

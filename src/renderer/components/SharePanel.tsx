@@ -108,6 +108,19 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
             {invitable.length === 0 && <button className="btn ghost" onClick={onOpenPeople}>사람 찾아 연결하기</button>}
           </div>
         )}
+        {share.mine && (
+          <div className="share-rule">
+            <div className="grow">
+              <b>참여자가 제안한 계획안</b>
+              <div className="muted">참여자가 일을 나누거나 바꾸는 계획을 올리면 나에게 제안으로 옵니다. "승인 없이 반영" 은 다른 사람에게 일을 나눠 주기만 하는 제안에 듣습니다: 내가 보지 않아도 맡을 사람에게 배정으로 갑니다 (누가 제안했는지 적혀 갑니다). 내 PC 에 워크스페이스를 만들거나 프로젝트 TODO 를 더하는 제안은 늘 내가 검토합니다.</div>
+            </div>
+            <select value={share.suggestMode} disabled={busy || readOnly} onChange={(e) => run(window.dure.peers.setSuggestMode(project.id, e.target.value === 'auto' ? 'auto' : 'review'))}>
+              <option value="review">내가 검토하고 승인</option>
+              <option value="auto">승인 없이 반영</option>
+            </select>
+          </div>
+        )}
+        {!share.mine && <div className="help">이 프로젝트에서 일을 나누거나 바꾸려면 조율 탭에서 계획안을 만들어 "{share.members.find((m) => m.owner)?.name ?? '프로젝트를 연 사람'}" 에게 제안으로 보냅니다. 그 사람이 승인하면 반영됩니다.</div>}
       </div>
 
       <div className="section">

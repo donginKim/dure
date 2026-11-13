@@ -136,14 +136,32 @@ export class TodoService extends EventEmitter {
     if (!p || p.projectId !== projectId || p.workspaceId !== null) throw new Error('그런 프로젝트 항목이 없습니다.');
   }
 
-  /** 딸린 항목이 바뀌었다: 프로젝트 항목의 상태를 맞춘다. 취소해 둔 프로젝트 항목은 건드리지 않는다. */
-  private settle(parentId: string | null): void {
-    if (!parentId) return;
+  /** 내 PC 밖에 있는 딸린 항목 (다른 사람에게 나눠 준 일). 배정 쪽이 알려 준다 */
+  private extra: ((projectId: string, parentId: string) => { status: TodoStatus | 'unknown' }[]) | undefined;
+  /** status 가 unknown 이면 그 일이 어떻게 됐는지 모른다 (그 사람이 진행을 보내지 않는다) */
+  setExtraChildren(fn: (projectId: string, parentId: string) => { status: TodoStatus | 'unknown' }[]): void { this.extra = fn; }
+
+  /** 딸린 항목이 바뀌었다: 프로젝트 항목의 상태를 맞춘다. 취소해 둔 프로젝트 항목은 건드리지 않는다. 바꿨으면 true */
+  private settle(parentId: string | null): boolean {
+    if (!parentId) return false;
     const p = this.get(parentId);
-    if (!p || p.status === 'cancelled') return;
-    const next = rollup(this.children(parentId));
-    if (!next || next === p.status) return;
+    if (!p || p.status === 'cancelled') return false;
+    const far = this.extra?.(p.projectId, parentId) ?? [];
+    const known = far.filter((t): t is { status: TodoStatus } => t.status !== 'unknown');
+    let next = rollup([...this.children(parentId), ...known]);
+    // 어떻게 됐는지 모르는 일이 있으면 저절로 완료하지 않는다. 이미 완료였으면 되돌리지도 않는다 (공개를 껐을 뿐일 수 있다).
+    if (far.length > known.length && next === 'done') next = p.status === 'done' ? 'done' : 'doing';
+    if (!next || next === p.status) return false;
     this.db.prepare("UPDATE todos SET status = ?, rev = rev + 1, updated_by = 'agent', updated_at = ? WHERE id = ?").run(next, Date.now(), parentId);
+    return true;
+  }
+
+  /** 프로젝트 항목 전부를 딸린 항목에 맞춘다 (다른 사람에게 나눠 준 일의 진행이 바뀌었을 때). */
+  settleProject(projectId: string): void {
+    const ids = (this.db.prepare('SELECT id FROM todos WHERE project_id = ? AND workspace_id IS NULL').all(projectId) as { id: string }[]).map((r) => r.id);
+    let changed = false;
+    this.db.transaction(() => { for (const id of ids) changed = this.settle(id) || changed; })();
+    if (changed) this.emit('changed', projectId);
   }
 
   /** 워크스페이스 항목을 프로젝트 항목 아래에 달거나 (parentId), 뗀다 (null). */

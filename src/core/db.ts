@@ -338,6 +338,25 @@ const MIGRATIONS: string[] = [
   ALTER TABLE todos ADD COLUMN parent_id TEXT;
   CREATE INDEX todos_by_parent ON todos (parent_id);
   `,
+  `
+  -- 받은 현황판: 함께하는 프로젝트를 연 사람이 보낸 큰 일과 담당표. 프로젝트마다 가장 새 것 하나
+  CREATE TABLE boards_in (
+    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    from_peer TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    received_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- 참여자가 제안한 계획안을 받는 방식 (프로젝트를 연 사람이 정한다): review 검토 뒤 승인, auto 승인 없이 반영
+  ALTER TABLE shares ADD COLUMN suggest_mode TEXT NOT NULL DEFAULT 'review';
+  -- 내가 리더에게 보낸 계획 제안: 결과 알림을 한 번만 받는다
+  CREATE TABLE suggestions_out (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

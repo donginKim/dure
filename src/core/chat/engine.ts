@@ -62,12 +62,14 @@ export interface EngineHooks {
   onExit(workspaceId: string, code: number | null, stderr: string): void;
   /** 도구 결과가 왔다 (error: 실패했다. text: 결과의 앞부분). 막힘을 알아채는 데 쓴다 */
   onToolResult?(workspaceId: string, error: boolean, text: string): void;
+  /** 한 차례가 오류 없이 끝났다 (한도가 풀렸다는 뜻이다) */
+  onTurnOk?(workspaceId: string): void;
   /** 사용 한도가 바뀌었다 (status: allowed 면 풀렸다) */
   onLimit?(workspaceId: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null }): void;
 }
 
 /** 한도에 걸려 끝났을 때 Claude Code 가 남기는 글 */
-const LIMIT_TEXT = /usage limit reached|hit your (usage |weekly |session )?limit|rate[_ ]limit(ed)?|out of (extra )?usage/i;
+const LIMIT_TEXT = /usage limit reached|hit your (usage |weekly |session )?limit|out of (extra )?usage/i;
 
 const DENIED = '사용자가 거부했습니다.';
 
@@ -248,6 +250,7 @@ export class ChatEngine extends EventEmitter {
       case 'result':
         // 한도에 걸려 끝났다 (한도 이벤트가 오지 않는 판도 있다).
         if (e.is_error === true && LIMIT_TEXT.test(str(e.result))) this.hooks.onLimit?.(workspaceId, { status: 'rejected', kind: '', resetsAt: null, utilization: null });
+        else if (e.is_error !== true && e.subtype === 'success') this.hooks.onTurnOk?.(workspaceId);
         l.streaming = null;
         l.pending = [];
         this.hooks.onActivity(workspaceId);

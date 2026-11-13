@@ -323,6 +323,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     onToolResult: (id, error, text) => service.noteToolResult(id, error, text),
     onExit: (id, code, stderr) => service.noteSessionExit(id, code, stderr),
     onLimit: (id, info) => service.noteLimit(id, info),
+    onTurnOk: (id) => service.noteTurnOk(id),
   });
   service.attachEngine(engine);
   // 막힘 알아채기: 일하는 중인데 이만큼 움직임이 없으면 확인할 것에 올린다.
@@ -382,10 +383,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   });
   const reviewTimers = new Map<string, NodeJS.Timeout>();
   commitDrafts.on('changed', (id: string) => {
-    if (!settings.get().reviewOnDraft || !commitDrafts.get(id)) return;
+    const ws = workspaces.get(id);
+    if (!settings.get().reviewOnDraft || !commitDrafts.get(id) || !ws || service.isProjectClosed(ws.projectId)) return;
     // 초안을 잇달아 고치면 마지막 것만 리뷰한다.
     clearTimeout(reviewTimers.get(id));
-    const t = setTimeout(() => { reviewTimers.delete(id); void review.review(id).catch(() => undefined); }, 3000);
+    const t = setTimeout(() => { reviewTimers.delete(id); review.auto(id); }, 3000);
     t.unref?.();
     reviewTimers.set(id, t);
   });

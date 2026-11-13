@@ -76,3 +76,19 @@ test('끄면 저절로 리뷰하지 않는다. 직접 받을 수 있다. 리뷰�
   const clean = await core.service.create({ projectId: ws.projectId, repoId: ws.repoId, name: '빈', baseBranch: 'main', agentKind: 'claude' });
   await expect(core.review.review(clean.id)).rejects.toThrow('바뀐 것이 없습니다');
 }, 15_000);
+
+test('저절로 하는 리뷰: 같은 작업 폴더는 실패해도 되풀이하지 않고, 한 시간 상한이 있다', async () => {
+  writeFileSync(join(ws.worktreePath, 'a.ts'), 'x\n');
+  answer = { ok: false, text: '', error: '실패' };
+  expect(core.review.auto(ws.id)).toBe(true);
+  await until(async () => (await core.review.status(ws.id))?.state === 'failed');
+  expect(core.review.auto(ws.id)).toBe(true);
+  await new Promise((r) => setTimeout(r, 200));
+  expect(calls.length).toBe(1);
+  // 사용자가 누르면 다시 한다
+  await core.review.review(ws.id, { force: true });
+  expect(calls.length).toBe(2);
+  // 상한: 바뀔 때마다 돌아도 한 시간에 6번까지
+  for (let i = 0; i < 10; i++) { writeFileSync(join(ws.worktreePath, 'a.ts'), `x${i}\n`); core.review.auto(ws.id); await until(async () => (await core.review.status(ws.id))?.state !== 'running'); }
+  expect(calls.length).toBe(2 + 4);
+});

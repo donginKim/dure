@@ -303,8 +303,10 @@ export class WorkspaceService extends EventEmitter {
     const now = Date.now();
     for (const [id, at] of this.lastMove) {
       const ws = this.d.workspaces.get(id);
-      // 사용자의 답을 기다리는 것은 막힌 것이 아니다.
-      if (!ws || ws.status !== 'working' || !this.engine?.has(id) || this.stuck.has(id)) continue;
+      if (!ws) { this.lastMove.delete(id); continue; }
+      // 일하는 중이 아니면 (쉬는 중, 답을 기다리는 중) 시계를 지금으로 맞춘다: 다시 일을 시작한 뒤부터 잰다.
+      if (ws.status !== 'working') { this.lastMove.set(id, now); continue; }
+      if (!this.engine?.has(id) || this.stuck.has(id)) continue;
       if (now - at >= quietMs) { this.stuck.set(id, { reason: 'quiet', since: at, count: 0, detail: '' }); this.emit('changed', id); }
     }
   }
@@ -318,14 +320,19 @@ export class WorkspaceService extends EventEmitter {
     if (!ws) return;
     const before = this.limits.get(id);
     if (info.status === 'allowed') { if (this.limits.delete(id)) this.emit('changed', id); return; }
-    // 걸린 뒤에 온 "가까워짐" 은 걸린 것을 덮지 않는다 (같은 한도면).
-    if (before?.status === 'rejected' && info.status === 'warning' && (!info.kind || info.kind === before.kind)) return;
+    // 걸린 뒤에 온 "가까워짐" 은 걸린 것을 덮지 않는다 (같은 한도이거나, 어느 한도인지 모르면).
+    if (before?.status === 'rejected' && info.status === 'warning' && (!info.kind || !before.kind || info.kind === before.kind)) return;
     const next: LimitInfo = {
       status: info.status, kind: info.kind || before?.kind || '', resetsAt: info.resetsAt ?? before?.resetsAt ?? null, utilization: info.utilization,
       model: ws.model || this.settings().claudeModel || '', at: Date.now(),
     };
     this.limits.set(id, next);
     if (before?.status !== next.status || before?.kind !== next.kind) this.emit('changed', id);
+  }
+
+  /** 한 차례가 오류 없이 끝났다: 걸렸다는 표시는 거둔다 (풀렸다). 가까워짐은 남긴다. */
+  noteTurnOk(id: string): void {
+    if (this.limits.get(id)?.status === 'rejected') { this.limits.delete(id); this.emit('changed', id); }
   }
 
   limitOf(id: string): LimitInfo | null {
@@ -359,7 +366,7 @@ export class WorkspaceService extends EventEmitter {
     }
     this.d.workspaces.update(id, { model: m });
     // 다른 모델로 바꿨으니 걸렸던 한도 표시는 거둔다 (새 모델도 걸렸으면 다시 알려 온다).
-    this.limits.delete(id);
+    if (m !== ws.model) this.limits.delete(id);
     this.emit('changed', id);
     return { applied: live ? 'now' : 'next' };
   }
@@ -844,6 +851,8 @@ export class WorkspaceService extends EventEmitter {
       this.synthetic.add(id); // 이 프롬프트는 두레가 넣는 것이다
       this.lastActivity.set(id, Date.now());
       this.d.workspaces.update(id, { status: 'working' });
+    // 일을 다시 시작했다: 오래 조용했다는 시계를 다시 잰다 (쉬던 시간을 막힘으로 보지 않게).
+    this.lastMove.set(id, Date.now());
       this.emit('changed', id);
       try { this.engine.say(id, text); } catch (e) { this.synthetic.delete(id); throw e; }
       return;
@@ -860,6 +869,8 @@ export class WorkspaceService extends EventEmitter {
     this.synthetic.add(id); // 이 프롬프트는 두레가 넣는 것이다
     this.lastActivity.set(id, Date.now());
     this.d.workspaces.update(id, { status: 'working' });
+    // 일을 다시 시작했다: 오래 조용했다는 시계를 다시 잰다 (쉬던 시간을 막힘으로 보지 않게).
+    this.lastMove.set(id, Date.now());
     this.emit('changed', id);
     // 여러 줄은 붙여넣기로 묶어 넣고, 잠시 뒤 Enter 를 따로 보낸다 (실험 03, 12b).
     this.d.pty.write(terminal.id, `\x1b[200~${message}\x1b[201~`);
@@ -979,6 +990,8 @@ export class WorkspaceService extends EventEmitter {
     this.synthetic.delete(id);
     // 쓰기 전에 상태를 바꿔, 400ms 사이에 다른 것(깨우기, 또 한 번의 보내기)이 같은 입력칸에 쓰지 못하게 한다.
     this.d.workspaces.update(id, { status: 'working' });
+    // 일을 다시 시작했다: 오래 조용했다는 시계를 다시 잰다 (쉬던 시간을 막힘으로 보지 않게).
+    this.lastMove.set(id, Date.now());
     this.emit('changed', id);
     this.d.pty.write(terminal.id, full.includes('\n') ? `\x1b[200~${full}\x1b[201~` : full);
     await new Promise((r) => setTimeout(r, 400));

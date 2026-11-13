@@ -41,14 +41,14 @@ export function MergeSection({ projectId, readOnly }: { projectId: string; readO
               <div className="grow"><b>{p.repoName}</b> → <code>{p.base}</code> <span className="muted">· 합칠 것 {ok.length}개{conflicts.length ? ` · 충돌 ${conflicts.length}개` : ''}</span></div>
               {!readOnly && (
                 <>
-                  <button className="btn" disabled={busy !== null || !p.result} title={`충돌 없는 것을 차례로 합쳐 ${p.mergeBranch} 브랜치에 둡니다${p.verifyCommand ? ` 그리고 확인 명령(${p.verifyCommand})을 돌립니다` : ''}. ${p.base} 는 건드리지 않습니다`}
+                  <button className="btn" disabled={busy !== null || !p.result} title={`충돌 없는 것을 차례로 합쳐 두고${p.verifyCommand ? ` 확인 명령(${p.verifyCommand})을 돌립니다` : ''}. ${p.base} 와 작업 폴더는 건드리지 않습니다`}
                     onClick={() => act(p, 'prepare', () => window.dure.merge.prepare(projectId, p.repoId, p.base).then((r) => {
                       setVerify((v) => ({ ...v, [k]: r.verify }));
-                      setNote((n) => ({ ...n, [k]: `${p.mergeBranch} 를 만들었습니다.${r.verify ? (r.verify.ok ? ' 확인 명령 통과.' : ' 확인 명령 실패: 아래 출력을 보세요.') : ' (확인 명령이 없어 시험은 돌리지 않았습니다)'}` }));
+                      setNote((n) => ({ ...n, [k]: `합친 결과를 만들었습니다.${r.verify ? (r.verify.ok ? ' 확인 명령 통과.' : ' 확인 명령 실패: 아래 출력을 보세요.') : ' (확인 명령이 없어 시험은 돌리지 않았습니다)'}` }));
                     }))}>
-                    {busy === k ? '합치는 중…' : '합치기 브랜치 만들기'}
+                    {busy === k ? '합치는 중…' : '합쳐서 확인하기'}
                   </button>
-                  <button className="btn primary" disabled={busy !== null || !p.ready || verify[k]?.ok === false} title={`${p.mergeBranch} 를 ${p.base} 로 옮깁니다 (앞으로 감기만)`} onClick={() => setConfirm(p)}>{p.base} 로 옮기기</button>
+                  <button className="btn primary" disabled={busy !== null || !p.ready} title={p.ready ? `합친 결과로 ${p.base} 를 앞으로 감습니다` : `먼저 "합쳐서 확인하기" 를 누르세요${p.verifyCommand ? ' (확인 명령이 통과해야 옮길 수 있습니다)' : ''}`} onClick={() => setConfirm(p)}>{p.base} 로 옮기기</button>
                 </>
               )}
             </div>
@@ -80,11 +80,11 @@ export function MergeSection({ projectId, readOnly }: { projectId: string; readO
           </div>
         );
       })}
-      <div className="help">에이전트 사이의 순서(앞의 일)를 따라, 없으면 만든 순서로 합칩니다. 미리 보기와 합치기 브랜치 만들기는 기준 브랜치와 작업 폴더를 건드리지 않습니다. 커밋하지 않은 변경은 들어가지 않습니다.</div>
+      <div className="help">에이전트 사이의 순서(앞의 일)를 따라, 없으면 만든 순서로 합칩니다. 미리 보기와 "합쳐서 확인하기" 는 기준 브랜치와 작업 폴더를 건드리지 않습니다 (합친 결과는 브랜치가 아닌 두레의 ref 에 둡니다). 커밋하지 않은 변경은 들어가지 않습니다.</div>
       {confirm && (
         <ConfirmDialog
           title={`${confirm.base} 로 옮기기`}
-          message={`${confirm.repoName} 의 ${confirm.base} 를 ${confirm.mergeBranch} 로 앞으로 감습니다 (fast-forward). ${confirm.base} 가 그사이 바뀌었거나 저장소 폴더에 커밋하지 않은 변경이 있으면 하지 않습니다. push 는 하지 않습니다.`}
+          message={`${confirm.repoName} 의 ${confirm.base} 를 합친 결과로 앞으로 감습니다 (fast-forward). ${confirm.base} 가 그사이 바뀌었거나, ${confirm.base} 가 체크아웃된 폴더에 커밋하지 않은 변경이 있으면 하지 않습니다. push 는 하지 않습니다.`}
           confirmLabel="옮기기"
           onClose={() => setConfirm(null)}
           onConfirm={async () => { const m = await window.dure.merge.advance(projectId, confirm.repoId, confirm.base); setNote((n) => ({ ...n, [key(confirm)]: m })); setConfirm(null); load(); }}

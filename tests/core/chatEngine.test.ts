@@ -698,3 +698,34 @@ test('막힘 알아채기: 일하는 중인데 오래 움직임이 없으면 올
   core.service.checkQuiet(30);
   expect(core.service.stuckOf(ws.id)).toBeNull();
 });
+
+test('한도: 오류 없이 끝난 차례가 오면 걸렸다는 표시를 거둔다. 일시적인 rate limit 글은 한도로 보지 않는다', async () => {
+  const ws = await started('limit2');
+  core.service.noteLimit(ws.id, { status: 'rejected', kind: '', resetsAt: null, utilization: null });
+  expect(core.chatView(ws.id).limit?.status).toBe('rejected');
+  // 어느 한도인지 모르는 걸림 뒤의 가까워짐은 덮지 않는다
+  core.service.noteLimit(ws.id, { status: 'warning', kind: 'five_hour', resetsAt: null, utilization: 0.5 });
+  expect(core.chatView(ws.id).limit?.status).toBe('rejected');
+  await core.service.sendUserInput(ws.id, 'finish');
+  await until(() => core.chatView(ws.id).limit === null);
+  await until(() => status(ws.id) === 'idle');
+  // API 의 일시적인 rate limit 은 한도로 보지 않는다
+  core.service.noteToolResult(ws.id, false, '');
+  await core.service.sendUserInput(ws.id, 'fail');
+  await until(() => status(ws.id) === 'idle');
+  expect(core.chatView(ws.id).limit).toBeNull();
+});
+
+test('막힘: 오래 쉬다가 다시 일을 시작한 것은 조용하다고 보지 않는다', async () => {
+  const ws = await started('wake');
+  core.service.noteActivity(ws.id);
+  await new Promise((r) => setTimeout(r, 150));
+  // 쉬는 동안의 확인은 막힘으로 보지 않고 시계를 맞춘다
+  core.service.checkQuiet(100);
+  expect(core.service.stuckOf(ws.id)).toBeNull();
+  // 다시 일을 시작한다 (첫 글이 오기 전)
+  await core.service.sendUserInput(ws.id, 'long');
+  await until(() => status(ws.id) === 'working');
+  core.service.checkQuiet(1000);
+  expect(core.service.stuckOf(ws.id)).toBeNull();
+});

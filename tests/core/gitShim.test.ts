@@ -168,3 +168,27 @@ test('저장소를 여럿 주면 그 저장소 전부의 커밋을 막고, 그 �
   // 표준 입력은 진짜 git 에 그대로 간다 (목록을 읽느라 먹지 않는다)
   expect((await run(['-C', a, 'hash-object', '--stdin'], { input: 'hello\n' })).out.trim()).toBe('ce013625030ba8dba906f756967f9e9ca394464a');
 });
+
+test('git merge 는 --no-commit 으로만 된다: 커밋을 만드는 merge 와 --continue 는 거절된다', async () => {
+  const { repo, run, count } = real();
+  gitOut(repo, 'commit', '-q', '-m', 'base');
+  gitOut(repo, 'checkout', '-q', '-b', 'other');
+  writeFileSync(join(repo, 'o.txt'), 'o\n');
+  gitOut(repo, 'add', '-A');
+  gitOut(repo, 'commit', '-q', '-m', 'other');
+  gitOut(repo, 'checkout', '-q', 'main');
+  writeFileSync(join(repo, 'm.txt'), 'm\n');
+  gitOut(repo, 'add', '-A');
+  gitOut(repo, 'commit', '-q', '-m', 'main side');
+  const before = count();
+  for (const args of [['merge', 'other'], ['merge', '--no-ff', 'other'], ['merge', '--continue']]) {
+    const r = await run(args);
+    expect(r.code, args.join(' ')).toBe(1);
+    expect(r.err).toContain('git merge 는 --no-commit --no-ff 로만 한다');
+  }
+  expect(count()).toBe(before);
+  const ok = await run(['merge', '--no-commit', '--no-ff', 'other']);
+  expect(ok.code).toBe(0);
+  expect(count()).toBe(before);
+  expect((await run(['merge', '--abort'])).code).toBe(0);
+});

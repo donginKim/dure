@@ -661,8 +661,16 @@ export class CoordinatorService extends EventEmitter {
     const target = oneLine(o.target, 100);
     const p = toProposal(r);
     // 사용자가 검토 화면에서 고친 것이 있으면 그것이 지금의 계획이다.
-    const items = Array.isArray(o.decision?.items) ? o.decision!.items : p.items;
-    const projectTodos = Array.isArray(o.decision?.projectTodos) ? o.decision!.projectTodos : p.projectTodos;
+    // 화면에서 온 모양은 믿지 않는다: 쓸 칸만 골라 다듬는다.
+    const todoList = (raw: unknown): PlanTodo[] => (Array.isArray(raw) ? raw : []).slice(0, MAX_TODOS).filter(isObj).map((t) => ({
+      title: oneLine(t.title, 200), detail: '', assignee: t.assignee === 'user' ? 'user' as const : 'agent' as const,
+      ...(typeof t.under === 'string' && t.under ? { under: oneLine(t.under, 200) } : {}),
+      ...(Array.isArray(t.after) ? { after: t.after.slice(0, 10).map((x) => oneLine(x, 200)).filter(Boolean) } : {}),
+    })).filter((t) => t.title);
+    const items: ProposalItem[] = Array.isArray(o.decision?.items)
+      ? o.decision!.items.slice(0, MAX_ITEMS).filter(isObj).map((it) => ({ name: oneLine(it.name, 60), repoId: oneLine(it.repoId, 300), baseBranch: '', role: oneLine(it.role, 500), todos: todoList(it.todos), existing: false, owner: typeof it.owner === 'string' ? it.owner : '' }))
+      : p.items;
+    const projectTodos = Array.isArray(o.decision?.projectTodos) ? todoList(o.decision!.projectTodos) : p.projectTodos;
     const current = {
       project_todos: projectTodos.map((t) => ({ title: t.title, ...(t.assignee === 'user' ? { assignee: 'user' } : {}) })),
       workspaces: items.map((it) => ({
@@ -675,7 +683,12 @@ export class CoordinatorService extends EventEmitter {
       `사용자의 말: ${what}`,
       '아래는 사용자가 검토 화면에서 고친 것을 포함한 지금의 계획이다. 이것을 바탕으로 사용자가 말한 곳만 고치고, 나머지(이름, 저장소, TODO, 순서)는 그대로 두어 plan_propose 로 다시 올려라. 기획서 정리(summary)도 바뀐 것이 없으면 그대로 다시 넣어라. 무엇을 바꿨는지 note 에 짧게 적어라.',
       '```json',
-      JSON.stringify(current, null, 1).slice(0, 20_000),
+      // 너무 길면 자르지 않고 줄인다 (잘린 JSON 은 읽을 수 없다): 들여쓰기를 없애고, 그래도 길면 TODO 를 빼고 워크스페이스만.
+      ((): string => {
+        const full = JSON.stringify(current);
+        if (full.length <= 20_000) return JSON.stringify(current, null, 1).length <= 20_000 ? JSON.stringify(current, null, 1) : full;
+        return JSON.stringify({ ...current, workspaces: current.workspaces.map((w) => ({ ...w, todos: `(${w.todos.length}개, 너무 길어 뺐다)` })) }).slice(0, 20_000);
+      })(),
       '```',
     ].join('\n'));
     this.emit('changed', r.project_id);

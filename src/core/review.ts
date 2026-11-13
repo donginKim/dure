@@ -17,11 +17,12 @@ const plain = (s: unknown, max: number): string => String(s ?? '').replace(/[\x0
 export type ReviewRunner = (o: { prompt: string; cwd: string; model: string; env: Record<string, string>; timeoutMs: number; command: string }) => Promise<{ ok: boolean; text: string; error?: string }>;
 
 /**
- * Claude Code 를 한 번 돌려 리뷰를 받는다 (-p). 리뷰어는 작업 폴더의 파일을 읽기만 한다:
- * 파일을 고치는 도구, 셸, 웹은 막는다. 승인을 물을 사람이 없으므로 그 밖의 도구는 저절로 거절된다.
+ * Claude Code 를 한 번 돌려 리뷰를 받는다 (-p). 리뷰어는 작업 폴더의 파일을 읽기만 한다 (Read, Grep, Glob).
  */
 const claudeRunner: ReviewRunner = ({ prompt, cwd, model, env, timeoutMs, command }) => new Promise((resolve) => {
-  const args = ['-p', '--output-format', 'json', '--strict-mcp-config', '--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit,Bash,WebFetch,WebSearch,Task,TodoWrite', ...(model ? ['--model', model] : [])];
+  // 허용 목록으로 묶는다: 읽기 도구 셋만 있고, 그 밖은 묻지 않고 거절한다 (작업 폴더 밖의 파일도 못 읽는다).
+  // 사용자·저장소의 설정 파일(권한, hook)과 MCP 서버, 슬래시 명령은 읽지 않는다.
+  const args = ['-p', '--output-format', 'json', '--tools', 'Read,Grep,Glob', '--permission-mode', 'dontAsk', '--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands', ...(model ? ['--model', model] : [])];
   const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
@@ -114,10 +115,33 @@ export class ReviewService extends EventEmitter {
   }
 
   /** 리뷰를 받는다. 작업 폴더가 지난번과 같으면 그 결과를 돌려준다 (force 면 다시). */
+  /** 저절로 하는 리뷰: 한 시간에 이만큼까지 (워크스페이스마다). 사용자가 누르는 것은 세지 않는다 */
+  static readonly AUTO_PER_HOUR = 6;
+  private readonly autoRuns = new Map<string, number[]>();
+  private readonly again = new Set<string>();
+
+  /**
+   * 커밋 초안이 바뀌어 저절로 리뷰한다. 한 시간 상한을 넘으면 하지 않는다 (false).
+   * 리뷰가 도는 중이면 끝난 뒤 한 번 더 한다 (그사이 바뀐 것을 보게).
+   */
+  auto(workspaceId: string): boolean {
+    if (this.running.has(workspaceId)) { this.again.add(workspaceId); return true; }
+    const now = Date.now();
+    const recent = (this.autoRuns.get(workspaceId) ?? []).filter((t) => now - t < 3_600_000);
+    if (recent.length >= ReviewService.AUTO_PER_HOUR) return false;
+    this.autoRuns.set(workspaceId, [...recent, now]);
+    void this.review(workspaceId).catch(() => undefined);
+    return true;
+  }
+
   review(workspaceId: string, o: { force?: boolean } = {}): Promise<ReviewState> {
     const going = this.running.get(workspaceId);
     if (going) return going;
-    const job = this.doReview(workspaceId, o.force === true).finally(() => { this.running.delete(workspaceId); this.emit('changed', workspaceId); });
+    const job = this.doReview(workspaceId, o.force === true).finally(() => {
+      this.running.delete(workspaceId);
+      this.emit('changed', workspaceId);
+      if (this.again.delete(workspaceId)) this.auto(workspaceId);
+    });
     this.running.set(workspaceId, job);
     this.emit('changed', workspaceId);
     return job;
@@ -128,7 +152,8 @@ export class ReviewService extends EventEmitter {
     if (!ws || ws.role === 'coordinator') throw new Error('리뷰할 수 있는 워크스페이스가 아닙니다.');
     const tree = await this.d.git.snapshotTree(ws.worktreePath).catch(() => '');
     const last = this.row(workspaceId);
-    if (!force && tree && last && last.tree === tree && last.state === 'done') return this.toState(last)!;
+    // 같은 작업 폴더는 다시 리뷰하지 않는다 (실패한 것도: 같은 실패를 되풀이해 사용량을 쓰지 않게. 사용자가 누르면 다시 한다).
+    if (!force && tree && last && last.tree === tree) return this.toState(last)!;
     const files = await this.d.changes(workspaceId);
     if (files.length === 0) throw new Error('바뀐 것이 없습니다.');
     let budget = MAX_DIFF;

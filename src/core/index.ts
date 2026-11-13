@@ -472,7 +472,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
           attention: att.get(p.id) ?? 0,
           budget: { today: b.today, dailyLimit: b.dailyLimit, state: b.state },
           lastShip: ship ? { at: ship.at, stage: ship.stage, ok: ship.ok, workspaceName: ship.workspaceName } : null,
-          share: share ? { mine: share.mine, people: share.members.length - 1, online: share.members.filter((m) => !m.me && m.online).length } : null,
+          share: share ? { mine: share.mine, observer: share.observer, people: share.members.length - 1, online: share.members.filter((m) => !m.me && m.online).length } : null,
         };
       });
     },

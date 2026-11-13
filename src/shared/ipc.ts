@@ -352,7 +352,10 @@ export interface DureApi {
     createShare(projectId: string): Promise<Share>;
     /** 참여자가 제안한 계획안을 받는 방식 (내가 연 프로젝트에서): review 검토 뒤 승인, auto 승인 없이 반영 */
     setSuggestMode(projectId: string, mode: 'review' | 'auto'): Promise<Share>;
-    invite(shareId: string, peerId: string): Promise<void>;
+    /** observer: 보기만 하는 자리로 초대한다 (현황판만 받는다) */
+    invite(shareId: string, peerId: string, observer?: boolean): Promise<void>;
+    /** 보기만 하는 사람에게 작업 보고까지 보낼지 (내가 리더일 때) */
+    setObserverReports(projectId: string, on: boolean): Promise<Share>;
     invites(): Promise<ShareInvite[]>;
     acceptInvite(inviteId: string, projectId: string): Promise<Share>;
     declineInvite(inviteId: string): Promise<void>;
@@ -410,7 +413,7 @@ export const IPC_CHANNELS = [
   'messages.resume', 'messages.delivery',
   'artifacts.list', 'artifacts.get',
   'peers.status', 'peers.found', 'peers.list', 'peers.requests', 'peers.connect', 'peers.accept', 'peers.dismiss', 'peers.setMode', 'peers.remove',
-  'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember', 'peers.handOver',
+  'peers.share', 'peers.createShare', 'peers.setSuggestMode', 'peers.invite', 'peers.setObserverReports', 'peers.invites', 'peers.acceptInvite', 'peers.declineInvite', 'peers.leave', 'peers.removeMember', 'peers.handOver',
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',

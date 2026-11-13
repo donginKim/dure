@@ -18,6 +18,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
   const [sharing, setSharing] = useState<Record<string, WorkspaceSharing>>({});
   const [remote, setRemote] = useState<RemoteWorkspace[]>([]);
   const [pick, setPick] = useState('');
+  const [asObserver, setAsObserver] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -86,8 +87,8 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
           {share.members.map((m) => (
             <div key={m.peerId} className="row">
               <span className={`dot ${m.online ? 'idle' : 'stopped'}`} title={m.online ? '켜져 있습니다 (방금 닿았습니다)' : '지금은 닿지 않습니다 (꺼져 있으면 메시지가 가지 않습니다)'} />
-              <div className="grow">{m.name}{m.me && <span className="tag">나</span>}{m.owner && <span className="tag">리더</span>}</div>
-              {share.mine && !m.me && !readOnly && peers.some((p) => p.id === m.peerId && p.direct) && (
+              <div className="grow">{m.name}{m.me && <span className="tag">나</span>}{m.owner && <span className="tag">리더</span>}{m.observer && <span className="tag" title="현황판만 받습니다. 일을 받거나 제안하거나 메시지를 주고받지 않습니다">보기만</span>}</div>
+              {share.mine && !m.me && !m.observer && !readOnly && peers.some((p) => p.id === m.peerId && p.direct) && (
                 <button className="btn ghost" disabled={busy || !m.online} title={m.online ? '이 사람을 리더로 만듭니다. 나는 참여자로 남습니다' : '지금 닿지 않아 넘길 수 없습니다'}
                   onClick={() => { if (window.confirm(`"${m.name}" 에게 리더를 넘길까요?\n\n일을 나눠 주고 계획안 제안을 승인하는 자리가 그 사람에게 갑니다. 나는 참여자로 남고, 되돌리려면 그 사람이 다시 넘겨 줘야 합니다. 아직 참여하지 않은 초대는 거둬집니다.`)) run(window.dure.peers.handOver(project.id, m.peerId)); }}>리더 넘기기</button>
               )}
@@ -97,7 +98,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
           {share.invited.map((m) => (
             <div key={m.peerId} className="row">
               <span className="dot stopped" />
-              <div className="grow">{m.name}<span className="tag">초대 중</span> <span className="plan-hint">아직 참여하지 않았습니다</span></div>
+              <div className="grow">{m.name}<span className="tag">초대 중</span>{m.observer && <span className="tag">보기만</span>} <span className="plan-hint">아직 참여하지 않았습니다</span></div>
               {!readOnly && <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.peers.removeMember(share.id, m.peerId))}>초대 거두기</button>}
             </div>
           ))}
@@ -108,10 +109,24 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
               <option value="">초대할 사람 고르기</option>
               {invitable.map((p) => <option key={p.id} value={p.id}>{p.name}{p.online ? '' : ' (지금 안 닿음)'}</option>)}
             </select>
-            <button className="btn" disabled={busy || !pick} onClick={() => run(window.dure.peers.invite(share.id, pick).then(() => setPick('')))}>초대</button>
+            <label className="check" title="윗사람처럼 진행만 보는 사람: 현황판만 받고, 일을 받거나 제안하거나 메시지를 주고받지 않습니다"><input type="checkbox" checked={asObserver} onChange={(e) => setAsObserver(e.target.checked)} />보기만</label>
+            <button className="btn" disabled={busy || !pick} onClick={() => run(window.dure.peers.invite(share.id, pick, asObserver).then(() => { setPick(''); setAsObserver(false); }))}>초대</button>
             {invitable.length === 0 && <button className="btn ghost" onClick={onOpenPeople}>사람 찾아 연결하기</button>}
           </div>
         )}
+        {share.mine && share.members.some((m) => m.observer) && (
+          <div className="share-rule">
+            <div className="grow">
+              <b>보기만 하는 사람에게 보낼 것</b>
+              <div className="muted">현황판(큰 일, 담당, 끝낸 수)은 늘 갑니다. 작업 보고(사람별 커밋 수, 바꾼 파일 수, 최근 커밋 제목, 확인 명령·리뷰 결과)까지 보낼지 정합니다. 팀원이 보고를 끈 것은 어느 쪽이든 가지 않습니다.</div>
+            </div>
+            <select value={share.observerReports ? 'on' : 'off'} disabled={busy || readOnly} onChange={(e) => run(window.dure.peers.setObserverReports(project.id, e.target.value === 'on'))}>
+              <option value="on">진행 + 작업 보고</option>
+              <option value="off">진행만</option>
+            </select>
+          </div>
+        )}
+        {share.observer && <div className="help">이 프로젝트는 보기만 합니다. 현황판만 받고, 일을 받거나 제안하거나 메시지를 주고받지 않습니다. 모아 보려면 왼쪽의 <b>팀 현황</b> 을 여세요.</div>}
         {share.mine && (
           <div className="share-rule">
             <div className="grow">
@@ -124,7 +139,7 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
             </select>
           </div>
         )}
-        {!share.mine && <div className="help">이 프로젝트에서 일을 나누거나 바꾸려면 조율 탭에서 계획안을 만들어 "{share.members.find((m) => m.owner)?.name ?? '리더'}" 에게 제안으로 보냅니다. 그 사람이 승인하면 반영됩니다.</div>}
+        {!share.mine && !share.observer && <div className="help">이 프로젝트에서 일을 나누거나 바꾸려면 조율 탭에서 계획안을 만들어 "{share.members.find((m) => m.owner)?.name ?? '리더'}" 에게 제안으로 보냅니다. 그 사람이 승인하면 반영됩니다.</div>}
       </div>
 
       <div className="section">

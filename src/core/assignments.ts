@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
 import { assignedWork, countDone } from '@shared/board';
 import { remoteLabel } from '@shared/remote';
-import type { AssignChoice, AssignItem, AssignmentIn, AssignmentOut, AssignProgress, Board, BoardGoal, BoardPerson, BoardWork, PlanTodo, TodoStatus, Workspace, Brief, WorkReport } from '@shared/types';
+import type { AssignChoice, AssignItem, AssignmentIn, AssignmentOut, AssignProgress, Board, BoardGoal, BoardPerson, BoardReport, BoardWork, PlanTodo, TodoStatus, Workspace, Brief, WorkReport } from '@shared/types';
 import type { CoordinatorService, SuggestedPlan } from './coordinator';
 import type { MessageService } from './messages';
 import { PeerOfflineError, type PeerService } from './peers/peerService';
@@ -52,7 +52,16 @@ const MAX_BOARD_PEOPLE = 30;
 const STATUSES: TodoStatus[] = ['todo', 'doing', 'done', 'cancelled'];
 const count = (v: unknown): number => { const n = Math.floor(Number(v)); return Number.isFinite(n) && n > 0 ? Math.min(n, 10_000) : 0; };
 /** 현황판이 오갈 때의 모양 (받는 쪽이 이름을 자기가 아는 것으로 바꿔 보인다) */
-interface WireBoard { summary: string; goals: BoardGoal[]; people: { peerId: string; name: string; works: BoardWork[] }[]; at: number }
+interface WireBoard { summary: string; goals: BoardGoal[]; people: { peerId: string; name: string; works: BoardWork[]; report?: BoardReport }[]; at: number }
+
+function cleanBoardReport(r: Record<string, unknown>): BoardReport {
+  const last = r.last && typeof r.last === 'object' ? r.last as Record<string, unknown> : null;
+  return {
+    commits: Math.min(count(r.commits), 100_000), files: Math.min(count(r.files), 100_000),
+    last: last && oneLine(last.subject, 120) ? { subject: oneLine(last.subject, 120), at: count(last.at) } : null,
+    verifyFailed: Math.min(count(r.verifyFailed), 1000), reviewHigh: Math.min(count(r.reviewHigh), 1000), at: count(r.at),
+  };
+}
 
 /** 남이 보낸 현황판을 다듬는다. 믿지 않는다: 모양과 크기를 다시 본다. */
 function cleanBoard(raw: unknown): WireBoard {
@@ -68,6 +77,7 @@ function cleanBoard(raw: unknown): WireBoard {
       const total = count(w.total);
       return { name: oneLine(w.name, 40).replace(/[@"]/g, ''), role: oneLine(w.role, 200), status: oneLine(w.status, 20), done: Math.min(count(w.done), total), total, state: w.state === 'waiting' ? 'waiting' as const : w.state === 'unknown' ? 'unknown' as const : 'active' as const };
     }).filter((w) => w.name),
+    ...(p.report && typeof p.report === 'object' ? { report: cleanBoardReport(obj(p.report)) } : {}),
   }));
   return { summary: text(o.summary, MAX_BOARD_SUMMARY), goals, people, at: count(o.at) || Date.now() };
 }
@@ -121,6 +131,7 @@ export class AssignmentService extends EventEmitter {
   async suggest(projectId: string, plan: SuggestedPlan): Promise<void> {
     const share = this.d.peers.share(projectId);
     if (!share || share.mine) throw new Error('다른 사람이 연 프로젝트에서만 제안할 수 있습니다.');
+    if (share.observer) throw new Error('이 프로젝트에서는 보기만 합니다. 계획을 제안할 수 없습니다.');
     const sid = crypto.randomUUID();
     // 먼저 적는다: 리더의 답(결과)이 보내기가 끝나기 전에 와도 받을 수 있다. 보내지 못하면 지운다.
     this.d.db.prepare('DELETE FROM suggestions_out WHERE created_at < ?').run(Date.now() - 30 * 24 * 3_600_000);
@@ -206,6 +217,7 @@ export class AssignmentService extends EventEmitter {
    */
   private buildBoard(projectId: string, to?: string): WireBoard {
     const share = this.d.peers.share(projectId);
+    const toObserver = to !== undefined && share?.members.find((m) => m.peerId === to)?.observer === true;
     const all = this.d.todos.listProject(projectId);
     const remote = this.counted(projectId);
     const goals: BoardGoal[] = all.filter((t) => t.workspaceId === null && t.status !== 'cancelled').slice(0, MAX_GOALS).map((g) => ({
@@ -217,12 +229,28 @@ export class AssignmentService extends EventEmitter {
     const people = [
       ...(me ? [{ peerId: me.peerId, name: me.name, works: mine }] : []),
       // 리더가 먼저, 나머지는 이름 순 (볼 때마다 순서가 바뀌지 않게).
-      ...(share?.members.filter((m) => !m.me) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)).map((m) => ({
+      ...(share?.members.filter((m) => !m.me && !m.observer) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)).map((m) => ({
         peerId: m.peerId, name: m.name,
         works: remote.filter((w) => w.peerId === m.peerId).map((w) => ({ name: w.name, role: w.role, status: '', ...countDone(w.todos), state: w.state })),
+        // 작업 보고 요약: 보기만 하는 사람에게는 리더가 허락했을 때만.
+        ...(!toObserver || share?.observerReports ? this.personReport(projectId, m.peerId) : {}),
       })),
     ];
     return cleanBoard({ summary: this.d.coordinator().approvedSummary(projectId), goals, people, at: Date.now() });
+  }
+
+  /** 그 사람에게 나눠 준 일의 작업 보고를 모아 한 줄로 (보고가 없으면 비운다). */
+  private personReport(projectId: string, peerId: string): { report?: BoardReport } {
+    const reports = this.outgoing(projectId).filter((a) => a.peerId === peerId && a.state === 'accepted').flatMap((a) => a.progress).map((w) => w.report).filter((r): r is WorkReport => r !== undefined);
+    if (reports.length === 0) return {};
+    const commits = reports.flatMap((r) => r.commits).sort((a, b) => b.at - a.at);
+    return { report: {
+      commits: commits.length, files: new Set(reports.flatMap((r) => r.files)).size,
+      last: commits[0] ? { subject: commits[0].subject, at: commits[0].at } : null,
+      verifyFailed: reports.filter((r) => r.verify && !r.verify.passed).length,
+      reviewHigh: reports.reduce((n, r) => n + (r.review?.high ?? 0), 0),
+      at: Math.max(...reports.map((r) => r.at)),
+    } };
   }
 
   private toBoard(projectId: string, w: WireBoard, mine: boolean): Board | null {
@@ -232,7 +260,7 @@ export class AssignmentService extends EventEmitter {
     const people: BoardPerson[] = w.people.map((p) => {
       const m = known.get(p.peerId);
       // 이름은 내가 아는 것을 쓴다. 모르는 사람이면 리더가 적어 준 이름.
-      return { peerId: p.peerId, name: m?.name ?? (p.name || '다른 사람'), me: m?.me === true, leader: p.peerId === share.ownerPeerId, works: p.works };
+      return { peerId: p.peerId, name: m?.name ?? (p.name || '다른 사람'), me: m?.me === true, leader: p.peerId === share.ownerPeerId, works: p.works, ...(p.report ? { report: p.report } : {}) };
     });
     return { projectId, mine, leaderName: known.get(share.ownerPeerId)?.name ?? '프로젝트를 연 사람', summary: w.summary, goals: w.goals, people, updatedAt: w.at };
   }
@@ -271,7 +299,8 @@ export class AssignmentService extends EventEmitter {
   async boardNow(): Promise<void> {
     for (const project of this.d.projects.list()) {
       if (!this.d.peers.share(project.id)?.mine || this.d.service.isProjectClosed(project.id)) continue;
-      const people = this.d.peers.people(project.id);
+      // 보기만 하는 사람도 현황판은 받는다.
+      const people = [...this.d.peers.people(project.id), ...this.d.peers.observers(project.id)];
       if (people.length === 0) continue;
       await Promise.all(people.map(async (p) => {
         // 사람마다 만든다: 그 사람에게 공개한 것만 자세히 싣는다.

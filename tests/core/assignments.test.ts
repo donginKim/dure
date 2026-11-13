@@ -564,3 +564,54 @@ test('cleanReport: 남이 보낸 보고의 모양과 길이를 맞춘다', async
   expect(r.verify).toMatchObject({ passed: false, command: 'pnpm test' });
   expect(r.review).toMatchObject({ high: 2, total: 1000 });
 });
+
+test('보기만 하는 사람(윗사람): 현황판과 작업 보고 요약만 받고, 일을 받거나 제안하거나 메시지를 주고받지 못한다', async () => {
+  const pm = await node('팀장', '10.0.0.1'); const dev = await node('개발', '10.0.0.2'); const boss = await node('실장', '10.0.0.3');
+  await team(pm, dev);
+  const share = pm.core.peers.share(pm.projectId)!;
+  const out = await pm.core.peers.connect('10.0.0.3:47800');
+  await boss.core.peers.accept(boss.core.peers.requests().find((r) => r.direction === 'in')!.id);
+  await pm.core.peers.accept(out.id);
+  await pm.core.peers.invite(share.id, boss.id, { observer: true });
+  const inv = boss.core.peers.shareInvites()[0]!;
+  expect(inv.observer).toBe(true);
+  // 이어 붙일 프로젝트를 고르지 않아도 된다
+  const bs = await boss.core.peers.acceptInvite(inv.id, '');
+  expect(bs.observer).toBe(true);
+  const bossProject = bs.projectId;
+  expect(boss.core.projects.get(bossProject)!.name).toContain('팀장');
+  await until(() => dev.core.peers.share(dev.projectId)!.members.some((m) => m.name === '실장' && m.observer));
+  // 일 나눠 줄 사람, 함께하는 사람에서 빠진다
+  expect(pm.core.peers.assignable(pm.projectId).map((p) => p.name)).toEqual(['개발']);
+  expect(pm.core.peers.observers(pm.projectId).map((p) => p.name)).toEqual(['실장']);
+  expect(dev.core.peers.people(dev.projectId).map((p) => p.name)).toEqual(['팀장']);
+  // 일을 나눠 주고 개발이 커밋하면, 실장의 현황판에 사람별 요약이 온다
+  pm.core.coordinator.ensure(pm.projectId);
+  const p = await pm.core.coordinator.propose(pm.projectId, { summary: '로그인 만들기', workspaces: [W('로그인 API', { owner: '개발', todos: ['POST /login'] })] });
+  await pm.core.coordinator.approve(p.id, { items: p.items, projectTodos: [] });
+  const [ws] = await dev.core.assignments.accept(dev.core.assignments.incoming()[0]!.id, [{ repoId: dev.repo.id }]);
+  const { writeFileSync } = await import('node:fs');
+  const { execFileSync } = await import('node:child_process');
+  writeFileSync(join(ws!.worktreePath, 'login.ts'), 'x\n');
+  execFileSync('git', ['-C', ws!.worktreePath, 'add', '-A']);
+  execFileSync('git', ['-C', ws!.worktreePath, '-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '-m', 'feat: 로그인']);
+  await dev.core.assignments.progressNow();
+  await until(() => pm.core.assignments.outgoing(pm.projectId)[0]!.progress[0]?.report !== undefined);
+  await pm.core.assignments.boardNow();
+  await until(() => boss.core.assignments.board(bossProject)?.people.find((x) => x.name === '개발')?.report?.commits === 1);
+  const board = boss.core.assignments.board(bossProject)!;
+  expect(board.people.map((x) => x.name).sort()).toEqual(['개발', '팀장']);
+  expect(board.people.find((x) => x.name === '개발')!.report).toMatchObject({ commits: 1, files: 1, last: { subject: 'feat: 로그인' } });
+  // 리더가 끄면 보고 요약 없이 진행만 간다
+  pm.core.peers.setObserverReports(pm.projectId, false);
+  await pm.core.assignments.boardNow();
+  await until(() => boss.core.assignments.board(bossProject)!.people.find((x) => x.name === '개발')!.report === undefined);
+  // 공개한 워크스페이스도 보이지 않고, 메시지·제안·배정을 보낼 수 없다
+  dev.core.peers.setSharing(ws!.id, 'all');
+  await dev.core.peers.publishNow();
+  expect(dev.core.peers.visibleTo(ws!.id, boss.id)).toBe(false);
+  expect(boss.core.peers.remoteWorkspaces(bossProject)).toEqual([]);
+  await expect(boss.core.assignments.suggest(bossProject, { items: [], projectTodos: [] } as never)).rejects.toThrow('보기만');
+  await expect(boss.core.peers.sendMember(bossProject, pm.id, { type: 'plan.suggest', sid: crypto.randomUUID(), plan: { items: [], projectTodos: [] } })).rejects.toThrow('보기만 한다');
+  await expect(pm.core.peers.handOver(pm.projectId, boss.id)).rejects.toThrow('보기만');
+});

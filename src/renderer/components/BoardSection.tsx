@@ -20,7 +20,7 @@ function WorkLine({ w }: { w: BoardWork }) {
  * 함께하는 프로젝트의 현황판: 큰 일과 누가 무엇을 맡았는지. 프로젝트를 연 사람(리더)의 두레가 만들어 모두에게 보낸다.
  * 리더에게는 지금의 것, 나머지에게는 마지막으로 받은 것이 보인다. 보기만 한다.
  */
-export function BoardSection({ projectId }: { projectId: string }) {
+export function BoardSection({ projectId, title = '전체 현황' }: { projectId: string; title?: string }) {
   const [board, setBoard] = useState<Board | null>(null);
   const [, setNow] = useState(0);
   const load = useCallback(() => { window.dure.assignments.board(projectId).then(setBoard).catch(() => setBoard(null)); }, [projectId]);
@@ -36,7 +36,7 @@ export function BoardSection({ projectId }: { projectId: string }) {
   return (
     <div className="section">
       <div className="section-head">
-        <h2>전체 현황</h2>
+        <h2>{title}</h2>
         <span className="muted">{board.mine ? '내가 연 프로젝트입니다. 이 현황이 함께하는 사람 모두에게 보입니다 (비공개 워크스페이스도 이름과 끝낸 수는 실립니다. 맡은 일의 설명은 공개한 사람에게만)' : `${board.leaderName} 의 두레가 보내 준 것 · ${boardAge(board.updatedAt, Date.now())}`}</span>
       </div>
       <div className="board">
@@ -61,6 +61,14 @@ export function BoardSection({ projectId }: { projectId: string }) {
                 <b>{p.name}</b>{p.me && <span className="tag">나</span>}{p.leader && <span className="tag" title="프로젝트를 연 사람입니다. 일을 나누고 바꾸는 것은 이 사람이 합니다">리더</span>}
               </div>
               {p.works.length === 0 ? <div className="muted board-none">맡은 워크스페이스가 없습니다.</div> : p.works.map((w, i) => <WorkLine key={i} w={w} />)}
+              {p.report && (
+                <div className="board-report" title="이 사람이 보낸 작업 보고를 모은 것입니다 (코드는 오지 않습니다)">
+                  커밋 {p.report.commits} · 파일 {p.report.files}
+                  {p.report.verifyFailed > 0 && <span className="warn"> · 확인 실패 {p.report.verifyFailed}</span>}
+                  {p.report.reviewHigh > 0 && <span className="warn"> · 리뷰 높음 {p.report.reviewHigh}</span>}
+                  {p.report.last && <div className="muted board-last">최근: {p.report.last.subject} · {boardAge(p.report.last.at, Date.now())}</div>}
+                </div>
+              )}
             </div>
           ))}
         </div>

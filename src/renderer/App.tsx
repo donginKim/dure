@@ -7,6 +7,7 @@ import type { Artifact, Message, Project, ProjectFlow, Repo, Thread, Todo, Works
 import type { ConversationData } from './components/ConversationPanel';
 import type { PendingInfo } from './components/TodoPanel';
 import { ProjectsHome } from './components/ProjectsHome';
+import { TeamView } from './components/TeamView';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
 import { AttentionView } from './components/AttentionView';
@@ -170,9 +171,10 @@ export function App() {
         )}
         {current?.type === 'settings' && <SettingsView />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
+        {current?.type === 'team' && <TeamView tree={tree.filter((n) => n.project.status !== 'done')} onSelect={setSelection} />}
         {current?.type === 'worktime' && <WorkTimeView onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
       {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
       {!notesOpen && current?.type !== 'worktime' && <WorkBadge onOpen={() => setSelection({ type: 'worktime' })} />}

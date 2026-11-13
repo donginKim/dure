@@ -136,6 +136,9 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
       <button className={`side-settings side-notes${notesOpen ? ' selected' : ''}`} title="메모장을 열거나 닫습니다 (⌘⇧M). 프로젝트와 상관없이 어디서든 씁니다" onClick={onToggleNotes}>
         <span className="gear" aria-hidden>✎</span>메모
       </button>
+      <button className={`side-settings side-notes${selection?.type === 'team' ? ' selected' : ''}`} title="함께하는 프로젝트들의 현황을 한 화면에 모아 봅니다 (다른 사람이 리더인 것, 보기만 하는 것)" onClick={() => onSelect({ type: 'team' })}>
+        <span className="gear" aria-hidden>▦</span>팀 현황
+      </button>
       <button className={`side-settings side-notes${selection?.type === 'worktime' ? ' selected' : ''}`} title="근무지의 와이파이에 붙어 있던 시간을 달력으로 봅니다" onClick={() => onSelect({ type: 'worktime' })}>
         <span className="gear" aria-hidden>◷</span>근무시간
       </button>

@@ -8,6 +8,7 @@ export type Selection =
   | { type: 'people' }
   | { type: 'attention' }
   | { type: 'worktime' }
+  | { type: 'team' }
   | null;
 
 export interface TreeNode {
@@ -43,7 +44,7 @@ export function buildTree(projects: Project[], workspaces: Workspace[]): TreeNod
 /** 선택 대상이 사라졌으면 그 프로젝트로, 프로젝트도 없으면 null 로 옮긴다. */
 export function reconcileSelection(sel: Selection, tree: TreeNode[]): Selection {
   if (!sel) return null;
-  if (sel.type === 'settings' || sel.type === 'people' || sel.type === 'attention' || sel.type === 'worktime') return sel;
+  if (sel.type === 'settings' || sel.type === 'people' || sel.type === 'attention' || sel.type === 'worktime' || sel.type === 'team') return sel;
   if (sel.type === 'project') return tree.some((n) => n.project.id === sel.id) ? sel : null;
   const owner = tree.find((n) => n.workspaces.some((w) => w.id === sel.id));
   if (owner) return sel;

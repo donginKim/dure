@@ -50,7 +50,7 @@ export interface ProjectDashboard {
   /** 마지막 자동 반영 기록 */
   lastShip: { at: number; stage: string; ok: boolean; workspaceName: string } | null;
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
-  share: { mine: boolean; people: number; online: number } | null;
+  share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
 export type AutoShipMode = 'off' | 'commit' | 'main';
 /** 자동 반영의 한 단계 기록 */
@@ -482,6 +482,8 @@ export interface Settings {
   verifyTimeoutSec: number;
   /** Mac 에 로그인하면 두레를 저절로 켠다 (창은 최소화해서). 근무시간 기록과 에이전트의 메시지 받기가 빠지지 않게 */
   openAtLogin: boolean;
+  /** 나눠 받은 일의 작업 보고 (커밋 제목, 바꾼 파일 이름, 확인 결과)를 나눠 준 사람에게 보낸다 */
+  shareWorkReport: boolean;
   /** 터미널 글자 크기 (px) */
   terminalFontSize: number;
   /** 채팅 글자 크기 (px) */
@@ -743,7 +745,7 @@ export interface PeerStatus {
   /** 켰는데 열지 못한 이유 */
   error?: string;
 }
-export interface ShareMember { peerId: string; name: string; me: boolean; owner: boolean; online: boolean }
+export interface ShareMember { peerId: string; name: string; me: boolean; owner: boolean; online: boolean; /** 보기만 하는 사람 (현황판만 받는다) */ observer?: boolean }
 /** 함께하는 프로젝트. 내 프로젝트 하나에 이어 붙어 있다 */
 export interface Share {
   id: string; name: string; projectId: string; ownerPeerId: string; mine: boolean; members: ShareMember[];
@@ -753,9 +755,13 @@ export interface Share {
    */
   suggestMode: 'review' | 'auto';
   /** 초대했지만 아직 참여하지 않은 사람 (내가 연 프로젝트에서만) */
-  invited: { peerId: string; name: string }[];
+  invited: { peerId: string; name: string; observer?: boolean }[];
+  /** 나는 이 프로젝트에서 보기만 한다 */
+  observer: boolean;
+  /** 보기만 하는 사람에게 작업 보고(커밋 수, 확인 결과)까지 보낸다 (리더가 정한다) */
+  observerReports: boolean;
 }
-export interface ShareInvite { id: string; shareId: string; name: string; fromPeerId: string; fromName: string; createdAt: number }
+export interface ShareInvite { id: string; shareId: string; name: string; fromPeerId: string; fromName: string; createdAt: number; /** 보기만 하는 자리로 초대했다 */ observer?: boolean }
 /** 워크스페이스를 누구에게 보일지. none: 아무에게도. all: 참여자 전체. selected: 고른 사람만 */
 export type SharingAudience = 'none' | 'all' | 'selected';
 export interface WorkspaceSharing { workspaceId: string; audience: SharingAudience; peers: string[] }
@@ -778,7 +784,20 @@ export interface HeldMessage {
 /** 배정 하나에 든 워크스페이스 (받는 사람의 PC 에 만들어질 것) */
 export interface AssignItem { name: string; role: string; todos: PlanTodo[] }
 /** 나눠 받은 일의 진행. 나눠 준 사람에게 보인다 (읽기 전용) */
-export interface AssignProgress { workspaceId: string; name: string; status: string; summary: string; todos: { title: string; status: string; assignee: string }[] }
+/**
+ * 나눠 받은 일의 작업 보고 (받은 사람 → 나눠 준 사람). 코드는 담지 않는다: 커밋 제목, 바꾼 파일 이름, 확인 명령과 리뷰의 결과만.
+ * 받은 사람이 설정에서 끄면 보내지 않는다.
+ */
+export interface WorkReport {
+  /** 기준 브랜치에서 갈라진 뒤의 커밋 (새것부터) */
+  commits: { hash: string; subject: string; at: number; files: number }[];
+  /** 그 커밋들이 바꾼 파일 이름 */
+  files: string[];
+  verify: { passed: boolean; command: string; at: number } | null;
+  review: { high: number; total: number; at: number } | null;
+  at: number;
+}
+export interface AssignProgress { workspaceId: string; name: string; status: string; summary: string; todos: { title: string; status: string; assignee: string }[]; report?: WorkReport }
 /** 내가 나눠 준 일 */
 export interface AssignmentOut {
   id: string; projectId: string; peerId: string; peerName: string;
@@ -795,7 +814,9 @@ export interface BoardGoal { title: string; status: TodoStatus; assignee: TodoAs
  * state: active 진행이 보인다. waiting 맡을 사람의 수락을 기다린다. unknown 맡았지만 진행을 받지 못했다 (공개하지 않았다)
  */
 export interface BoardWork { name: string; role: string; status: string; done: number; total: number; state: 'active' | 'waiting' | 'unknown' }
-export interface BoardPerson { peerId: string; name: string; me: boolean; leader: boolean; works: BoardWork[] }
+/** 현황판에 싣는 사람별 작업 보고 요약 (그 사람이 보낸 작업 보고를 리더가 모은 것) */
+export interface BoardReport { commits: number; files: number; last: { subject: string; at: number } | null; verifyFailed: number; reviewHigh: number; at: number }
+export interface BoardPerson { peerId: string; name: string; me: boolean; leader: boolean; works: BoardWork[]; report?: BoardReport }
 /**
  * 함께하는 프로젝트의 현황판: 큰 일과 누가 무엇을 맡았는지. 프로젝트를 연 사람(리더)의 두레가 만들어 모두에게 보낸다.
  * 리더에게는 지금의 것, 나머지에게는 마지막으로 받은 것이다 (updatedAt).

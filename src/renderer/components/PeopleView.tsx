@@ -82,6 +82,13 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
             <div key={inv.id} className="permit">
               <div className="permit-title">"{inv.fromName}" 이(가) 프로젝트 "{inv.name}" 에 초대했습니다</div>
               <div className="permit-hint">내 프로젝트 하나에 이어 붙입니다. 참여해도 내 워크스페이스는 하나씩 공개하기 전에는 상대에게 보이지 않습니다.</div>
+              {inv.observer && <div className="permit-hint"><b>보기만</b> 하는 자리로 초대했습니다: 현황판만 받고, 일을 받거나 메시지를 주고받지 않습니다. 프로젝트를 고르지 않아도 됩니다.</div>}
+              {inv.observer ? (
+                <div className="permit-actions">
+                  <button className="btn primary" disabled={busy} onClick={() => run(window.dure.peers.acceptInvite(inv.id, ''))}>보기로 참여</button>
+                  <button className="btn" disabled={busy} onClick={() => run(window.dure.peers.declineInvite(inv.id))}>거절</button>
+                </div>
+              ) : (
               <div className="permit-actions">
                 <select value={target[inv.id] ?? ''} onChange={(e) => setTarget((t) => ({ ...t, [inv.id]: e.target.value }))}>
                   <option value="">이어 붙일 내 프로젝트 고르기</option>
@@ -90,7 +97,8 @@ export function PeopleView({ projects, onOpenSettings }: { projects: Project[]; 
                 <button className="btn primary" disabled={busy || !target[inv.id]} onClick={() => run(window.dure.peers.acceptInvite(inv.id, target[inv.id]!))}>참여</button>
                 <button className="btn" disabled={busy} onClick={() => run(window.dure.peers.declineInvite(inv.id))}>거절</button>
               </div>
-              {open.length === 0 && <div className="permit-hint">이어 붙일 수 있는 프로젝트가 없습니다. 왼쪽에서 새 프로젝트를 만든 뒤 참여하세요.</div>}
+              )}
+              {!inv.observer && open.length === 0 && <div className="permit-hint">이어 붙일 수 있는 프로젝트가 없습니다. 왼쪽에서 새 프로젝트를 만든 뒤 참여하세요.</div>}
             </div>
           ))}
         </div>

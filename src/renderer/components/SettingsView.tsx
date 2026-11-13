@@ -318,6 +318,9 @@ export function SettingsView() {
       <div className="section">
         <div className="section-head"><h2>커밋</h2></div>
         <div className="set-box">
+          <Row label="나눠 받은 일의 작업 보고 보내기" help="다른 사람이 나눠 준 일을 하면, 그 사람(리더)에게 커밋 제목, 바꾼 파일 이름, 확인 명령과 리뷰의 결과를 보냅니다. 코드 내용은 보내지 않습니다. 공개한 워크스페이스의 것만 갑니다. 리더가 허락하면 보기만 하는 사람(윗사람)에게도 요약(커밋 수, 파일 수, 최근 커밋 제목, 확인 결과)이 갑니다. 다른 참여자에게는 가지 않습니다." {...row('shareWorkReport')}>
+            <Toggle on={s.shareWorkReport} onChange={(v) => save('shareWorkReport', v)} label="작업 보고 보내기" />
+          </Row>
           <Row label="Mac 에 로그인하면 두레 켜기" help="로그인할 때 두레를 저절로 켭니다 (창은 최소화해서). 근무시간이 출근부터 잡히고, 에이전트에게 온 메시지를 놓치지 않습니다." {...row('openAtLogin')}>
             <Toggle on={s.openAtLogin} onChange={(v) => save('openAtLogin', v)} label="Mac 에 로그인하면 두레 켜기" />
           </Row>

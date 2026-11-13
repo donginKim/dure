@@ -27,7 +27,7 @@ export interface PeerDiscovery {
 }
 
 interface PeerRow { id: string; name: string; pub: string; address: string; mode: string; direct: number; created_at: number }
-interface ShareRow { id: string; name: string; owner_peer: string; project_id: string; created_at: number; suggest_mode?: string; prev_owner?: string | null }
+interface ShareRow { id: string; name: string; owner_peer: string; project_id: string; created_at: number; suggest_mode?: string; prev_owner?: string | null; my_role?: string; observer_reports?: number }
 interface Envelope { v: 1; from: string; to: string; ts: number; nonce: string; box: string }
 type Payload = { id: string; type: string; port?: number; name?: string } & Record<string, unknown>;
 /**
@@ -63,7 +63,7 @@ class StoredMap<V> extends Map<string, V> {
   override delete(k: string): boolean { const r = super.delete(k); if (r) this.save(); return r; }
   override clear(): void { super.clear(); this.save(); }
 }
-interface MemberRow { share_id: string; peer_id: string; state: string; pub: string | null; address: string }
+interface MemberRow { share_id: string; peer_id: string; state: string; pub: string | null; address: string; role?: string }
 interface WireArtifact { kind: string; title: string; body: string }
 
 const PROTOCOL = 1;
@@ -127,6 +127,7 @@ const REMOTE_ERRORS: Record<string, string> = {
   bad_share: '프로젝트의 정보가 올바르지 않다',
   busy: '상대에게 확인하지 않은 요청이 많이 쌓여 있다',
   not_owner: '그 프로젝트를 연 사람이 아니다',
+  observer: '그 사람은 이 프로젝트에서 보기만 한다 (일을 받거나 메시지를 주고받지 않는다)',
   not_invited: '초대받지 않았다 (초대가 거둬졌을 수 있다)',
   not_member: '함께하는 프로젝트의 참여자가 아니다',
   closed: '그 프로젝트는 완료됐다',
@@ -621,12 +622,14 @@ export class PeerService extends EventEmitter {
     return {
       id: s.id, name: s.name, projectId: s.project_id, ownerPeerId: s.owner_peer, mine, suggestMode: mine && s.suggest_mode === 'auto' ? 'auto' : 'review',
       members: [
-        { peerId: me.id, name: this.myName(), me: true, owner: mine, online: true },
-        ...this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), me: false, owner: id === s.owner_peer, online: this.isOnline(id) })),
+        { peerId: me.id, name: this.myName(), me: true, owner: mine, online: true, observer: s.my_role === 'observer' },
+        ...this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), me: false, owner: id === s.owner_peer, online: this.isOnline(id), observer: this.isObserver(s.id, id) })),
       ],
       invited: mine
-        ? (this.d.db.prepare("SELECT peer_id FROM share_members WHERE share_id = ? AND state = 'invited'").all(s.id) as { peer_id: string }[]).map((r) => ({ peerId: r.peer_id, name: this.label(r.peer_id) }))
+        ? (this.d.db.prepare("SELECT peer_id, role FROM share_members WHERE share_id = ? AND state = 'invited'").all(s.id) as { peer_id: string; role: string }[]).map((r) => ({ peerId: r.peer_id, name: this.label(r.peer_id), observer: r.role === 'observer' }))
         : [],
+      observer: s.my_role === 'observer',
+      observerReports: s.observer_reports !== 0,
     };
   }
 
@@ -640,6 +643,15 @@ export class PeerService extends EventEmitter {
     const s = this.shareOfProject(projectId);
     if (!s || !this.isMine(s)) throw new Error('내가 연 프로젝트에서만 정할 수 있습니다.');
     this.d.db.prepare('UPDATE shares SET suggest_mode = ? WHERE id = ?').run(mode === 'auto' ? 'auto' : 'review', s.id);
+    this.emit('changed');
+    return this.share(projectId)!;
+  }
+
+  /** 보기만 하는 사람에게 작업 보고까지 보낼지 정한다. 내가 리더일 때만. */
+  setObserverReports(projectId: string, on: boolean): Share {
+    const s = this.shareOfProject(projectId);
+    if (!s || !this.isMine(s)) throw new Error('내가 리더인 프로젝트에서만 정할 수 있습니다.');
+    this.d.db.prepare('UPDATE shares SET observer_reports = ? WHERE id = ?').run(on ? 1 : 0, s.id);
     this.emit('changed');
     return this.share(projectId)!;
   }
@@ -658,14 +670,15 @@ export class PeerService extends EventEmitter {
   }
 
   /** 연결된 사람을 초대한다. 프로젝트를 연 사람만 할 수 있다. */
-  async invite(shareId: string, peerId: string): Promise<void> {
+  async invite(shareId: string, peerId: string, o: { observer?: boolean } = {}): Promise<void> {
     const s = this.shareRow(shareId);
     if (!s || !this.isMine(s)) throw new Error('내가 연 프로젝트가 아닙니다.');
     const peer = this.peerRow(peerId);
     if (!peer || peer.direct !== 1) throw new Error('직접 연결한 사람만 초대할 수 있습니다.');
     if (this.memberIds(shareId).includes(peerId)) throw new Error('이미 참여한 사람입니다.');
-    await this.sendPeer(peerId, { type: 'share.invite', share: { id: s.id, name: s.name } });
-    this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state) VALUES (?, ?, 'invited') ON CONFLICT DO NOTHING").run(shareId, peerId);
+    const role = o.observer ? 'observer' : 'member';
+    await this.sendPeer(peerId, { type: 'share.invite', share: { id: s.id, name: s.name }, role });
+    this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state, role) VALUES (?, ?, 'invited', ?) ON CONFLICT(share_id, peer_id) DO UPDATE SET role = excluded.role WHERE state = 'invited'").run(shareId, peerId, role);
     this.emit('changed');
   }
 
@@ -675,13 +688,29 @@ export class PeerService extends EventEmitter {
   async acceptInvite(inviteId: string, projectId: string): Promise<Share> {
     const inv = this.invites.get(inviteId);
     if (!inv) throw new Error('받은 초대가 아닙니다.');
+    // 보기만 하는 자리면 이어 붙일 프로젝트를 고르지 않아도 된다: 그 이름으로 새로 만든다.
+    let made: string | null = null;
+    if (!projectId && inv.observer) {
+      if (this.shareRow(inv.shareId)) throw new Error('이미 참여한 프로젝트입니다.');
+      made = this.d.projects.create(`${inv.name} (${inv.fromName})`).id; projectId = made;
+    }
+    try {
+      return await this.joinShare(inv, inviteId, projectId);
+    } catch (e) {
+      // 참여하지 못했으면 보기만 하려고 만든 프로젝트를 남기지 않는다.
+      if (made) { try { this.d.projects.remove(made); } catch { /* 이미 없다 */ } }
+      throw e;
+    }
+  }
+
+  private async joinShare(inv: ShareInvite, inviteId: string, projectId: string): Promise<Share> {
     if (!this.d.projects.get(projectId)) throw new Error('프로젝트가 없습니다.');
     if (this.d.isProjectClosed(projectId)) throw new Error('완료된 프로젝트입니다.');
     if (this.shareOfProject(projectId)) throw new Error('그 프로젝트는 이미 함께하는 프로젝트입니다. 다른 프로젝트를 고르세요.');
     if (this.shareRow(inv.shareId)) throw new Error('이미 참여한 프로젝트입니다.');
     // 내 쪽 기록을 먼저 만든다: 참여를 알리자마자 연 사람이 참여자 목록을 보내오는데, 그때 이 기록이 있어야 받는다.
     this.d.db.transaction(() => {
-      this.d.db.prepare('INSERT INTO shares (id, name, owner_peer, project_id, created_at) VALUES (?, ?, ?, ?, ?)').run(inv.shareId, inv.name, inv.fromPeerId, projectId, Date.now());
+      this.d.db.prepare('INSERT INTO shares (id, name, owner_peer, project_id, created_at, my_role) VALUES (?, ?, ?, ?, ?, ?)').run(inv.shareId, inv.name, inv.fromPeerId, projectId, Date.now(), inv.observer ? 'observer' : 'member');
       this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state) VALUES (?, ?, 'member') ON CONFLICT DO NOTHING").run(inv.shareId, inv.fromPeerId);
     })();
     try {
@@ -732,6 +761,7 @@ export class PeerService extends EventEmitter {
     if (!s || !this.isMine(s)) throw new Error('내가 리더인 함께하는 프로젝트에서만 넘길 수 있습니다.');
     if (!this.memberIds(s.id).includes(peerId)) throw new Error('이 프로젝트에 참여한 사람에게만 넘길 수 있습니다.');
     if (this.peerRow(peerId)?.direct !== 1) throw new Error('직접 연결한 사람에게만 넘길 수 있습니다.');
+    if (this.isObserver(s.id, peerId)) throw new Error('보기만 하는 사람에게는 넘길 수 없습니다.');
     const r = await this.sendShare(s.id, peerId, { type: 'share.lead', shareId: s.id });
     if (r.ok !== true) throw new Error(`넘기지 못했습니다: ${REMOTE_ERRORS[String(r.error)] ?? String(r.error ?? '알 수 없는 까닭')}`);
     const others = this.memberIds(s.id).filter((id) => id !== peerId);
@@ -793,9 +823,9 @@ export class PeerService extends EventEmitter {
     const me = this.me();
     const all = this.memberIds(s.id);
     const members = [
-      { id: me.id, name: this.myName(), pub: me.pub, address: '' },
+      { id: me.id, name: this.myName(), pub: me.pub, address: '', role: 'member' },
       // 이 프로젝트에서 쓰는 열쇠로 (리더를 넘겨받았으면 직접 연결하지 않은 사람도 있다).
-      ...all.flatMap((id) => { const t = this.memberTarget(s.id, id); const r = this.peerRow(id); return t && r ? [{ id, name: r.name, pub: t.pub, address: t.address }] : []; }),
+      ...all.flatMap((id) => { const t = this.memberTarget(s.id, id); const r = this.peerRow(id); return t && r ? [{ id, name: r.name, pub: t.pub, address: t.address, role: this.isObserver(s.id, id) ? 'observer' : 'member' }] : []; }),
     ];
     const ids = only ? all.filter((id) => only.includes(id)) : all;
     await Promise.all(ids.map((id) => this.sendShare(s.id, id, { type: 'share.members', shareId: s.id, shareName: s.name, members }).catch(() => undefined)));
@@ -822,7 +852,8 @@ export class PeerService extends EventEmitter {
   /** 함께하는 사람들 (나 빼고). */
   people(projectId: string): { peerId: string; name: string; online: boolean }[] {
     const s = this.shareOfProject(projectId);
-    return s ? this.memberIds(s.id).map((id) => ({ peerId: id, name: this.label(id), online: this.isOnline(id) })).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)) : [];
+    // 보기만 하는 사람은 뺀다: 일을 나눠 받거나 메시지를 주고받는 사람이 아니다.
+    return s ? this.memberIds(s.id).filter((id) => !this.isObserver(s.id, id)).map((id) => ({ peerId: id, name: this.label(id), online: this.isOnline(id) })).sort((a, b) => a.name.localeCompare(b.name, 'ko') || a.peerId.localeCompare(b.peerId)) : [];
   }
 
   /**
@@ -832,6 +863,17 @@ export class PeerService extends EventEmitter {
   assignable(projectId: string): { peerId: string; name: string; online: boolean }[] {
     const s = this.shareOfProject(projectId);
     return s && this.isMine(s) ? this.people(projectId) : [];
+  }
+
+  /** 보기만 하는 사람들 (현황판만 받는다). */
+  observers(projectId: string): { peerId: string; name: string; online: boolean }[] {
+    const s = this.shareOfProject(projectId);
+    return s ? this.memberIds(s.id).filter((id) => this.isObserver(s.id, id)).map((id) => ({ peerId: id, name: this.label(id), online: this.isOnline(id) })) : [];
+  }
+
+  /** 그 사람이 이 프로젝트에서 보기만 하는가. */
+  isObserver(shareId: string, peerId: string): boolean {
+    return this.memberRow(shareId, peerId)?.role === 'observer';
   }
 
   /** 함께하는 사람 한 명에게 보낸다. 닿지 않으면 던진다. */
@@ -866,6 +908,10 @@ export class PeerService extends EventEmitter {
 
   /** 이 워크스페이스가 그 사람에게 보이는가. */
   visibleTo(workspaceId: string, peerId: string): boolean {
+    // 보기만 하는 사람에게는 어떤 워크스페이스도 보이지 않는다 (이름도, 메시지도).
+    const ws = this.d.workspaces.get(workspaceId);
+    const share = ws ? this.shareOfProject(ws.projectId) : undefined;
+    if (share && this.isObserver(share.id, peerId)) return false;
     const sh = this.sharing(workspaceId);
     return sh.audience === 'all' || (sh.audience === 'selected' && sh.peers.includes(peerId));
   }
@@ -884,6 +930,8 @@ export class PeerService extends EventEmitter {
       if (this.d.isProjectClosed(s.project_id)) continue;
       // 내가 연 프로젝트면 참여자 목록도 다시 보낸다: 누가 빠졌을 때 꺼져 있던 사람이 옛 목록을 계속 쓰지 않게.
       if (this.isMine(s)) await this.broadcastMembers(s);
+      // 내가 보기만 하는 프로젝트면 내 워크스페이스를 알리지 않는다.
+      if (s.my_role === 'observer') continue;
       // 조율 에이전트도 공개돼 있으면 목록에 들어간다 (일을 나눠 받은 사람의 에이전트가 보고할 곳이다).
       const mine = this.d.workspaces.listAll(s.project_id);
       await Promise.all(this.memberIds(s.id).map((peerId) => this.sendShare(s.id, peerId, {
@@ -897,7 +945,7 @@ export class PeerService extends EventEmitter {
   remoteWorkspaces(projectId: string): RemoteWorkspace[] {
     const s = this.shareOfProject(projectId);
     if (!s) return [];
-    const members = new Set(this.memberIds(s.id));
+    const members = new Set(this.memberIds(s.id).filter((id) => !this.isObserver(s.id, id)));
     const rows = this.d.db.prepare('SELECT * FROM remote_workspaces WHERE share_id = ? AND listed = 1 ORDER BY peer_id, name').all(s.id) as { peer_id: string; workspace_id: string; name: string }[];
     return rows.filter((r) => members.has(r.peer_id)).map((r) => {
       const peerName = this.label(r.peer_id);
@@ -1234,7 +1282,7 @@ export class PeerService extends EventEmitter {
         if ([...this.invites.values()].some((inv) => inv.shareId === share.id && inv.fromPeerId !== peer.id)) return no('bad_share');
         for (const [id, inv] of mine) if (inv.shareId === share.id) this.invites.delete(id);
         if (this.invites.size >= MAX_INVITES || mine.filter(([, inv]) => inv.shareId !== share.id).length >= MAX_INVITES_PER_PEER) return no('busy');
-        const inv: ShareInvite = { id: crypto.randomUUID(), shareId: share.id, name: cleanName(share.name, '프로젝트'), fromPeerId: peer.id, fromName: this.label(peer.id), createdAt: Date.now() };
+        const inv: ShareInvite = { id: crypto.randomUUID(), shareId: share.id, name: cleanName(share.name, '프로젝트'), fromPeerId: peer.id, fromName: this.label(peer.id), createdAt: Date.now(), ...(p.role === 'observer' ? { observer: true } : {}) };
         this.invites.set(inv.id, inv);
         this.emit('changed');
         return { ok: true };
@@ -1295,7 +1343,7 @@ export class PeerService extends EventEmitter {
         const me = this.me();
         const list = (Array.isArray(p.members) ? p.members : []).slice(0, 50) as Record<string, unknown>[];
         // 리더와 직접 연결하지 않았으면 (리더를 넘겨받은 사람) 이 프로젝트에서 쓰던 그 열쇠를 남긴다.
-        const rows: { id: string; pub: string | null; address: string }[] = [{ id: peer.id, pub: direct ? null : used, address: direct ? '' : this.memberRow(s.id, peer.id)?.address ?? '' }];
+        const rows: { id: string; pub: string | null; address: string; role: string }[] = [{ id: peer.id, pub: direct ? null : used, address: direct ? '' : this.memberRow(s.id, peer.id)?.address ?? '', role: 'member' }];
         this.d.db.transaction(() => {
           for (const m of list) {
             if (!m || typeof m !== 'object' || !isId(m.id) || m.id === me.id || m.id === peer.id || !validPub(m.pub) || rows.some((r) => r.id === m.id)) continue;
@@ -1306,14 +1354,14 @@ export class PeerService extends EventEmitter {
             // 여기서 받은 열쇠는 이 프로젝트 안에서만 쓴다 (share_members.pub).
             if (!known) this.upsertPeer({ id: m.id, name: cleanName(m.name, '이름 없음'), pub: m.pub, address: '' }, false);
             if (rows.length >= 30) break;
-            rows.push({ id: m.id, pub: m.pub, address: isLanAddress(m.address) ? m.address : '' });
+            rows.push({ id: m.id, pub: m.pub, address: isLanAddress(m.address) ? m.address : '', role: m.role === 'observer' ? 'observer' : 'member' });
           }
           const before = new Map((this.d.db.prepare('SELECT * FROM share_members WHERE share_id = ?').all(s.id) as MemberRow[]).map((r) => [r.peer_id, r]));
           this.d.db.prepare('DELETE FROM share_members WHERE share_id = ?').run(s.id);
           for (const r of rows) {
             // 그 사람이 직접 알려 온 주소가 있으면 (같은 열쇠) 그것을 남긴다.
             const old = before.get(r.id);
-            this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state, pub, address) VALUES (?, ?, 'member', ?, ?)").run(s.id, r.id, r.pub, old && old.pub === r.pub && old.address ? old.address : r.address);
+            this.d.db.prepare("INSERT INTO share_members (share_id, peer_id, state, pub, address, role) VALUES (?, ?, 'member', ?, ?, ?)").run(s.id, r.id, r.pub, old && old.pub === r.pub && old.address ? old.address : r.address, r.role);
           }
           const keep = rows.map(() => '?').join(',');
           this.d.db.prepare(`DELETE FROM remote_workspaces WHERE share_id = ? AND peer_id NOT IN (${keep})`).run(s.id, ...rows.map((r) => r.id));
@@ -1349,6 +1397,8 @@ export class PeerService extends EventEmitter {
       case 'directory': {
         const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
         if (!s || !this.isMember(s.id, peer.id, used)) return no('not_member');
+        // 보기만 하는 사람의 워크스페이스는 받지 않는다 (메시지를 주고받는 사람이 아니다).
+        if (this.isObserver(s.id, peer.id)) return no('observer');
         const list = (Array.isArray(p.workspaces) ? p.workspaces : []).slice(0, MAX_DIRECTORY) as Record<string, unknown>[];
         this.d.db.transaction(() => {
           // 목록에서 빠진 것은 숨긴다 (지우지 않는다: 이미 주고받은 메시지의 이름이 남아야 한다).
@@ -1373,6 +1423,8 @@ export class PeerService extends EventEmitter {
         const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
         if (!handler) return no('unknown_type');
         if (!s || !this.isMember(s.id, peer.id, used)) return no('not_member');
+        // 보기만 하는 사람은 아무것도 보내지 않는다 (배정, 제안, 현황판, 진행 등).
+        if (this.isObserver(s.id, peer.id)) return no('observer');
         if (this.d.isProjectClosed(s.project_id)) return no('closed');
         return handler({ id: peer.id, name: this.label(peer.id) }, p, s.project_id) ?? { ok: true };
       }
@@ -1402,6 +1454,7 @@ export class PeerService extends EventEmitter {
     const no = (error: string): unknown => ({ ok: false, error });
     const s = isId(p.shareId) ? this.shareRow(p.shareId) : undefined;
     if (!s || !this.isMember(s.id, peer.id, used)) return no('not_member');
+    if (this.isObserver(s.id, peer.id)) return no('observer');
     if (this.d.isProjectClosed(s.project_id)) return no('closed');
     const from = (p.from && typeof p.from === 'object' ? p.from : {}) as Record<string, unknown>;
     // 워크스페이스가 아니라 나(사용자)에게 직접 물은 것인가.

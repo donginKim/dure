@@ -483,7 +483,7 @@ describe('믿지 않는 것', () => {
     await pair(a, b);
     const share = a.core.peers.createShare(a.projectId);
     await a.core.peers.invite(share.id, idOf(b));
-    expect(a.core.peers.share(a.projectId)!.invited).toEqual([{ peerId: idOf(b), name: '나' }]);
+    expect(a.core.peers.share(a.projectId)!.invited).toEqual([{ peerId: idOf(b), name: '나', observer: false }]);
     expect(b.core.peers.shareInvites().length).toBe(1);
     await a.core.peers.removeMember(share.id, idOf(b));
     expect(a.core.peers.share(a.projectId)!.invited).toEqual([]);

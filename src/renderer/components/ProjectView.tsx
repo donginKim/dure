@@ -13,6 +13,7 @@ import { Ticks, TodoList } from './TodoPanel';
 import { BoardSection } from './BoardSection';
 import { VerifyCommand } from './VerifyParts';
 import { MergeSection } from './MergeSection';
+import { AgreementsSection } from './AgreementsSection';
 import { remoteGroups } from '../boardView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -210,6 +211,8 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
           />
         </div>
       </div>
+
+      <AgreementsSection projectId={project.id} readOnly={done} />
 
       <MergeSection projectId={project.id} readOnly={done} />
 

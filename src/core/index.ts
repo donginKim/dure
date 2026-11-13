@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus, Todo } from '@shared/types';
+import type { Repo, RepoStatus, Todo, Agreement } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
@@ -25,6 +25,8 @@ import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
 import { WorkTimeService, type NetworkProbe } from './worktime';
 import { noteTools } from './mcp/tools/notes';
+import { agreementTools } from './mcp/tools/agreements';
+import { AgreementService } from './agreements';
 import { PeerService, type PeerDiscovery, type PeerTransport } from './peers/peerService';
 import { DbService, noSecrets, type SecretBox } from './dbService';
 import { cleanupTools } from './mcp/tools/cleanup';
@@ -92,6 +94,7 @@ export interface Core {
   commit: CommitService;
   review: ReviewService;
   merges: MergeService;
+  agreements: AgreementService;
   pty: PtyManager;
   git: Git;
   mcpUrl: string;
@@ -177,6 +180,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     } catch { /* 알림 실패가 상태 변경을 막으면 안 된다 */ }
   });
   // 끝난 일의 확인: 에이전트가 TODO 를 완료로 바꿀 때 저장소의 확인 명령을 돌린다.
+  // 프로젝트의 약속: 에이전트는 읽고 제안만 한다. 사용자가 받아들이면 모든 에이전트에게 알린다.
+  const agreements = new AgreementService(db);
   const verify = new VerifyService({ db, repos, workspaces, git, env: o.baseEnv, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, runner: o.verifyRunner });
   const worktime = new WorkTimeService({ db, settings: () => settings.get(), probe: o.networkProbe ?? undefined });
   // 시험에서는 저절로 재지 않는다 (가짜 네트워크를 줄 때만).
@@ -202,6 +207,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     notesWriteForAgents: () => settings.get().notesWriteForAgents,
     prs,
     verify,
+    agreements,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -236,7 +242,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -335,8 +341,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     held: (id) => peers.held(id), assignments: (id) => assignments.incoming(id), briefs: (id) => assignments.briefs(id), pairs: () => peers.requests(), invites: () => peers.shareInvites(),
     limited: (id) => service.limited(id),
     stuck: (id) => service.stuckIn(id),
+    agreements: (id) => agreements.list(id, { proposed: true }).filter((a) => a.status === 'proposed'),
   });
-  for (const src of [service, coordinator, dbs, slack, browser, peers, assignments]) src.on('changed', () => attention.poke());
+  for (const src of [service, coordinator, dbs, slack, browser, peers, assignments, agreements]) src.on('changed', () => attention.poke());
   attention.poke();
 
   const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
@@ -355,6 +362,18 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     repos, workspaces, git, messages, todos: (id) => todos.listProject(id), worktreeRoot: o.worktreeRoot, env: o.baseEnv,
     run: o.verifyRunner ?? shellRunner, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, isProjectClosed: (id) => service.isProjectClosed(id),
   });
+  // 약속이 정해지거나 바뀌면 그 프로젝트의 모든 에이전트에게 알린다 (꺼져 있으면 다음에 켤 때 받는다).
+  agreements.on('settled', (a: Agreement, before?: Agreement) => {
+    if (service.isProjectClosed(a.projectId)) return;
+    const body = [
+      before ? `[두레] 프로젝트의 약속이 바뀌었다: "${a.title}". 앞으로는 이것을 따르라 (앞의 내용과 다르게 만든 것이 있으면 맞춰라).` : `[두레] 프로젝트에 약속이 생겼다: "${a.title}". 모든 워크스페이스가 이것을 따른다.`,
+      '', a.body,
+      '', `(정한 사람: ${a.author === '사용자' ? '사용자' : `${a.author} 이(가) 제안하고 사용자가 받아들였다`}. 약속 전체는 agreements_list 로 읽는다.)`,
+    ].join('\n');
+    for (const w of workspaces.listAll(a.projectId)) {
+      try { messages.send({ projectId: a.projectId, from: { kind: 'system' }, toWorkspaceId: w.id, title: '약속', body }); } catch { /* 알림 실패가 약속을 되돌리지 않는다 */ }
+    }
+  });
   const reviewTimers = new Map<string, NodeJS.Timeout>();
   commitDrafts.on('changed', (id: string) => {
     if (!settings.get().reviewOnDraft || !commitDrafts.get(id)) return;
@@ -367,7 +386,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async completionPlan(projectId) {
       if (!projects.get(projectId)) throw new Error(`프로젝트가 없습니다: ${projectId}`);
       const list = await Promise.all(workspaces.list(projectId).map(async (w) => {

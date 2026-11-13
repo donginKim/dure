@@ -394,6 +394,21 @@ const MIGRATIONS: string[] = [
     at INTEGER NOT NULL
   );
   `,
+  `
+  -- 프로젝트의 약속 (API 형식, 이름 규칙, 정한 것). 에이전트는 제안만 하고 (proposed) 사용자가 받아들인다
+  CREATE TABLE agreements (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL,
+    author TEXT NOT NULL,
+    replaces TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX agreements_by_project ON agreements (project_id, status);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

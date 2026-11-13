@@ -247,6 +247,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'browser.decide': (requestId: string, allow: boolean) => core.browser.decide(String(requestId), allow === true),
     'commit.state': (workspaceId: string) => core.commit.state(workspaceId),
     'commit.diff': (workspaceId: string, file: string) => core.commit.diff(workspaceId, String(file)),
+    'agreements.list': (projectId: string, proposed?: boolean) => core.agreements.list(String(projectId), { proposed: proposed === true }),
+    'agreements.save': (projectId: string, input: { id?: string; kind: string; title: string; body: string }) => { assertOpen(String(projectId)); return core.agreements.save(String(projectId), input ?? {}); },
+    'agreements.accept': (id: string) => { const a = core.agreements.get(String(id)); if (a) assertOpen(a.projectId); return core.agreements.accept(String(id)); },
+    'agreements.remove': (id: string) => { const a = core.agreements.get(String(id)); if (a) assertOpen(a.projectId); core.agreements.remove(String(id)); },
     'merge.plans': (projectId: string) => core.merges.plans(String(projectId)),
     'merge.prepare': (projectId: string, repoId: string, base: string) => { assertOpen(String(projectId)); return core.merges.prepare(String(projectId), String(repoId), String(base)); },
     'merge.advance': (projectId: string, repoId: string, base: string) => { assertOpen(String(projectId)); return core.merges.advance(String(projectId), String(repoId), String(base)); },
@@ -372,6 +376,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onReviewChanged = (): void => changed('commit');
   core.review.on('changed', onReviewChanged);
   core.merges.on('changed', onReviewChanged);
+  const onAgreementsChanged = (): void => changed('todos');
+  core.agreements.on('changed', onAgreementsChanged);
   core.attention.on('changed', onAttentionChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
@@ -400,6 +406,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.verify.off('changed', onTodosChanged);
     core.review.off('changed', onReviewChanged);
     core.merges.off('changed', onReviewChanged);
+    core.agreements.off('changed', onAgreementsChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.browser.off('changed', onBrowserChanged);

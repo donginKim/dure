@@ -9,6 +9,12 @@ import type { Project, Workspace } from '@shared/types';
  * 사용자에게 고르게 할 때의 규칙 (모든 에이전트). 두레는 AskUserQuestion 을 선택지 버튼의 카드로 보여 준다:
  * 글로 "1안으로 갈까?" 라고 물으면 사용자가 글을 읽고 다시 쳐야 한다.
  */
+/** 프로젝트의 약속 (모든 에이전트) */
+const AGREEMENT_RULE = [
+  '이 프로젝트의 약속(API 형식, 이름 규칙, 사용자와 정한 것)은 `agreements_list` 로 읽는다. 일을 시작할 때 한 번 읽고, 다른 워크스페이스와 맞물리는 일(API, 공용 타입과 이름)을 하기 전에 다시 읽어라. 약속과 다르게 만들지 마라.',
+  '- 여러 워크스페이스가 같이 지켜야 할 것을 새로 정해야 하면 `agreement_propose` 로 제안하라. 사용자가 받아들여야 약속이 되고, 그때 두레가 모두에게 알린다. 약속을 바꿔야 하면 replaces 로 제안하라.',
+].join('\n');
+
 const ASK_RULE = [
   '사용자에게 고르게 할 것이 있으면 글로 묻지 말고 AskUserQuestion 도구로 물어라. 두레가 선택지를 버튼으로 보여 주고, 사용자는 누르거나 직접 써서 답한다.',
   '- 대상: 안 A/B 고르기, 진행할지 말지, 여러 결정을 한꺼번에 정하기 (예: "1안 / 2안", "결정 ①~⑤ 추천대로 할지", "커밋 전에 되돌릴지").',
@@ -66,6 +72,7 @@ export function baseInstructions(ws: Workspace, project: Project): string {
       '- rm 으로 지우지 마라. 사용자가 프로젝트를 완료 처리할 때 목록을 보고 지운다. 잘못 옮긴 것은 사용자가 되돌릴 수 있다.',
       '- 옮긴 것은 응답에서 한 줄로 알려라.',
     ].join('\n'),
+    AGREEMENT_RULE,
     ASK_RULE,
   ].join('\n');
 }
@@ -113,6 +120,7 @@ export function coordinatorInstructions(project: Project): string {
       '- 같은 것을 여러 번 묻거나 인사만 하는 메시지를 보내지 마라. 에이전트끼리 주고받는 횟수에는 상한이 있다.',
       '- 확실하지 않은 것은 추측으로 진행하지 말고 사용자에게 물어라.',
     ].join('\n'),
+    AGREEMENT_RULE,
     ASK_RULE,
   ].join('\n');
 }

@@ -199,6 +199,10 @@ export interface MergePlan {
   mergeBranch: string; mergeBranchHead: string | null; ready: boolean; verifyCommand: string;
 }
 
+/** 프로젝트의 약속 하나. api: API 형식, naming: 이름 규칙, decision: 정한 것. proposed: 에이전트가 제안했고 사용자가 아직 받아들이지 않았다 */
+export type AgreementKind = 'api' | 'naming' | 'decision' | 'other';
+export interface Agreement { id: string; projectId: string; kind: AgreementKind; title: string; body: string; status: 'active' | 'proposed'; author: string; replaces: string | null; updatedAt: number }
+
 /** 리뷰 에이전트가 찾은 것 하나 */
 export interface ReviewFinding { severity: '높음' | '중간' | '낮음'; file: string; line: number | null; title: string; detail: string }
 /** 커밋 전의 리뷰. stale: 리뷰한 뒤에 작업 폴더가 바뀌었다 */
@@ -811,7 +815,7 @@ export interface NoteSummary { id: string; title: string; preview: string; updat
  * agent: 에이전트가 권한이나 답을 기다린다. plan: 계획안이 승인을 기다린다. db/slack/browser: 읽거나 열어도 되는지 묻는다.
  * held: 다른 사람의 메시지가 넘겨주기를 기다린다 (나에게 물은 것 포함). assign: 다른 사람이 나눠 준 일. pair: 연결 요청. invite: 프로젝트 초대
  */
-export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
+export type AttentionKind = 'agent' | 'limit' | 'stuck' | 'agreement' | 'plan' | 'db' | 'slack' | 'browser' | 'held' | 'assign' | 'brief' | 'pair' | 'invite';
 export interface AttentionItem {
   /** 종류와 그 요청의 id 로 만든다. 같은 것은 같은 id 다 */
   id: string; kind: AttentionKind;

@@ -117,6 +117,12 @@ const api: DureApi = {
     run: (workspaceId, input) => call('commit.run', workspaceId, input),
     push: (workspaceId) => call('commit.push', workspaceId),
   },
+  agreements: {
+    list: (projectId, proposed) => call('agreements.list', projectId, proposed),
+    save: (projectId, input) => call('agreements.save', projectId, input),
+    accept: (id) => call('agreements.accept', id),
+    remove: (id) => call('agreements.remove', id),
+  },
   merge: {
     plans: (projectId) => call('merge.plans', projectId),
     prepare: (projectId, repoId, base) => call('merge.prepare', projectId, repoId, base),

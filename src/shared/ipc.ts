@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -163,6 +163,15 @@ export interface DureApi {
     run(workspaceId: string, input: { files: string[]; message: string }): Promise<CommitResult>;
     /** git 이 낸 글을 돌려준다 */
     push(workspaceId: string): Promise<string>;
+  };
+  /** 프로젝트의 약속 */
+  agreements: {
+    /** proposed: 에이전트의 제안도 함께 */
+    list(projectId: string, proposed?: boolean): Promise<Agreement[]>;
+    /** 사용자가 적는다 (바로 약속이 되고 모든 에이전트에게 알린다). id 를 주면 고친다 */
+    save(projectId: string, input: { id?: string; kind: AgreementKind; title: string; body: string }): Promise<Agreement>;
+    accept(id: string): Promise<Agreement>;
+    remove(id: string): Promise<void>;
   };
   /** 합치기 도우미 */
   merge: {
@@ -382,7 +391,7 @@ export const IPC_CHANNELS = [
   'peers.sharing', 'peers.setSharing', 'peers.remote', 'peers.names', 'peers.held', 'peers.pass', 'peers.answer', 'peers.drop',
   'assignments.outgoing', 'assignments.incoming', 'assignments.accept', 'assignments.decline', 'assignments.briefs', 'assignments.takeBrief', 'assignments.dropBrief', 'assignments.board',
   'browser.register', 'browser.requests', 'browser.decide',
-  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent', 'merge.plans', 'merge.prepare', 'merge.advance', 'merge.askToResolve',
+  'commit.state', 'commit.diff', 'commit.run', 'commit.push', 'review.status', 'review.run', 'review.sendToAgent', 'agreements.list', 'agreements.save', 'agreements.accept', 'agreements.remove', 'merge.plans', 'merge.prepare', 'merge.advance', 'merge.askToResolve',
   'settings.get', 'settings.update', 'settings.defaults', 'settings.models', 'settings.pickFolder',
   'chat.get', 'chat.step', 'chat.send', 'chat.answerPermission', 'chat.answerQuestion', 'chat.dismissQuestion', 'chat.commands',
 ] as const;

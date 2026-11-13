@@ -906,3 +906,12 @@ button.link { background: none; border: 0; padding: 0; color: var(--accent); cur
 .merge-note { margin-top: 6px; font-size: 12px; }
 
 .plan-reason-target { flex: none; max-width: 200px; }
+
+/* 프로젝트의 약속 */
+.agreement { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 8px; background: var(--panel); font-size: 13px; }
+.agreement.proposed { border-color: var(--accent); }
+.agreement-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agreement-head input[type=text] { min-width: 200px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+.agreement-title { background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; font: inherit; padding: 0; }
+.agreement-body { margin-top: 6px; font-size: 12.5px; }
+.agreement-text { width: 100%; min-height: 140px; margin: 8px 0; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 12.5px/1.5 var(--mono, ui-monospace, monospace); resize: vertical; box-sizing: border-box; }

@@ -311,14 +311,47 @@ const ORACLE_SYSTEM = ['SYS', 'SYSTEM', 'XDB', 'MDSYS', 'CTXSYS', 'ORDSYS', 'ORD
 
 const SCHEMA_LIMITS: DbLimits = { maxRows: 3000, timeoutMs: 15_000 };
 
+/**
+ * Oracle 의 표와 뷰. 큰 DB 에서는 사전(all_tables)을 훑는 데 오래 걸린다: 접속한 계정의 것을 먼저 받고 (빠르다),
+ * 다른 계정의 것은 따로 받는다. 다른 계정의 것을 제때 받지 못해도 내 것은 보인다. 서버에서 정렬시키지 않는다.
+ */
+async function oracleTables(t: DbTarget): Promise<DbTable[]> {
+  const toTable = (x: DbCell[]): DbTable => ({ schema: String(x[0] ?? ''), name: String(x[1] ?? ''), type: String(x[2] ?? '') === 'VIEW' ? 'view' : 'table' });
+  const own = (await runReadOnly(t, "SELECT USER, table_name, 'TABLE' FROM user_tables UNION ALL SELECT USER, view_name, 'VIEW' FROM user_views", [], SCHEMA_LIMITS)).rows.map(toTable);
+  const others = await runReadOnly(t, `SELECT owner, table_name, 'TABLE' FROM all_tables WHERE owner <> USER AND owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%'
+       UNION ALL SELECT owner, view_name, 'VIEW' FROM all_views WHERE owner <> USER AND owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%'`, [], { maxRows: SCHEMA_LIMITS.maxRows, timeoutMs: 30_000 })
+    .then((r) => r.rows.map(toTable), (e: unknown) => { if (own.length === 0) throw e; return [] as DbTable[]; });
+  const me = own[0]?.schema ?? '';
+  // 내 것이 먼저, 나머지는 계정과 이름 순.
+  return [...own, ...others].sort((a, b) => Number(b.schema === me) - Number(a.schema === me) || a.schema.localeCompare(b.schema) || a.name.localeCompare(b.name)).slice(0, SCHEMA_LIMITS.maxRows);
+}
+
+/**
+ * Oracle 의 표 하나의 칸 목록. 스키마를 비우면 접속한 계정의 것. 키는 P(기본 키), U(고유), R(다른 표를 가리킴).
+ * 칸과 키를 따로 받는다: 한 문장으로 엮으면 큰 DB 에서 칸마다 사전을 다시 훑어 아주 느리다. 키를 제때 받지 못하면 키 없이 보인다.
+ */
+async function oracleColumns(t: DbTarget, schema: string, table: string): Promise<DbColumn[]> {
+  const cols = await runReadOnly(t, `SELECT c.column_name,
+      c.data_type || CASE WHEN c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR', 'RAW') THEN '(' || c.data_length || ')'
+                          WHEN c.data_type = 'NUMBER' AND c.data_precision IS NOT NULL THEN '(' || c.data_precision || CASE WHEN c.data_scale > 0 THEN ',' || c.data_scale END || ')' END,
+      c.nullable, c.data_default
+      FROM all_tab_columns c WHERE c.owner = COALESCE(:1, USER) AND c.table_name = :2 ORDER BY c.column_id`, [schema, table], { maxRows: SCHEMA_LIMITS.maxRows, timeoutMs: 30_000 });
+  const keys = new Map<string, Set<string>>();
+  await runReadOnly(t, `SELECT cc.column_name, k.constraint_type FROM all_constraints k JOIN all_cons_columns cc ON cc.owner = k.owner AND cc.constraint_name = k.constraint_name
+      WHERE k.owner = COALESCE(:1, USER) AND k.table_name = :2 AND k.constraint_type IN ('P', 'U', 'R')`, [schema, table], { maxRows: SCHEMA_LIMITS.maxRows, timeoutMs: 10_000 })
+    .then((r) => { for (const x of r.rows) keys.set(String(x[0]), (keys.get(String(x[0])) ?? new Set<string>()).add(String(x[1]))); }, () => undefined);
+  return cols.rows.map((x) => ({
+    name: String(x[0] ?? ''), type: String(x[1] ?? ''), nullable: String(x[2] ?? '') === 'Y', default: x[3] === null ? null : String(x[3]).trim(),
+    key: [...(keys.get(String(x[0])) ?? [])].sort().join(', '),
+  }));
+}
+
 /** 표와 뷰의 목록. 시스템 스키마는 뺀다. */
 export async function listTables(t: DbTarget): Promise<DbTable[]> {
   if (t.kind === 'mongo') return mongoTables(mongoOf(t));
+  if (t.kind === 'oracle') return oracleTables(t);
   const sql = t.kind === 'postgres'
     ? "SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY table_schema, table_name"
-    : t.kind === 'oracle'
-      ? `SELECT owner, table_name, 'TABLE' FROM all_tables WHERE owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%'
-         UNION ALL SELECT owner, view_name, 'VIEW' FROM all_views WHERE owner NOT IN (${ORACLE_SYSTEM}) AND owner NOT LIKE 'APEX%' ORDER BY 1, 2`
     : 'SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name';
   const r = await runReadOnly(t, sql, [], SCHEMA_LIMITS);
   return r.rows.map((x) => ({ schema: String(x[0] ?? ''), name: String(x[1] ?? ''), type: String(x[2] ?? '').toUpperCase().includes('VIEW') ? 'view' : 'table' }));
@@ -327,22 +360,13 @@ export async function listTables(t: DbTarget): Promise<DbTable[]> {
 /** 표 하나의 칸 목록. 이름은 값으로 넘긴다 (문장에 끼워 넣지 않는다). */
 export async function listColumns(t: DbTarget, schema: string, table: string): Promise<DbColumn[]> {
   if (t.kind === 'mongo') return mongoColumns(mongoOf(t), table);
+  if (t.kind === 'oracle') return oracleColumns(t, schema, table);
   const r = t.kind === 'postgres'
     ? await runReadOnly(t, `SELECT c.column_name, c.data_type, c.is_nullable, c.column_default,
         (SELECT string_agg(tc.constraint_type, ', ') FROM information_schema.key_column_usage k
            JOIN information_schema.table_constraints tc ON tc.constraint_name = k.constraint_name AND tc.table_schema = k.table_schema AND tc.table_name = k.table_name
           WHERE k.table_schema = c.table_schema AND k.table_name = c.table_name AND k.column_name = c.column_name)
         FROM information_schema.columns c WHERE c.table_schema = $1 AND c.table_name = $2 ORDER BY c.ordinal_position`, [schema, table], SCHEMA_LIMITS)
-    : t.kind === 'oracle'
-      // 스키마를 비우면 접속한 계정의 것. 키는 P(기본 키), U(고유), R(다른 표를 가리킴)
-      ? await runReadOnly(t, `SELECT c.column_name,
-          c.data_type || CASE WHEN c.data_type IN ('VARCHAR2', 'NVARCHAR2', 'CHAR', 'NCHAR', 'RAW') THEN '(' || c.data_length || ')'
-                              WHEN c.data_type = 'NUMBER' AND c.data_precision IS NOT NULL THEN '(' || c.data_precision || CASE WHEN c.data_scale > 0 THEN ',' || c.data_scale END || ')' END,
-          DECODE(c.nullable, 'Y', 'YES', 'NO'), c.data_default,
-          (SELECT LISTAGG(k.constraint_type, ', ') WITHIN GROUP (ORDER BY k.constraint_type)
-             FROM all_cons_columns cc JOIN all_constraints k ON k.owner = cc.owner AND k.constraint_name = cc.constraint_name
-            WHERE cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name AND k.constraint_type IN ('P', 'U', 'R'))
-          FROM all_tab_columns c WHERE c.owner = COALESCE(:1, USER) AND c.table_name = :2 ORDER BY c.column_id`, [schema, table], SCHEMA_LIMITS)
     : await runReadOnly(t, 'SELECT column_name, column_type, is_nullable, column_default, column_key FROM information_schema.columns WHERE table_schema = COALESCE(NULLIF(?, \'\'), DATABASE()) AND table_name = ? ORDER BY ordinal_position', [schema, table], SCHEMA_LIMITS);
   return r.rows.map((x) => ({ name: String(x[0] ?? ''), type: String(x[1] ?? ''), nullable: String(x[2] ?? '').toUpperCase() === 'YES', default: x[3] === null ? null : String(x[3]), key: String(x[4] ?? '') }));
 }

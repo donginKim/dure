@@ -58,7 +58,7 @@ function NameEditor({ workspace, readOnly }: { workspace: Workspace; readOnly: b
   }
   return (
     <>
-      <button className="title name-btn" disabled={readOnly} title="눌러서 표시 이름을 바꿉니다. 브랜치와 작업 폴더는 바뀌지 않습니다" onClick={() => { setDraft(workspace.name); setEditing(true); }}>{workspace.name}</button>
+      <button className="title name-btn" disabled={readOnly} title={`${workspace.name} · 눌러서 표시 이름을 바꿉니다. 브랜치와 작업 폴더는 바뀌지 않습니다`} onClick={() => { setDraft(workspace.name); setEditing(true); }}>{workspace.name}</button>
       {!readOnly && (
         <button
           className={`tag name-mode${workspace.nameLocked ? '' : ' auto'}`}
@@ -178,7 +178,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
       <div className="ws-head">
         <span className={`dot ${workspace.status}`} />
         <NameEditor workspace={workspace} readOnly={project?.status === 'done'} />
-        <span className="branch">{workspace.branch}</span>
+        <span className="branch" title={workspace.branch}>{workspace.branch}</span>
         <span className="tag">{AGENT_LABEL[workspace.agentKind]}</span>
         {workspace.permissionMode === 'bypass' && <span className="tag warn">승인 생략</span>}
         <span className="tag">{STATUS_LABEL[workspace.status]}</span>

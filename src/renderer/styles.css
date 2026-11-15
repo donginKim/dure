@@ -1104,3 +1104,19 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 :root[data-theme='light'] .dot.waiting_user { box-shadow: 0 0 0 3px rgba(194, 102, 26, 0.18); }
 :root[data-theme='light'] .cmd-backdrop { background: rgba(20, 24, 32, 0.25); }
 :root[data-theme='light'] .cmd { box-shadow: 0 20px 50px rgba(20, 24, 32, 0.18); }
+
+/* 워크스페이스 머리 줄: 좁아지면 글자를 세로로 꺾지 않는다. 이름·브랜치·요약은 한 줄로 줄이고(…), 오른쪽 단추 묶음은 다음 줄로 내려간다. */
+.ws-head { flex-wrap: wrap; row-gap: 8px; min-width: 0; }
+.ws-head > * { flex: none; white-space: nowrap; }
+.ws-head .title, .ws-head .name-btn { flex: 0 1 auto; min-width: 3em; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; }
+.ws-head .branch { flex: 0 1 auto; min-width: 3em; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; }
+.ws-head .ws-summary { flex: 0 1 auto; min-width: 0; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
+.ws-head .spacer { flex: 1 1 0; min-width: 0; }
+.ws-head .view-switch { flex-wrap: nowrap; }
+.ws-head .btn, .ws-head select { white-space: nowrap; }
+/* 꺼짐 안내도 좁으면 단추가 아래로 (글자를 세로로 꺾지 않는다) */
+.composer-off { flex-wrap: wrap; }
+.composer-off > span { flex: 1 1 12em; min-width: 0; }
+.composer-off > button, .composer-off .btn { flex: none; white-space: nowrap; }
+/* 창이 좁으면 오른쪽 TODO 칸이 대화 칸을 누르지 않게 줄인다 */
+.todo-panel { width: clamp(220px, 34%, 340px); }

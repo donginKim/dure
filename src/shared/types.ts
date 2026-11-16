@@ -72,6 +72,22 @@ export interface PluginScheduleTemplate { title: string; prompt: string; kind: '
  * 설치형 플러그인. 글과 설정만 담는다 (두레 안에서 플러그인의 코드를 돌리지 않는다).
  * approved: 지금의 내용을 사용자가 승인했다. changed: 승인한 뒤 내용이 바뀌었다 (다시 승인해야 쓴다)
  */
+/** 만들기의 틀 */
+export type MakeFormat = 'report' | 'slides' | 'visual';
+export interface PluginMaker { name: string; prompt: string; format: MakeFormat }
+/** 고를 수 있는 양식 하나. plugin 이 비어 있으면 기본 양식 */
+export interface MakeKind { id: string; name: string; hint: string; format: MakeFormat; plugin: string }
+/** 만든 문서 하나 (본문 제외) */
+export interface Make {
+  id: string; projectId: string; kind: string; kindName: string; title: string;
+  /** 사용자가 적은 방향 */
+  direction: string;
+  state: 'working' | 'done' | 'failed'; error: string;
+  /** 문서의 크기 (글자 수) */
+  size: number;
+  /** 만드는 데 쓴 토큰 */
+  tokens: number; createdAt: number;
+}
 export interface Plugin {
   id: string; name: string; version: string; description: string;
   /** 에이전트 지시문에 덧붙는 글 */
@@ -82,6 +98,8 @@ export interface Plugin {
   mcpServers: PluginMcpServer[];
   /** 소식판 (피드 묶음) */
   panels: PluginPanel[];
+  /** 만들기 양식: 기본 틀(보고서·발표 자료·그림)에 주문을 덧붙인 것 */
+  makers: PluginMaker[];
   /** 지금 내용의 지문. 승인할 때 화면이 본 것을 그대로 넘긴다 */
   hash: string;
   /** 어디서 받았나: "folder:경로" 또는 "git:주소" */

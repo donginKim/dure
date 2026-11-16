@@ -4,6 +4,9 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { openMake } from './makeViewer';
 import type { ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
@@ -53,6 +56,25 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'projects.dashboard': () => core.dashboard(),
     'projects.paddy': (projectId: string | null) => core.paddy.days(typeof projectId === 'string' && projectId ? projectId : null),
     'projects.usageBar': () => core.usageBar(),
+    'makes.kinds': (projectId: string) => core.makes.kinds(String(projectId)),
+    'makes.list': (projectId: string) => core.makes.list(String(projectId)),
+    'makes.create': (projectId: string, kind: string, direction: string, extra: string) => core.makes.create(String(projectId), String(kind), direction, extra),
+    'makes.remove': (id: string) => core.makes.remove(String(id)),
+    'makes.open': (id: string) => {
+      const m = core.makes.get(String(id)); const html = core.makes.html(String(id));
+      if (!m || !html) throw new Error('아직 만들어지지 않았습니다.');
+      openMake(join(app.getPath('temp'), 'dure-makes'), m.id, m.title, html);
+    },
+    'makes.save': async (id: string) => {
+      const m = core.makes.get(String(id)); const html = core.makes.html(String(id));
+      if (!m || !html) throw new Error('아직 만들어지지 않았습니다.');
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const name = `${m.title.replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) || '문서'}.html`;
+      const res = await dialog.showSaveDialog(win!, { title: '문서 저장', defaultPath: join(app.getPath('documents'), name), filters: [{ name: 'HTML', extensions: ['html'] }] });
+      if (res.canceled || !res.filePath) return null;
+      await writeFile(res.filePath, html, 'utf8');
+      return res.filePath;
+    },
     'plugins.list': () => core.plugins.list(),
     'plugins.installFolder': async () => {
       const r = await dialog.showOpenDialog({ properties: ['openDirectory'], title: '플러그인 폴더 고르기 (plugin.json 이 있는 폴더)' });
@@ -463,6 +485,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.schedules.on('changed', onSchedulesChanged);
   const onCapturesChanged = (): void => changed('captures');
   core.captures.on('changed', onCapturesChanged);
+  const onMakesChanged = (): void => changed('makes');
+  core.makes.on('changed', onMakesChanged);
   const onMemoryChanged = (): void => changed('memory');
   core.memory.on('changed', onMemoryChanged);
   const onPluginsChanged = (): void => changed('plugins');
@@ -503,6 +527,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.schedules.off('changed', onSchedulesChanged);
     core.captures.off('changed', onCapturesChanged);
     core.memory.off('changed', onMemoryChanged);
+    core.makes.off('changed', onMakesChanged);
     core.plugins.off('changed', onPluginsChanged);
     clearTimeout(noteTimer);
     core.browser.off('changed', onBrowserChanged);

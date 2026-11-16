@@ -29,6 +29,12 @@ function Contents({ p }: { p: Plugin }) {
           {p.panels.map((pn) => <div key={pn.title} className="plug-line"><b>{pn.title}</b> <span className="muted">· {pn.feeds.map((f) => `${f.name} (${new URL(f.url).hostname})`).join(', ')}</span></div>)}
         </div>
       )}
+      {p.makers.length > 0 && (
+        <div>
+          <div className="plug-label">만들기 양식 <span className="muted">(켠 프로젝트의 "만들기" 에 뜹니다. 누를 때 아래 글이 모델에게 주문으로 건네집니다)</span></div>
+          {p.makers.map((m, i) => <div key={i} className="plug-line"><b>{m.name}</b> <span className="muted">· {m.format === 'slides' ? '발표 자료' : m.format === 'visual' ? '그림' : '보고서'} 틀 · {m.prompt}</span></div>)}
+        </div>
+      )}
       {p.schedules.length > 0 && (
         <div>
           <div className="plug-label">예약 본보기 <span className="muted">(저절로 돌지 않습니다. 프로젝트의 예약에서 골라 추가합니다)</span></div>
@@ -41,7 +47,7 @@ function Contents({ p }: { p: Plugin }) {
           {p.memory.map((m, i) => <div key={i} className="plug-line">{m.text}</div>)}
         </div>
       )}
-      {!p.instructions && p.mcpServers.length === 0 && p.schedules.length === 0 && p.memory.length === 0 && p.panels.length === 0 && <div className="muted">담긴 것이 없습니다.</div>}
+      {!p.instructions && p.mcpServers.length === 0 && p.schedules.length === 0 && p.memory.length === 0 && p.panels.length === 0 && p.makers.length === 0 && <div className="muted">담긴 것이 없습니다.</div>}
     </div>
   );
 }

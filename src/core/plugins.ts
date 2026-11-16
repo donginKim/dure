@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CatalogEntry, Plugin, PluginMcpServer, PluginPanel, PluginScheduleTemplate } from '@shared/types';
+import type { CatalogEntry, MakeFormat, Plugin, PluginMaker, PluginMcpServer, PluginPanel, PluginScheduleTemplate } from '@shared/types';
 import { publicHttps } from './feeds';
 
 const MAX_INSTRUCTIONS = 4000;       // 플러그인 하나의 지시문 (글자)
@@ -87,13 +87,18 @@ export function readPlugin(dir: string): Parsed {
     title: line(pn.title, 40),
     feeds: (Array.isArray(pn.feeds) ? pn.feeds : []).slice(0, 8).filter(isObj).map((f) => ({ name: line(f.name, 30), url: String(f.url ?? '').trim().slice(0, 500) })).filter((f) => f.name && publicHttps(f.url)),
   })).filter((pn) => pn.title && pn.feeds.length > 0);
+  // 만들기 양식: 기본 틀에 덧붙이는 주문 (글일 뿐이다)
+  const makers: PluginMaker[] = (Array.isArray(raw.makers) ? raw.makers : []).slice(0, 8).filter(isObj).map((m) => ({
+    name: line(m.name, 40), prompt: block(m.prompt, 4000),
+    format: (m.format === 'slides' || m.format === 'visual' ? m.format : 'report') as MakeFormat,
+  })).filter((m) => m.name && m.prompt);
   const name = line(raw.name, 60).replace(/["\[\]]/g, '') || id;
   // 승인의 대상: 에이전트와 이 PC 에 닿는 것 전부, 그리고 폴더에 든 모든 글 파일의 내용
   // (MCP 서버의 명령이 폴더 안의 파일을 읽어 돌릴 수 있다: 그 파일만 바뀌어도 다시 승인받게 한다).
-  const h = createHash('sha256').update(JSON.stringify([instructions, schedules, memory, mcpServers, panels]));
+  const h = createHash('sha256').update(JSON.stringify(makers.length ? [instructions, schedules, memory, mcpServers, panels, makers] : [instructions, schedules, memory, mcpServers, panels]));
   for (const f of walk(dir)) h.update(`\n${f.slice(dir.length)}\n`).update(readFileSync(f));
   const hash = h.digest('hex');
-  const plugin = { id, name, version: line(raw.version, 20) || '0.0.0', description: line(raw.description, 300), instructions, schedules, memory, mcpServers, panels, hash };
+  const plugin = { id, name, version: line(raw.version, 20) || '0.0.0', description: line(raw.description, 300), instructions, schedules, memory, mcpServers, panels, makers, hash };
   return { plugin, hash };
 }
 
@@ -148,7 +153,7 @@ export class PluginService extends EventEmitter {
         const { plugin, hash } = readPlugin(join(this.d.dir, r.id));
         out.push({ ...plugin, source: r.source, installedAt: r.installed_at, approved: r.approved_hash === hash, changed: r.approved_hash !== null && r.approved_hash !== hash });
       } catch (e) {
-        out.push({ id: r.id, name: r.id, version: '', description: `읽지 못했습니다: ${e instanceof Error ? e.message : String(e)}`, instructions: '', schedules: [], memory: [], mcpServers: [], panels: [], hash: '', source: r.source, installedAt: r.installed_at, approved: false, changed: false });
+        out.push({ id: r.id, name: r.id, version: '', description: `읽지 못했습니다: ${e instanceof Error ? e.message : String(e)}`, instructions: '', schedules: [], memory: [], mcpServers: [], panels: [], makers: [], hash: '', source: r.source, installedAt: r.installed_at, approved: false, changed: false });
       }
     }
     return out;
@@ -201,7 +206,7 @@ export class PluginService extends EventEmitter {
         if (!existsSync(join(tmp, dir, 'plugin.json'))) continue;
         try {
           const { plugin: p } = readPlugin(join(tmp, dir));
-          const summary = [p.panels.length ? `소식판 ${p.panels.length}` : '', p.instructions ? `지시문 ${p.instructions.length.toLocaleString('ko-KR')}자` : '', p.schedules.length ? `예약 본보기 ${p.schedules.length}` : '', p.mcpServers.length ? `MCP 서버 ${p.mcpServers.length}` : '', p.memory.length ? `기억 ${p.memory.length}` : ''].filter(Boolean).join(' · ');
+          const summary = [p.panels.length ? `소식판 ${p.panels.length}` : '', p.instructions ? `지시문 ${p.instructions.length.toLocaleString('ko-KR')}자` : '', p.schedules.length ? `예약 본보기 ${p.schedules.length}` : '', p.mcpServers.length ? `MCP 서버 ${p.mcpServers.length}` : '', p.memory.length ? `기억 ${p.memory.length}` : '', p.makers.length ? `만들기 양식 ${p.makers.length}` : ''].filter(Boolean).join(' · ');
           out.push({ dir, id: p.id, name: p.name, version: p.version, description: p.description, installed: installed.has(p.id), summary });
         } catch { /* 읽지 못하는 것은 목록에 넣지 않는다 */ }
       }
@@ -294,6 +299,11 @@ export class PluginService extends EventEmitter {
       out[key] = s.url ? { type: 'http', url: s.url } : { command: s.command, args: s.args ?? [], env: s.env ?? {} };
     }
     return out;
+  }
+
+  /** 이 프로젝트에서 켠 플러그인의 만들기 양식. */
+  makers(projectId: string): { id: string; name: string; plugin: string; prompt: string; format: MakeFormat }[] {
+    return this.active(projectId).flatMap((p) => p.makers.map((m, i) => ({ id: `plugin:${p.id}:${i}`, name: m.name, plugin: p.name, prompt: m.prompt, format: m.format })));
   }
 
   /** 소식 화면에 보일 판들: 승인한 플러그인의 것 (소식판은 프로젝트와 상관없이 보인다). */

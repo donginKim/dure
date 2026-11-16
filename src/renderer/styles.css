@@ -1323,3 +1323,23 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 :root[data-panel="set"] .todo-panel { width: clamp(220px, var(--panel-w), 62%); }
 :root.resizing, :root.resizing * { cursor: col-resize !important; user-select: none !important; }
 @media (prefers-reduced-motion: reduce) { .resizer::after { transition: none; } }
+
+/* 만들기 */
+.make-box { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.make-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.make-kind { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; text-align: left; min-width: 0; }
+.make-kind:hover:not(:disabled) { border-color: var(--accent); background: var(--panel-2); }
+.make-kind:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.make-kind:disabled { opacity: 0.5; cursor: default; }
+.make-kind > span { font-size: 12px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.make-opts { display: flex; gap: 8px; }
+.make-opts input { flex: 1; min-width: 0; }
+.make-opts .btn { flex: none; white-space: nowrap; }
+.make-extra { width: 100%; resize: vertical; font: inherit; font-size: 13px; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; }
+.make-row .make-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.make-row .make-sub { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.make-row .grow { min-width: 0; }
+.make-row .btn { flex: none; white-space: nowrap; }
+.tag.make-working { color: var(--accent); border-color: var(--accent); }
+.tag.make-failed { color: var(--danger, #e06c6c); }
+.make-saved { font-size: 12px; padding: 4px 8px; overflow-wrap: anywhere; }

@@ -699,6 +699,8 @@ export class AssignmentService extends EventEmitter {
   }
 
   async progressNow(): Promise<void> {
+    // 닫는 사이에 늦게 불린 것 (예약된 알림)
+    if (!this.d.db.open) return;
     const rows = this.d.db.prepare("SELECT * FROM assignments_in WHERE state = 'accepted'").all() as InRow[];
     for (const r of rows) {
       if (this.d.service.isProjectClosed(r.project_id)) continue;

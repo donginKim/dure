@@ -7,6 +7,7 @@ import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
 import { ReviewService, type ReviewRunner } from './review';
+import { MakeService, type MakeRunner } from './makes';
 import { MergeService } from './merge';
 import { AutoShipService } from './autoship';
 import { BudgetService } from './budget';
@@ -129,6 +130,8 @@ export interface Core {
   memory: MemoryStore;
   /** 설치형 플러그인 */
   plugins: PluginService;
+  /** 만들기: 프로젝트의 자료로 보고서·발표 자료·그림을 만든다 */
+  makes: MakeService;
   /** 소식 화면: 승인한 플러그인의 소식판을 읽어 온다 (force 면 받아 둔 것을 쓰지 않는다) */
   news(force?: boolean): Promise<NewsPanel[]>;
   /** 소식 화면에 보인 적이 있는 링크인가 (그런 것만 바깥 브라우저로 연다) */
@@ -181,6 +184,7 @@ export interface CoreOptions {
   stuckQuietMs?: number;
   /** 리뷰 에이전트를 돌리는 쪽 (시험에서 바꾼다) */
   reviewRunner?: ReviewRunner;
+  makeRunner?: MakeRunner;
   /** 확인 명령을 돌리는 쪽 (시험에서 바꾼다) */
   verifyRunner?: VerifyRunner;
   /** 한 사람의 계획 제안을 받는 최소 간격 (ms). 시험에서 줄인다 */
@@ -365,6 +369,42 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   service.attachDelivery(delivery);
   service.attachMemory((projectId) => memory.digest(projectId));
   const plugins = new PluginService({ db, dir: join(o.dataDir, 'plugins'), git: (args) => git.raw(args), addMemory: (projectId, kind, text, author) => { memory.add(projectId, { kind, text, author }); } });
+  // 만들기의 자료: 두레가 이미 가진 것만 간추린다 (할 일, 기억, 작업 보고). 코드는 담지 않는다.
+  const makeMaterials = async (projectId: string): Promise<string> => {
+    const LABEL: Record<string, string> = { done: '완료', doing: '하는 중', todo: '남음', cancelled: '취소' };
+    const wss = workspaces.list(projectId).filter((w) => w.role !== 'coordinator');
+    const nameOf = new Map(wss.map((w) => [w.id, w.name]));
+    const all = todos.listProject(projectId);
+    const count = (st: string): number => all.filter((t) => t.status === st).length;
+    const parts: string[] = [];
+    if (all.length) {
+      parts.push(`[할 일] 완료 ${count('done')} · 하는 중 ${count('doing')} · 남음 ${count('todo')}${count('cancelled') ? ` · 취소 ${count('cancelled')}` : ''}\n${all.slice(0, 80).map((t) => `- (${LABEL[t.status] ?? t.status}) ${t.title}${t.workspaceId ? ` — ${nameOf.get(t.workspaceId) ?? '워크스페이스'}` : ''}`).join('\n')}`);
+    }
+    const mem = memory.digest(projectId, 2500);
+    if (mem) parts.push(`[기억: 정한 것, 배운 것]\n${mem}`);
+    const day = (at: number): string => new Date(at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+    for (const w of wss.slice(0, 8)) {
+      const r = await workReport(w.id).catch(() => null);
+      const lines = [`[워크스페이스 "${w.name}"]${w.summary ? ` ${w.summary}` : ''}`];
+      if (r) {
+        if (r.commits.length) lines.push(`커밋 ${r.commits.length}개 (파일 ${r.files.length}개):\n${r.commits.slice(0, 8).map((c) => `- ${day(c.at)} ${c.subject}`).join('\n')}`);
+        if (r.verify) lines.push(`확인 명령: ${r.verify.passed ? '통과' : '실패'} (${day(r.verify.at)})`);
+        if (r.review) lines.push(`리뷰: 지적 ${r.review.total}건 (높음 ${r.review.high}건)`);
+      }
+      if (lines.length > 1 || w.summary) parts.push(lines.join('\n'));
+    }
+    return parts.join('\n\n');
+  };
+  mkdirSync(join(o.dataDir, 'makes'), { recursive: true });
+  const makes = new MakeService({
+    db, env: o.baseEnv, runner: o.makeRunner, cwd: join(o.dataDir, 'makes'),
+    executable: () => service.claudeExecutable(), model: () => settings.get().claudeModel,
+    projectName: (id) => projects.get(id)?.name ?? null,
+    materials: makeMaterials,
+    pluginKinds: (id) => plugins.makers(id),
+    blocked: (id) => budget.blocked(id),
+    onUsage: (projectId, u) => { usage.recordProject(projectId, '만들기', { messageId: `make:${crypto.randomUUID()}`, model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead, at: Date.now() }); budget.check(projectId); },
+  });
   service.attachPlugins({ instructions: (projectId) => { try { return plugins.instructionsFor(projectId); } catch { return ''; } }, mcp: (projectId) => { try { return plugins.mcpFor(projectId); } catch { return {}; } } });
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
@@ -546,7 +586,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const newsLinks = new Set<string>();
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async news(force = false) {
       const panels = plugins.panels();
       const out: NewsPanel[] = [];

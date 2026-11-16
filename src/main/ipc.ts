@@ -53,7 +53,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'projects.dashboard': () => core.dashboard(),
     'projects.setBudget': (id: string, daily: number, total: number) => { assertOpen(String(id)); core.budget.setLimits(String(id), { daily: Number(daily), total: Number(total) }); changed('projects'); return core.budget.status(String(id)); },
     'projects.allowToday': (id: string) => { assertOpen(String(id)); core.budget.allowToday(String(id)); return core.budget.status(String(id)); },
-    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId), people: core.peers.share(projectId)?.mine === false ? core.peers.people(projectId) : core.peers.assignable(projectId), ...(core.coordinator.team(projectId)?.mine === false ? { suggestTo: core.coordinator.team(projectId)!.leaderName } : {}) }),
+    'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId), people: core.peers.share(projectId)?.mine === false ? core.peers.people(projectId) : core.peers.assignable(projectId), ...(core.coordinator.team(projectId)?.mine === false ? { suggestTo: core.coordinator.team(projectId)!.leaderName, observer: core.peers.share(projectId)?.observer === true, assigned: core.assignments.incoming(projectId).length } : {}) }),
     'coordinator.approve': (proposalId: string, decision: PlanDecision) => core.coordinator.approve(proposalId, decision),
     'coordinator.pickSpec': async () => {
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];

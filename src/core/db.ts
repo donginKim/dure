@@ -466,6 +466,10 @@ const MIGRATIONS: string[] = [
   ALTER TABLE shares ADD COLUMN my_role TEXT NOT NULL DEFAULT 'member';
   ALTER TABLE shares ADD COLUMN observer_reports INTEGER NOT NULL DEFAULT 0;
   `,
+  // 참여한 프로젝트에서 조율 에이전트에게 브리핑을 부탁한 기록 (같은 것을 되풀이하지 않는다)
+  `
+  CREATE TABLE coord_briefed (project_id TEXT NOT NULL, share_id TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (project_id, share_id, kind));
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

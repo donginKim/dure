@@ -1122,3 +1122,7 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .todo-panel { width: clamp(220px, 34%, 340px); }
 .perm-select { max-width: 150px; }
 .perm-select.warn { color: var(--warn); }
+.member-nowork { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 8px 16px 0; padding: 10px 14px; border: 1px solid var(--line); border-left: 3px solid var(--info); border-radius: var(--radius); background: var(--panel); font-size: 13px; }
+.member-nowork .grow { flex: 1 1 22em; min-width: 0; }
+.member-nowork .muted { margin-top: 3px; font-size: 12px; }
+.member-nowork .btn { flex: none; white-space: nowrap; }

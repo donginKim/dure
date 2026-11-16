@@ -664,6 +664,10 @@ export interface CoordinatorInfo {
    * 리더에게 제안으로 간다. 내가 연 프로젝트이거나 함께하는 프로젝트가 아니면 없다
    */
   suggestTo?: string;
+  /** 참여한 프로젝트에서 나는 보기만 한다 */
+  observer?: boolean;
+  /** 참여한 프로젝트에서 받은 배정의 수 (수락 전후 모두) */
+  assigned?: number;
 }
 
 // ---- DB 조회 (5단계) ----

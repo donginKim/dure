@@ -343,6 +343,22 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
     return spec ? specMessage(spec) : null;
   };
   const proposal = readOnly ? null : info.proposal;
+  // 참여한 프로젝트에서 아직 받은 일도, 내 워크스페이스도 없다: 리더에게 내 몫을 제안하는 길을 보인다.
+  const noWork = !readOnly && !!info.suggestTo && !info.observer && (info.assigned ?? 0) === 0 && everyone.every((w) => w.role === 'coordinator');
+  const askForShare = (): void => {
+    const text = `${info.suggestTo} 이(가) 보낸 기획서 정리와 현황판을 보고, 내가 맡으면 좋을 일을 골라 계획안으로 올려 줘. 리더가 이미 맡은 일과 겹치지 않게 하고, 왜 그 일을 고르는지도 짧게 적어 줘. 내가 보고 ${info.suggestTo} 에게 제안으로 보낼게.`;
+    setError('');
+    // 꺼져 있으면 켜고, 받을 수 있게 될 때까지 잠깐씩 다시 보낸다 (막 켠 에이전트는 몇 초 뒤에 받는다).
+    const sendSoon = async (): Promise<void> => {
+      if (!hasAgent) await window.dure.terminals.startAgent(ws.id, { cols: 120, rows: 40 });
+      let last: unknown;
+      for (let i = 0; i < 20; i++) {
+        try { await window.dure.chat.send(ws.id, text); return; } catch (e) { last = e; await new Promise((r) => setTimeout(r, 1000)); }
+      }
+      throw last;
+    };
+    sendSoon().catch((e: Error) => setError(describeError(e.message)));
+  };
 
   return (
     <div className="coord">
@@ -362,6 +378,15 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
       {!readOnly && <WaitingAsks workspaces={everyone} onOpen={(id) => onOpenWorkspace?.(id)} />}
       {!readOnly && <DbRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
       {!readOnly && <SlackRequests projectId={project.id} workspaceId={ws.id} workspaces={everyone} />}
+      {noWork && !proposal && (
+        <div className="member-nowork">
+          <div className="grow">
+            <b>아직 받은 일이 없습니다.</b> 이 프로젝트의 리더는 {info.suggestTo} 입니다. 리더가 일을 나눠 주면 여기에 배정으로 오고, 수락하면 워크스페이스와 TODO 가 만들어집니다.
+            <div className="muted">먼저 하고 싶은 일이 있으면, 조율 에이전트가 기획서에서 내 몫을 골라 계획안을 만들고 내가 보고 리더에게 제안할 수 있습니다.</div>
+          </div>
+          <button className="btn primary" onClick={askForShare}>내 몫 정해서 제안하기</button>
+        </div>
+      )}
       {!(proposal && reviewing) && <AssignPanel projectId={project.id} repos={repos} readOnly={readOnly} />}
       {!readOnly && !(proposal && reviewing) && <PeerInbox projectId={project.id} workspaces={everyone} only="person" />}
       <div className="coord-main">

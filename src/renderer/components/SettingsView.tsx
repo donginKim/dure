@@ -66,7 +66,7 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
 }
 
 /** 두레의 설정 화면. 바꾸면 바로 저장된다. */
-export function SettingsView() {
+export function SettingsView({ onOpenMarket }: { onOpenMarket?: () => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [defaults, setDefaults] = useState<Settings | null>(null);
   const [models, setModels] = useState<ModelChoice[]>([]);
@@ -193,10 +193,10 @@ export function SettingsView() {
         </div>
       </div>
 
-      <PluginsSection />
+      <PluginsSection onOpenMarket={onOpenMarket} />
       <div className="section">
         <div className="set-box">
-          <Row label="플러그인 모음" help="'기본 플러그인' 목록을 받아 오는 git 저장소입니다. 저장소 안의 폴더마다 플러그인 하나(plugin.json)가 들어 있습니다. 팀의 모음으로 바꿀 수 있습니다." {...row('pluginCatalog')}>
+          <Row label="플러그인 모음" help="플러그인 마켓의 기본 모음(git 저장소)입니다. 다른 모음은 마켓 화면에서 더합니다. 저장소 안의 폴더마다 플러그인 하나(plugin.json)가 들어 있습니다. 팀의 모음으로 바꿀 수 있습니다." {...row('pluginCatalog')}>
             <TextInput wide value={s.pluginCatalog} placeholder="https://github.com/…/dure-plugin.git" onCommit={(v) => save('pluginCatalog', v)} />
           </Row>
         </div>

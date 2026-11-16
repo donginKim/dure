@@ -209,8 +209,8 @@ const api: DureApi = {
     scheduleTemplates: (projectId) => call('plugins.scheduleTemplates', projectId),
     news: (force) => call('plugins.news', force === true),
     openLink: (url) => call('plugins.openLink', url),
-    catalog: () => call('plugins.catalog'),
-    installCatalog: (dir) => call('plugins.installCatalog', dir),
+    market: (force) => call('plugins.market', force),
+    installFrom: (source, dir) => call('plugins.installFrom', source, dir),
   },
   away: {
     list: () => call('away.list'),

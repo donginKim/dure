@@ -15,6 +15,8 @@ export class GitError extends Error {
 export interface Git {
   /** git 을 인자 그대로 실행하고 표준 출력을 돌려준다. */
   raw(args: string[]): Promise<string>;
+  /** 바깥 저장소를 받을 때: 시간 제한을 두고, 환경 변수를 더한다 (묻는 창에서 멈추지 않게) */
+  rawWith(args: string[], o: { timeoutMs?: number; extraEnv?: Record<string, string> }): Promise<string>;
   isGitRepo(path: string): Promise<boolean>;
   listBranches(repoPath: string): Promise<string[]>;
   currentBranch(repoPath: string): Promise<string>;
@@ -102,6 +104,7 @@ export function createGit(env?: Record<string, string>): Git {
 
   const git: Git = {
     raw,
+    rawWith: (args, o) => runBoth(args, o),
 
     async isGitRepo(path) {
       try {

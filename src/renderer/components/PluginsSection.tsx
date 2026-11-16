@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { CatalogEntry, Plugin } from '@shared/types';
+import type { Plugin } from '@shared/types';
 import { Empty } from './Empty';
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const cmd = (s: Plugin['mcpServers'][number]): string => (s.url ? s.url : [s.command, ...(s.args ?? [])].join(' '));
 
 /** 플러그인 하나의 내용: 승인하기 전에 사용자가 무엇이 에이전트와 이 PC 에 닿는지 본다. */
-function Contents({ p }: { p: Plugin }) {
+export function Contents({ p }: { p: Plugin }) {
   return (
     <div className="plug-contents">
       {p.instructions && (
@@ -56,13 +56,12 @@ function Contents({ p }: { p: Plugin }) {
  * 설치형 플러그인 (설정). 폴더나 git 주소에서 받아 설치하고, 내용을 보고 승인한다. 프로젝트마다 켜는 것은 프로젝트의 현황 탭에서 한다.
  * 플러그인은 글과 설정만 담는다: 두레 안에서 플러그인의 코드를 돌리지 않는다.
  */
-export function PluginsSection() {
+export function PluginsSection({ onOpenMarket }: { onOpenMarket?: () => void }) {
   const [list, setList] = useState<Plugin[]>([]);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const load = useCallback(() => { window.dure.plugins.list().then(setList).catch(() => undefined); }, []);
   useEffect(() => { load(); return window.dure.onChanged((topic) => { if (topic === 'plugins') load(); }); }, [load]);
   const run = (p: Promise<unknown>, after?: (v: unknown) => void): void => {
@@ -94,17 +93,10 @@ export function PluginsSection() {
       </div>
       <div className="plug-catalog">
         <div className="plug-catalog-head">
-          <b>기본 플러그인</b> <span className="muted">두레의 플러그인 모음에서 골라 설치합니다 (모음의 주소는 아래 "플러그인 모음" 설정)</span>
+          <b>플러그인 마켓</b> <span className="muted">모음에서 둘러보고 골라 설치합니다 (소식판, 만들기 양식, 예약 본보기, 팀 규칙)</span>
           <span className="grow" />
-          <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.plugins.catalog(), (v) => setCatalog(v as CatalogEntry[]))}>{busy ? '받는 중…' : catalog ? '목록 다시 받기' : '목록 보기'}</button>
+          {onOpenMarket && <button className="btn" onClick={onOpenMarket}>마켓 열기</button>}
         </div>
-        {catalog && catalog.length === 0 && <div className="muted">모음에 플러그인이 없습니다.</div>}
-        {(catalog ?? []).map((c) => (
-          <div key={c.dir || c.id} className="row">
-            <div className="grow"><div><b>{c.name}</b> <span className="muted">{c.version}</span></div><div className="muted plug-desc">{c.description}{c.summary ? ` · ${c.summary}` : ''}</div></div>
-            <button className="btn" disabled={busy} onClick={() => run(window.dure.plugins.installCatalog(c.dir), (v) => { installed(v); setCatalog((l) => (l ?? []).map((x) => (x.id === c.id ? { ...x, installed: true } : x))); })}>{c.installed ? '다시 설치' : '설치'}</button>
-          </div>
-        ))}
       </div>
       <div className="plug-install">
         <button className="btn" disabled={busy} onClick={() => run(window.dure.plugins.installFolder(), installed)}>폴더에서 설치</button>
@@ -130,7 +122,7 @@ export function ProjectPlugins({ projectId, readOnly, onOpenSettings }: { projec
     <div className="section">
       <div className="section-head">
         <h2>플러그인 <span className="plan-hint">켠 것의 지시문과 도구가 이 프로젝트의 에이전트에게 실립니다 (다음에 시작할 때부터)</span></h2>
-        {onOpenSettings && <button className="btn ghost" onClick={onOpenSettings}>설치·승인은 설정에서</button>}
+        {onOpenSettings && <button className="btn ghost" onClick={onOpenSettings}>마켓에서 더 설치</button>}
       </div>
       {error && <div className="error" onClick={() => setError('')}>{error}</div>}
       <div className="rows">

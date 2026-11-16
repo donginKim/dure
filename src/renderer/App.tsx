@@ -23,6 +23,7 @@ import { WorkspaceView } from './components/WorkspaceView';
 import { buildTree, reconcileSelection, type Selection } from './tree';
 import { layout, SIDE } from './layout';
 import { Resizer } from './components/Resizer';
+import { MarketView } from './components/MarketView';
 
 const EMPTY_FLOW: ProjectFlow = { paused: false, capped: false, agentStreak: 0 };
 const EMPTY_TALK: ConversationData = {
@@ -203,13 +204,14 @@ export function App() {
             onSelect={setSelection}
           />
         )}
-        {current?.type === 'settings' && <SettingsView />}
+        {current?.type === 'settings' && <SettingsView onOpenMarket={() => setSelection({ type: 'market' })} />}
+        {current?.type === 'market' && <MarketView onSelect={setSelection} />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
         {current?.type === 'news' && <NewsView onSelect={setSelection} />}
         {current?.type === 'team' && <TeamView tree={tree.filter((n) => n.project.status !== 'done')} onSelect={setSelection} />}
         {current?.type === 'worktime' && <WorkTimeView onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && current?.type !== 'news' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && current?.type !== 'news' && current?.type !== 'market' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
       <UsageBar onOpenAttention={() => setSelection({ type: 'attention' })} />
       {palette && (

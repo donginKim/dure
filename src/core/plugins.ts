@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
-import { basename, join, resolve, sep } from 'node:path';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CatalogEntry, MakeFormat, Plugin, PluginMaker, PluginMcpServer, PluginPanel, PluginScheduleTemplate } from '@shared/types';
+import type { CatalogEntry, MarketKind, MarketSource, MakeFormat, Plugin, PluginMaker, PluginMcpServer, PluginPanel, PluginScheduleTemplate } from '@shared/types';
 import { publicHttps } from './feeds';
+import { gitUrlOk } from './gitUrl';
 
 const MAX_INSTRUCTIONS = 4000;       // 플러그인 하나의 지시문 (글자)
 const MAX_PROJECT_INSTRUCTIONS = 8000; // 한 프로젝트에 실리는 지시문 전체
@@ -15,13 +16,24 @@ const DANGEROUS_ENV = /^(PATH|NODE_OPTIONS|NODE_PATH|DYLD_.*|LD_.*|PYTHONPATH|PY
 const line = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, max);
 // eslint-disable-next-line no-control-regex
 const block = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, max);
+/** 받지 못한 까닭을 정해 둔 말로 바꾼다 (git 과 서버가 남긴 글, 임시 폴더 경로는 보이지 않는다). */
+function marketError(e: unknown): string {
+  const text = e instanceof Error ? e.message : String(e);
+  if (text.includes('git 주소가 올바르지')) return 'git 주소가 올바르지 않습니다.';
+  if (/시간 안에 끝나지|timed out|timeout/i.test(text)) return '저장소가 응답하지 않습니다 (90초 안에 받지 못했습니다).';
+  if (/could not resolve|resolve host|name or service/i.test(text)) return '주소를 찾지 못했습니다. 주소와 네트워크를 확인하세요.';
+  if (/authentication|permission denied|could not read username|terminal prompts disabled|publickey|403/i.test(text)) return '접근 권한이 없습니다. 이 PC 의 git 으로 그 저장소를 받을 수 있어야 합니다.';
+  if (/not found|does not exist|does not appear to be a git/i.test(text)) return '저장소가 없거나 볼 권한이 없습니다.';
+  return '저장소를 받지 못했습니다. 주소와 접근 권한을 확인하세요.';
+}
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 interface Parsed { plugin: Omit<Plugin, 'approved' | 'changed' | 'source' | 'installedAt'>; hash: string }
 
 /** 폴더 안의 글 파일들 (링크와 숨은 폴더는 빼고, 이름 순). 설치할 때 베끼는 것과 같은 것만 센다. */
+const MAX_DEPTH = 5;
 function walk(dir: string, out: string[] = [], depth = 0): string[] {
-  if (depth > 5) return out;
+  if (depth > MAX_DEPTH) return out;
   for (const name of readdirSync(dir).sort()) {
     const full = join(dir, name);
     const st = lstatSync(full);
@@ -36,7 +48,10 @@ function walk(dir: string, out: string[] = [], depth = 0): string[] {
 export function readPlugin(dir: string): Parsed {
   const file = join(dir, 'plugin.json');
   if (!existsSync(file)) throw new Error('plugin.json 이 없습니다. 플러그인 폴더가 아닙니다.');
-  if (statSync(file).size > 200_000) throw new Error('plugin.json 이 너무 큽니다.');
+  // 읽기 전에 본다: 링크나 장치 파일이면 읽지 않는다 (끝없는 파일로 앱을 붙잡지 못하게).
+  const fst = lstatSync(file);
+  if (fst.isSymbolicLink() || !fst.isFile()) throw new Error('plugin.json 이 보통 파일이 아닙니다.');
+  if (fst.size > 200_000) throw new Error('plugin.json 이 너무 큽니다.');
   let raw: unknown;
   try { raw = JSON.parse(readFileSync(file, 'utf8')); } catch { throw new Error('plugin.json 을 읽지 못했습니다 (JSON 이 아닙니다).'); }
   if (!isObj(raw)) throw new Error('plugin.json 의 모양이 올바르지 않습니다.');
@@ -120,6 +135,9 @@ function copyInto(from: string, to: string, onFile: () => void, onBytes: (n: num
       const st = lstatSync(src);
       if (st.isSymbolicLink()) return false;
       const name = basename(src);
+      // 지문(승인의 대상)에 들어가는 깊이까지만 베낀다: 더 깊은 파일은 승인받지 않은 채 들어오지 못한다.
+      const depth = src === from ? 0 : relative(from, src).split(sep).length;
+      if (depth > (st.isDirectory() ? MAX_DEPTH : MAX_DEPTH + 1)) return false;
       if (st.isDirectory()) return src === from || !(name.startsWith('.') || name === 'node_modules');
       if (!/\.(json|md|txt)$/i.test(name) || st.size > 500_000) return false;
       onFile(); onBytes(st.size);
@@ -137,10 +155,17 @@ function copyInto(from: string, to: string, onFile: () => void, onBytes: (n: num
  */
 export class PluginService extends EventEmitter {
   constructor(private readonly d: {
+    /** 새로 고침을 연달아 눌렀을 때 다시 받기까지 두는 틈 (기본 5초) */
+    marketGapMs?: number;
     db: Database.Database; dir: string;
     git(args: string[]): Promise<string>;
     addMemory(projectId: string, kind: string, text: string, author: string): void;
-  }) { super(); mkdirSync(d.dir, { recursive: true }); }
+  }) {
+    super();
+    mkdirSync(d.dir, { recursive: true });
+    // 받다가 앱이 꺼져 남은 임시 폴더를 치운다
+    for (const n of readdirSync(d.dir)) if (n.startsWith('.incoming-')) rmSync(join(d.dir, n), { recursive: true, force: true });
+  }
 
   private row(id: string): { id: string; source: string; approved_hash: string | null; installed_at: number } | undefined {
     return this.d.db.prepare('SELECT * FROM plugins WHERE id = ?').get(id) as { id: string; source: string; approved_hash: string | null; installed_at: number } | undefined;
@@ -162,16 +187,28 @@ export class PluginService extends EventEmitter {
   /** 폴더에서 설치한다 (그 폴더를 베껴 둔다). 같은 id 가 있으면 바꿔 넣는다: 내용이 달라졌으면 다시 승인해야 한다. */
   installFromFolder(folder: string): Plugin {
     const { plugin } = readPlugin(folder);
+    this.sameSource(plugin.id, `folder:${folder}`);
     copyPlugin(folder, join(this.d.dir, plugin.id));
     return this.record(plugin.id, `folder:${folder}`);
   }
 
+  /**
+   * 같은 id 의 플러그인이 다른 곳에서 설치돼 있으면 덮어쓰지 않는다.
+   * (다른 모음이 같은 이름으로 올린 것을 "새 판" 으로 알고 받아, 받는 곳까지 그쪽으로 바뀌는 일을 막는다.)
+   */
+  private sameSource(id: string, source: string): void {
+    const r = this.row(id);
+    if (r && r.source !== source) throw new Error(`같은 이름(${id})의 플러그인이 다른 곳에서 설치돼 있습니다 (${r.source.replace(/^(folder|git):/, '')}). 이쪽 것으로 바꾸려면 먼저 지우세요.`);
+  }
+
   /** 받아 온다 (얕게). 받은 저장소의 hook 은 돌지 않는다. '--' 뒤에 두어 주소가 옵션으로 읽히지 않게 하고, https 와 ssh 만 받는다. */
   private async clone(u: string): Promise<string> {
-    if (!/^(https:\/\/|git@|ssh:\/\/)[\w.@:/~+-]+$/.test(u) || u.length > 300) throw new Error('git 주소가 올바르지 않습니다 (https:// 또는 git@ 으로 시작).');
-    const tmp = join(this.d.dir, `.incoming-${Date.now()}`);
+    if (!gitUrlOk(u)) throw new Error('git 주소가 올바르지 않습니다 (https:// 또는 git@ 으로 시작. https 주소에 계정이나 토큰은 넣지 않습니다).');
+    mkdirSync(this.d.dir, { recursive: true });
+    // 받을 때마다 다른 폴더: 동시에 여럿을 받아도 서로의 것을 지우지 않는다.
+    const tmp = mkdtempSync(join(this.d.dir, '.incoming-'));
     try {
-      await this.d.git(['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'protocol.ssh.allow=always', 'clone', '--depth', '1', '--no-tags', '--', u, tmp]);
+      await this.d.git(['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'protocol.ssh.allow=always', 'clone', '--depth', '1', '--single-branch', '--no-tags', '--', u, tmp]);
     } catch (e) { rmSync(tmp, { recursive: true, force: true }); throw e; }
     return tmp;
   }
@@ -189,6 +226,7 @@ export class PluginService extends EventEmitter {
       // 폴더 이름 중간에 바로가기가 끼어 저장소 밖을 가리키면 받지 않는다.
       if (sub && !(existsSync(from) && realpathSync(from).startsWith(realpathSync(tmp) + sep))) throw new Error('폴더 이름이 올바르지 않습니다.');
       const { plugin } = readPlugin(from);
+      this.sameSource(plugin.id, `git:${u}${sub ? `#${sub}` : ''}`);
       copyPlugin(from, join(this.d.dir, plugin.id));
       return this.record(plugin.id, `git:${u}${sub ? `#${sub}` : ''}`);
     } finally { rmSync(tmp, { recursive: true, force: true }); }
@@ -199,7 +237,7 @@ export class PluginService extends EventEmitter {
     const u = String(url ?? '').trim();
     const tmp = await this.clone(u);
     try {
-      const installed = new Set((this.d.db.prepare('SELECT id FROM plugins').all() as { id: string }[]).map((r) => r.id));
+      const have = new Map(this.list().map((x) => [x.id, x.version]));
       const out: CatalogEntry[] = [];
       const dirs = ['', ...readdirSync(tmp).filter((n) => !n.startsWith('.') && n !== 'node_modules' && lstatSync(join(tmp, n)).isDirectory()).sort()];
       for (const dir of dirs.slice(0, 60)) {
@@ -207,11 +245,57 @@ export class PluginService extends EventEmitter {
         try {
           const { plugin: p } = readPlugin(join(tmp, dir));
           const summary = [p.panels.length ? `소식판 ${p.panels.length}` : '', p.instructions ? `지시문 ${p.instructions.length.toLocaleString('ko-KR')}자` : '', p.schedules.length ? `예약 본보기 ${p.schedules.length}` : '', p.mcpServers.length ? `MCP 서버 ${p.mcpServers.length}` : '', p.memory.length ? `기억 ${p.memory.length}` : '', p.makers.length ? `만들기 양식 ${p.makers.length}` : ''].filter(Boolean).join(' · ');
-          out.push({ dir, id: p.id, name: p.name, version: p.version, description: p.description, installed: installed.has(p.id), summary });
+          const kinds: MarketKind[] = [p.panels.length ? 'panels' as const : null, p.makers.length ? 'makers' as const : null, p.schedules.length ? 'schedules' as const : null, p.instructions ? 'instructions' as const : null, p.mcpServers.length ? 'mcp' as const : null].filter((k): k is MarketKind => k !== null);
+          out.push({
+            dir, id: p.id, name: p.name, version: p.version, description: p.description, installed: have.has(p.id), installedVersion: have.get(p.id) ?? '', elsewhere: false, summary, kinds,
+            contents: { panels: p.panels.map((x) => x.title), makers: p.makers.map((x) => x.name), schedules: p.schedules.map((x) => x.title), mcp: p.mcpServers.map((x) => x.name) },
+          });
         } catch { /* 읽지 못하는 것은 목록에 넣지 않는다 */ }
       }
       return out;
     } finally { rmSync(tmp, { recursive: true, force: true }); }
+  }
+
+  private readonly shelf = new Map<string, { at: number; entries: CatalogEntry[]; error: string }>();
+  private readonly fetching = new Map<string, Promise<{ at: number; entries: CatalogEntry[]; error: string }>>();
+
+  /**
+   * 마켓: 모음(저장소)들을 훑어 무엇을 설치할 수 있는지 본다. 받아 둔 것은 10분 동안 다시 쓴다 (열 때마다 저장소를 받지 않는다).
+   * 설치 여부와 설치된 판은 받아 둔 것에도 지금 것으로 채운다.
+   */
+  async market(sources: { url: string; base: boolean }[], force = false): Promise<MarketSource[]> {
+    const list = sources.slice(0, 11);
+    // 뺀 모음의 것은 버린다
+    for (const key of [...this.shelf.keys()]) if (!list.some((x) => x.url === key)) this.shelf.delete(key);
+    const out: MarketSource[] = [];
+    for (const src of list) {
+      const before = this.shelf.get(src.url);
+      const age = before ? Date.now() - before.at : Infinity;
+      // 새로 고침을 연달아 눌러도 5초 안에는 다시 받지 않는다. 받는 중이면 그것을 같이 기다린다.
+      if (age > 10 * 60_000 || (force && age > (this.d.marketGapMs ?? 5000))) {
+        let job = this.fetching.get(src.url);
+        if (!job) {
+          job = this.catalog(src.url)
+            .then((entries) => ({ at: Date.now(), entries, error: '' }), (e) => ({ at: Date.now(), entries: before?.entries ?? [], error: marketError(e) }))
+            .finally(() => { this.fetching.delete(src.url); });
+          this.fetching.set(src.url, job);
+        }
+        const got = await job;
+        // 받는 사이에 뺀 모음이면 담아 두지 않는다
+        this.shelf.set(src.url, got);
+      }
+      const hit = this.shelf.get(src.url)!;
+      const mine = new Map(this.list().map((x) => [x.id, x]));
+      out.push({
+        url: src.url, base: src.base, label: src.url.replace(/^(https:\/\/|ssh:\/\/|git@)/, '').replace(/^[^/:]+[/:]/, '').replace(/\.git$/, '') || src.url,
+        entries: hit.entries.map((e) => {
+          const have = mine.get(e.id);
+          return { ...e, installed: have !== undefined, installedVersion: have?.version ?? '', elsewhere: have !== undefined && have.source !== `git:${src.url}${e.dir ? `#${e.dir}` : ''}` };
+        }),
+        error: hit.error, at: hit.at,
+      });
+    }
+    return out;
   }
 
   /** git 에서 받은 플러그인을 다시 받는다. 내용이 바뀌면 다시 승인해야 한다. */

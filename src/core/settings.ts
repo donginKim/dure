@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import type Database from 'better-sqlite3';
 import type { ModelChoice, Settings } from '@shared/types';
+import { gitUrlOk } from './gitUrl';
 
 export const DEFAULT_SETTINGS: Settings = {
   defaultAgent: 'claude',
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captureShortcut: 'Alt+Shift+Space',
   awayMode: false,
   pluginCatalog: 'https://github.com/donginKim/dure-plugin.git',
+  pluginSources: [],
   defaultPermissionMode: 'auto',
   worktreeRoot: '',
   repoRoot: '',
@@ -146,9 +148,16 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   theme: oneOf('화면 모양', 'dark', 'light', 'system'),
   companion: bool('도트 일꾼'),
   awayMode: bool('자리 비움'),
+  pluginSources: (v: unknown): string[] => {
+    if (!Array.isArray(v)) throw new Error('플러그인 모음: 목록이어야 합니다.');
+    const out = [...new Set(v.map((x) => String(x ?? '').trim()).filter(Boolean))];
+    if (out.length > 10) throw new Error('플러그인 모음은 10개까지 더할 수 있습니다.');
+    for (const t of out) if (!gitUrlOk(t)) throw new Error(`플러그인 모음: git 주소가 올바르지 않습니다 (${t.replace(/\/\/[^/]*@/, '//…@').slice(0, 60)}). https 주소에 계정이나 토큰은 넣지 않습니다.`);
+    return out;
+  },
   pluginCatalog: (v: unknown): string => {
     const t = String(v ?? '').trim();
-    if (t && (t.length > 300 || !/^(https:\/\/|git@|ssh:\/\/)[\w.@:/~+-]+$/.test(t))) throw new Error('플러그인 모음: git 주소가 올바르지 않습니다.');
+    if (t && !gitUrlOk(t)) throw new Error('플러그인 모음: git 주소가 올바르지 않습니다 (https 주소에 계정이나 토큰은 넣지 않습니다).');
     return t;
   },
   captureShortcut: (v: unknown): string => {

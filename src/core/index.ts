@@ -368,7 +368,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   await peers.apply();
   service.attachDelivery(delivery);
   service.attachMemory((projectId) => memory.digest(projectId));
-  const plugins = new PluginService({ db, dir: join(o.dataDir, 'plugins'), git: (args) => git.raw(args), addMemory: (projectId, kind, text, author) => { memory.add(projectId, { kind, text, author }); } });
+  const plugins = new PluginService({ db, dir: join(o.dataDir, 'plugins'),
+    // 남의 저장소를 받는다: 끝없이 기다리지 않고, 비밀번호를 묻는 창에서 멈추지 않고, 큰 파일(LFS)은 받지 않는다.
+    git: (args) => git.rawWith(args, { timeoutMs: 90_000, extraEnv: { GIT_TERMINAL_PROMPT: '0', GIT_LFS_SKIP_SMUDGE: '1', GIT_SSH_COMMAND: 'ssh -oBatchMode=yes -oConnectTimeout=15' } }), addMemory: (projectId, kind, text, author) => { memory.add(projectId, { kind, text, author }); } });
   // 만들기의 자료: 두레가 이미 가진 것만 간추린다 (할 일, 기억, 작업 보고). 코드는 담지 않는다.
   const makeMaterials = async (projectId: string): Promise<string> => {
     const LABEL: Record<string, string> = { done: '완료', doing: '하는 중', todo: '남음', cancelled: '취소' };

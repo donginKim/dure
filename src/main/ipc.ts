@@ -23,7 +23,16 @@ function tagged(e: unknown): Error {
 }
 
 /** 코어를 IPC 로 화면에 내보낸다. 돌려주는 함수는 등록을 해제한다. */
+/** 마켓의 모음들: 설정의 기본 모음과 사용자가 더한 것 */
+function sourcesOf(s: Settings): { url: string; base: boolean }[] {
+  const out: { url: string; base: boolean }[] = [];
+  if (s.pluginCatalog) out.push({ url: s.pluginCatalog, base: true });
+  for (const u of s.pluginSources ?? []) if (u && !out.some((x) => x.url === u)) out.push({ url: u, base: false });
+  return out;
+}
+
 export function registerIpc(core: Core, browser: { register(workspaceId: string, webContentsId: number): void }): () => void {
+  const marketSources = (): { url: string; base: boolean }[] => sourcesOf(core.settings.get());
   const changed = (topic: ChangeTopic): void => broadcast(IPC_EVENTS.changed, topic);
 
   // 완료된 프로젝트는 기록만 본다.
@@ -96,11 +105,11 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       if (!/^https?:\/\//i.test(u) || !core.knownNewsLink(u)) throw new Error('열 수 없는 주소입니다.');
       await shell.openExternal(u);
     },
-    'plugins.catalog': () => { const url = core.settings.get().pluginCatalog; if (!url) throw new Error('설정에 플러그인 모음의 주소가 없습니다.'); return core.plugins.catalog(url); },
-    'plugins.installCatalog': (dir: string) => {
-      const url = core.settings.get().pluginCatalog;
-      const d = String(dir ?? '');
-      if (!url) throw new Error('설정에 플러그인 모음의 주소가 없습니다.');
+    'plugins.market': (force: boolean) => core.plugins.market(marketSources(), force === true),
+    'plugins.installFrom': (source: string, dir: string) => {
+      // 마켓에 올라 있는 모음에서만 받는다 (화면이 아무 주소나 넘기지 못하게).
+      const url = String(source ?? ''); const d = String(dir ?? '');
+      if (!marketSources().some((x) => x.url === url)) throw new Error('마켓에 없는 모음입니다.');
       return core.plugins.installFromGit(d ? `${url}#${d}` : url);
     },
     'away.list': () => core.awayChoices(),

@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from '@core/settings';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openMake } from './makeViewer';
+import { safeHtml } from '@core/makes';
 import type { ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
@@ -65,14 +66,15 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       if (!m || !html) throw new Error('아직 만들어지지 않았습니다.');
       openMake(join(app.getPath('temp'), 'dure-makes'), m.id, m.title, html);
     },
-    'makes.save': async (id: string) => {
+    'makes.save': async (id: string, raw: boolean) => {
       const m = core.makes.get(String(id)); const html = core.makes.html(String(id));
       if (!m || !html) throw new Error('아직 만들어지지 않았습니다.');
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-      const name = `${m.title.replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) || '문서'}.html`;
+      const name = `${m.title.replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) || '문서'}${raw === true ? ' (원본)' : ''}.html`;
       const res = await dialog.showSaveDialog(win!, { title: '문서 저장', defaultPath: join(app.getPath('documents'), name), filters: [{ name: 'HTML', extensions: ['html'] }] });
       if (res.canceled || !res.filePath) return null;
-      await writeFile(res.filePath, html, 'utf8');
+      // 기본은 안전한 판 (스크립트가 꺼져 있다). 움직이는 원본은 사용자가 골랐을 때만.
+      await writeFile(res.filePath, raw === true ? html : safeHtml(html), 'utf8');
       return res.filePath;
     },
     'plugins.list': () => core.plugins.list(),

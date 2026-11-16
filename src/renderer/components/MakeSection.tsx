@@ -27,6 +27,10 @@ export function MakeSection({ projectId, readOnly }: { projectId: string; readOn
     setError(''); setSaved('');
     window.dure.makes.create(projectId, kind, direction, extra).then(() => { setDirection(''); setExtra(''); setMore(false); }).catch((e: Error) => setError(e.message));
   };
+  const save = (id: string, raw: boolean): void => {
+    setError('');
+    window.dure.makes.save(id, raw).then((p) => { if (p) setSaved(`${p}${raw ? ' (움직이는 원본)' : ' (안전한 판: 스크립트 꺼짐)'}`); }).catch((e: Error) => setError(e.message));
+  };
   const shown = all ? list : list.slice(0, 5);
   return (
     <div className="section">
@@ -60,12 +64,13 @@ export function MakeSection({ projectId, readOnly }: { projectId: string; readOn
               </div>
             </div>
             {m.state === 'done' && <button className="btn" onClick={() => { window.dure.makes.open(m.id).catch((e: Error) => setError(e.message)); }}>열기</button>}
-            {m.state === 'done' && <button className="btn ghost" onClick={() => { window.dure.makes.save(m.id).then((p) => { if (p) setSaved(p); }).catch((e: Error) => setError(e.message)); }}>저장</button>}
+            {m.state === 'done' && <button className="btn ghost" title="안전한 판으로 저장합니다: 스크립트가 꺼져 있어 누가 어디서 열어도 바깥으로 나가는 것이 없습니다 (넘기기 같은 움직임은 빠지고 내용은 모두 보입니다)" onClick={() => save(m.id, false)}>저장</button>}
+            {m.state === 'done' && <button className="btn ghost" title="움직이는 원본 그대로 저장합니다 (넘기기, 눌러 보기가 됩니다). 남에게 받은 자료가 섞인 문서라면 안전한 판을 쓰세요" onClick={() => save(m.id, true)}>원본</button>}
             {m.state !== 'working' && <button className="btn ghost" onClick={() => { window.dure.makes.remove(m.id).catch(() => undefined); }}>지우기</button>}
           </div>
         ))}
         {list.length > 5 && <button className="btn ghost" onClick={() => setAll((v) => !v)}>{all ? '접기' : `외 ${list.length - 5}개 보기`}</button>}
-        {saved && <div className="muted make-saved">저장했습니다: {saved} · 저장한 파일은 보통 브라우저에서 열립니다. 남에게 받은 자료가 섞인 문서라면 두레의 "열기" 로 보는 쪽이 안전합니다.</div>}
+        {saved && <div className="muted make-saved">저장했습니다: {saved}</div>}
       </div>
     </div>
   );

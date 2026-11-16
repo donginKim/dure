@@ -334,8 +334,11 @@ export interface DureApi {
     remove(id: string): Promise<void>;
     /** 따로 창에 띄운다 */
     open(id: string): Promise<void>;
-    /** 파일로 저장한다 (저장한 경로. 그만두면 null) */
-    save(id: string): Promise<string | null>;
+    /**
+     * 파일로 저장한다 (저장한 경로. 그만두면 null). 기본은 안전한 판: 스크립트가 꺼져 있어 어디서 열어도 바깥으로 나가는 것이 없다.
+     * raw 면 움직이는 원본 그대로.
+     */
+    save(id: string, raw?: boolean): Promise<string | null>;
   },
   memory: {
     list(projectId: string): Promise<MemoryItem[]>;

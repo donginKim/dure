@@ -479,6 +479,31 @@ const MIGRATIONS: string[] = [
   CREATE TABLE work_events (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, project_id TEXT NOT NULL, workspace_id TEXT, at INTEGER NOT NULL);
   CREATE INDEX work_events_by_at ON work_events (at);
   `,
+  // 예약 실행: 정한 때에 워크스페이스의 에이전트에게 시킬 일
+  `
+  CREATE TABLE schedules (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT NOT NULL, title TEXT NOT NULL, prompt TEXT NOT NULL,
+    kind TEXT NOT NULL, time TEXT NOT NULL, weekday INTEGER, run_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1, last_run_at INTEGER, created_at INTEGER NOT NULL
+  );
+  `,
+  // 빠른 메모 (단축키로 적어 두는 받은함)
+  `
+  CREATE TABLE captures (id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at INTEGER NOT NULL);
+  `,
+  // 프로젝트 기억 (대화가 끊겨도 남는 짧은 사실)
+  `
+  CREATE TABLE project_memory (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, author TEXT NOT NULL, created_at INTEGER NOT NULL);
+  CREATE INDEX project_memory_by_project ON project_memory (project_id, created_at);
+  `,
+  // 자리 비움: 사용자가 없는 동안 두레가 대신 고른 답 (돌아와서 검토한다)
+  `
+  CREATE TABLE away_log (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT NOT NULL, workspace_name TEXT NOT NULL, question TEXT NOT NULL, answer TEXT NOT NULL, at INTEGER NOT NULL);
+  `,
+  // 하단바와 결산이 날짜로 훑는다
+  `
+  CREATE INDEX IF NOT EXISTS token_usage_at ON token_usage (at);
+  CREATE INDEX IF NOT EXISTS todos_done_at ON todos (status, updated_at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { throttled } from '../throttle';
 import type { ProjectDashboard } from '@shared/types';
 
 /**
@@ -80,7 +81,7 @@ export function Companion({ onOpenAttention, limitHot }: { onOpenAttention: () =
   const still = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   useEffect(() => {
     let alive = true;
-    const load = (): void => {
+    const load = throttled(() => {
       window.dure.projects.dashboard().then((d) => {
         if (!alive) return;
         setDash(d);
@@ -90,11 +91,11 @@ export function Companion({ onOpenAttention, limitHot }: { onOpenAttention: () =
         lastDone.current = done;
       }).catch(() => undefined);
       window.dure.workspaces.doing().then((x) => { if (alive) setDoing(x); }).catch(() => undefined);
-    };
+    }, 3000);
     load();
-    const t = setInterval(load, 5000);
+    const t = setInterval(load, 10_000);
     const off = window.dure.onChanged((topic) => { if (topic === 'workspaces' || topic === 'todos') load(); });
-    return () => { alive = false; clearInterval(t); off(); };
+    return () => { alive = false; clearInterval(t); off(); load.cancel(); };
   }, []);
   useEffect(() => {
     if (still) return;

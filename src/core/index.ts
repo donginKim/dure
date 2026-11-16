@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport, UsageBar } from '@shared/types';
+import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport, UsageBar, AwayChoice } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
@@ -25,12 +25,17 @@ import { NoteStore } from './notes';
 import { AttentionService } from './attention';
 import { DoingService } from './doing';
 import { PaddyService, dayOf } from './paddy';
+import { DigestService } from './digest';
+import { ScheduleService } from './schedule';
+import { CaptureStore } from './captures';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
 import { WorkTimeService, type NetworkProbe } from './worktime';
 import { noteTools } from './mcp/tools/notes';
 import { agreementTools } from './mcp/tools/agreements';
+import { memoryTools } from './mcp/tools/memory';
+import { MemoryStore } from './memory';
 import { figureTools } from './mcp/tools/figures';
 import { FigureService } from './figures';
 import { AgreementService } from './agreements';
@@ -112,8 +117,20 @@ export interface Core {
   doing: DoingService;
   /** 두레 논 (날마다 한 일) */
   paddy: PaddyService;
+  /** 하루 결산 */
+  digest: DigestService;
+  /** 예약 실행 */
+  schedules: ScheduleService;
+  /** 빠른 메모 */
+  captures: CaptureStore;
+  /** 프로젝트 기억 */
+  memory: MemoryStore;
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
+  /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
+  awayChoices(): AwayChoice[];
+  /** 대신 고른 답의 기록을 지운다 (id 를 비우면 전부) */
+  clearAwayChoices(id?: string): void;
   /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
   dashboard(): ProjectDashboard[];
   pty: PtyManager;
@@ -213,6 +230,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   if (o.networkProbe !== null) worktime.start();
   settings.on('changed', () => { void worktime.tick(); });
   const cleanup = new CleanupService({ db, workspaces, git, dir: join(o.dataDir, 'cleanup') });
+  const memory = new MemoryStore(db);
   messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
   const pty = new PtyManager();
@@ -234,6 +252,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     verify,
     agreements,
     figures,
+    memory,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -271,7 +290,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'Stop' && out === '') service.maybeFresh(workspace.id);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools, memoryTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -334,11 +353,16 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   settings.on('changed', () => { void peers.apply(); });
   await peers.apply();
   service.attachDelivery(delivery);
+  service.attachMemory((projectId) => memory.digest(projectId));
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
   const engine = new ChatEngine({
     onSession: (id, sessionId) => { if (workspaces.get(id)) workspaces.setSessionId(id, sessionId); },
-    onWaiting: (id, waiting) => service.noteWaiting(id, waiting),
+    onWaiting: (id, waiting) => {
+      service.noteWaiting(id, waiting);
+      // 자리 비움: 선택지 질문이면 추천(첫째) 답을 대신 고른다. 승인 요청(명령 실행 등)은 대신 허용하지 않는다.
+      if (waiting && settings.get().awayMode) setTimeout(() => { try { awayAnswer(id); } catch { /* 답하지 못하면 기다리는 채로 둔다 */ } }, 300).unref?.();
+    },
     // 차례가 끝났는데도 '작업 중' 이면 Stop hook 이 오지 않은 것이다 (사용자가 멈춤, 로그인 만료 같은 오류). 쉬는 중으로 되돌린다.
     // 보통은 Stop hook 이 먼저 와서 이미 쉬는 중이고, 그때는 아무것도 바뀌지 않는다.
     onTurnEnd: (id) => {
@@ -470,10 +494,61 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 커밋, 확인 명령, 리뷰가 바뀌면 작업 보고를 다시 보낸다.
   for (const src of [verify, review, commit, settings]) src.on('changed', () => assignments.poke());
 
+  const digest = new DigestService({
+    db,
+    projects: () => projects.list(),
+    workspaceName: (id) => { const w = workspaces.get(id); return !w ? '' : w.role === 'coordinator' ? '조율' : w.name; },
+    workMs: (day) => { try { const [y, m] = day.split('-').map(Number); return worktime.month(y!, m!).find((x) => x.day === day)?.totalMs ?? 0; } catch { return 0; } },
+    attention: () => attention.list().map((a) => ({ title: a.title, projectName: a.projectName })),
+  });
+
+  const schedules = new ScheduleService({
+    db,
+    workspace: (id) => workspaces.get(id),
+    isProjectClosed: (id) => service.isProjectClosed(id),
+    blocked: (id) => budget.blocked(id),
+    send: (projectId, workspaceId, body, title) => { messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }); },
+  });
+  if (o.networkProbe !== null) schedules.start();
+  const captures = new CaptureStore({ db, addTodo: (projectId, workspaceId, title, detail) => { todos.add({ projectId, workspaceId, title, detail }, 'user'); } });
+
+  /** 자리 비움 동안 온 선택지 질문에 대신 답하고, 무엇을 골랐는지 적어 둔다. */
+  function awayAnswer(workspaceId: string): void {
+    const ws = workspaces.get(workspaceId);
+    const q = engine.overlay(workspaceId).question;
+    if (!ws || !q || !settings.get().awayMode) return;
+    const answers: Record<string, string> = {};
+    for (const one of q.questions) {
+      answers[one.question] = one.options[0]?.label
+        ?? '사용자가 자리를 비웠다. 가장 안전하다고 보는 쪽으로 스스로 정해 진행하라. 되돌리기 어려운 일이면 하지 말고 다음 일로 넘어가라.';
+    }
+    service.answerQuestion(workspaceId, q.requestId, answers);
+    const add = db.prepare('INSERT INTO away_log (id, project_id, workspace_id, workspace_name, question, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    for (const one of q.questions) add.run(crypto.randomUUID(), ws.projectId, ws.id, ws.role === 'coordinator' ? '조율 에이전트' : ws.name, one.question.slice(0, 500), (answers[one.question] ?? '').slice(0, 500), Date.now());
+    db.prepare('DELETE FROM away_log WHERE id NOT IN (SELECT id FROM away_log ORDER BY at DESC LIMIT 300)').run();
+    service.emit('changed', workspaceId);
+  }
+
+  let barCache: { mark: string; value: UsageBar } | null = null;
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    awayChoices() {
+      return (db.prepare('SELECT * FROM away_log ORDER BY at DESC LIMIT 100').all() as { id: string; project_id: string; workspace_id: string; workspace_name: string; question: string; answer: string; at: number }[])
+        .map((r) => ({ id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, workspaceName: r.workspace_name, question: r.question, answer: r.answer, at: r.at }));
+    },
+    clearAwayChoices(id?: string) {
+      if (id) db.prepare('DELETE FROM away_log WHERE id = ?').run(String(id)); else db.prepare('DELETE FROM away_log').run();
+      service.emit('changed', '');
+    },
     usageBar() {
+      // 사용량 기록이 그대로면 (같은 날, 같은 줄 수) 다시 훑지 않는다: 한도와 일하는 수만 새로 붙인다.
+      const mark = `${new Date().toDateString()}:${(db.prepare('SELECT count(*) AS n, coalesce(max(rowid), 0) AS r FROM token_usage').get() as { n: number; r: number }).n}`;
+      const live = (): Pick<UsageBar, 'limit' | 'windows' | 'working'> => ({
+        limit: service.accountLimit(), windows: service.limitWindows(),
+        working: projects.list().flatMap((p) => workspaces.listAll(p.id)).filter((w) => w.status === 'working').length,
+      });
+      if (barCache && barCache.mark === mark) return { ...barCache.value, ...live() };
       const COUNTED = 'coalesce(sum(input + cache_write + output), 0)';
       const start = new Date(); start.setHours(0, 0, 0, 0);
       const t0 = start.getTime();
@@ -491,7 +566,9 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       const first = new Date(start); first.setDate(1);
       const periods = { today: today.counted, week: since(monday.getTime()), month: since(first.getTime()) };
       const working = projects.list().flatMap((p) => workspaces.listAll(p.id)).filter((w) => w.status === 'working').length;
-      return { today, week, periods, projects: projectsToday, models, limit: service.accountLimit(), windows: service.limitWindows(), working };
+      const value = { today, week, periods, projects: projectsToday, models, limit: service.accountLimit(), windows: service.limitWindows(), working };
+      barCache = { mark, value };
+      return value;
     },
     dashboard() {
       const att = new Map<string, number>();
@@ -643,6 +720,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       worktime.dispose();
       attention.dispose();
       doing.dispose();
+      schedules.dispose();
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();

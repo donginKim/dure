@@ -138,6 +138,12 @@ export function SettingsView() {
           <Row label="화면 모양" help="밝게는 밝은 사무실이나 발표 화면에 좋습니다. 시스템은 macOS 의 모양(다크 모드)을 따릅니다. 터미널은 늘 어둡게 보입니다." {...row('theme')}>
             <Choice value={s.theme} onChange={(v) => save('theme', v)} options={[{ value: 'dark', label: '어둡게' }, { value: 'light', label: '밝게' }, { value: 'system', label: '시스템' }]} />
           </Row>
+          <Row label="빠른 메모 단축키" help="어느 앱에서든 이 단축키로 작은 입력 창을 띄워 한 줄 적어 둡니다. 적은 것은 프로젝트 첫 화면의 '받은 메모' 에 쌓이고, TODO 로 보낼 수 있습니다. 비우면 끕니다. 다른 앱이 이미 쓰는 단축키면 걸리지 않습니다." {...row('captureShortcut')}>
+            <TextInput value={s.captureShortcut} placeholder="Alt+Shift+Space" onCommit={(v) => save('captureShortcut', v)} />
+          </Row>
+          <Row label="자리 비움" help="자리를 비울 때 켜 두면, 에이전트가 선택지 질문에서 멈추지 않도록 두레가 추천(첫째) 답을 대신 고릅니다. 고른 것은 적어 두었다가 프로젝트 첫 화면에서 검토합니다. 명령 실행 같은 승인 요청은 대신 허용하지 않습니다. 하단바에서도 켜고 끌 수 있습니다." {...row('awayMode')}>
+            <Toggle on={s.awayMode} onChange={(v) => save('awayMode', v)} label="자리 비움" />
+          </Row>
           <Row label="도트 일꾼" help="하단바 오른쪽에 에이전트의 상태를 몸짓으로 보여 주는 작은 농부를 둡니다 (일하면 호미질, 답을 기다리면 손을 듦)." {...row('companion')}>
             <Toggle on={s.companion} onChange={(v) => save('companion', v)} label="도트 일꾼" />
           </Row>

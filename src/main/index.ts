@@ -3,7 +3,7 @@ import { createBonjourDiscovery } from '@core/peers/bonjour';
 import { createHttpTransport } from '@core/peers/httpTransport';
 import { createBrowserHost } from './browserDriver';
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, safeStorage } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage, globalShortcut, screen } from 'electron';
 import { createCore, type Core } from '@core/index';
 import { resolveShellEnv } from '@core/shellEnv';
 import { registerIpc } from './ipc';
@@ -131,11 +131,44 @@ async function start(): Promise<void> {
   }
   unregisterIpc = registerIpc(core, browserHost);
   createWindow();
+  // 빠른 메모: 어느 앱에서든 단축키로 작은 입력 창을 띄운다. 설정이 바뀌면 다시 건다.
+  let bound = '';
+  const applyCapture = (): void => {
+    const want = core!.settings.get().captureShortcut;
+    if (want === bound) return;
+    if (bound) { try { globalShortcut.unregister(bound); } catch { /* 이미 풀렸다 */ } }
+    bound = '';
+    if (!want) return;
+    try { if (globalShortcut.register(want, openCapture)) bound = want; } catch { /* 쓸 수 없는 단축키: 걸지 않는다 */ }
+  };
+  applyCapture();
+  core.settings.on('changed', applyCapture);
+}
+
+let captureWin: BrowserWindow | null = null;
+/** 빠른 메모 입력 창: 화면 위쪽 가운데의 작은 창. 적고 Enter 를 누르거나 다른 곳을 누르면 닫힌다. */
+function openCapture(): void {
+  if (captureWin && !captureWin.isDestroyed()) { captureWin.show(); captureWin.focus(); return; }
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const width = 560; const height = 132;
+  const win = new BrowserWindow({
+    width, height, x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + area.height * 0.18),
+    frame: false, resizable: false, alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#1c1f26', title: '빠른 메모',
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false },
+  });
+  captureWin = win;
+  win.on('closed', () => { if (captureWin === win) captureWin = null; });
+  win.on('blur', () => { if (!win.isDestroyed()) win.close(); });
+  win.once('ready-to-show', () => { win.show(); win.focus(); });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}#capture`);
+  else void win.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'capture' });
 }
 
 void start();
 
 app.on('window-all-closed', () => app.quit());
+app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* 끝나는 중 */ } });
 
 // 터미널과 에이전트 프로세스가 고아로 남지 않게, 코어를 닫은 뒤에 종료한다.
 app.on('before-quit', (event) => {

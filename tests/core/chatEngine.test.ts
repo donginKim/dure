@@ -757,3 +757,26 @@ test('TODO 마다 새 대화: 이 대화에서 TODO 를 끝내고 쉬는데 남�
   await new Promise((r) => setTimeout(r, 2500));
   expect(argvLog(ws.id).length).toBe(n);
 }, 30_000);
+
+test('자리 비움: 선택지 질문에 두레가 첫째(추천) 답을 대신 고르고, 무엇을 골랐는지 적어 둔다. 꺼져 있으면 기다린다', async () => {
+  const ws = await started('away');
+  // 꺼져 있으면 사용자를 기다린다
+  await core.service.sendUserInput(ws.id, 'ask');
+  await until(() => core.chatView(ws.id).question !== null);
+  await new Promise((r) => setTimeout(r, 600));
+  expect(existsSync(cfg(ws.id, 'answer.json'))).toBe(false);
+  expect(core.awayChoices()).toEqual([]);
+  core.service.answerQuestion(ws.id, 'r-ask', { '어떤 색?': '파랑' });
+  await until(() => existsSync(cfg(ws.id, 'answer.json')));
+  // 켜면 대신 고른다
+  const { rmSync } = await import('node:fs');
+  rmSync(cfg(ws.id, 'answer.json'));
+  core.settings.update({ awayMode: true });
+  await until(() => status(ws.id) === 'idle');
+  await core.service.sendUserInput(ws.id, 'ask');
+  await until(() => existsSync(cfg(ws.id, 'answer.json')), 8000);
+  expect((answer(ws.id).response.updatedInput as { answers: object }).answers).toEqual({ '어떤 색?': '빨강' });
+  expect(core.awayChoices()).toMatchObject([{ workspaceId: ws.id, workspaceName: 'away', question: '어떤 색?', answer: '빨강' }]);
+  core.clearAwayChoices();
+  expect(core.awayChoices()).toEqual([]);
+}, 30_000);

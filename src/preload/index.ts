@@ -32,6 +32,7 @@ const api: DureApi = {
     dashboard: () => call('projects.dashboard'),
     paddy: (projectId) => call('projects.paddy', projectId ?? null),
     usageBar: () => call('projects.usageBar'),
+    digest: (offsetDays) => call('projects.digest', offsetDays ?? 0),
     setBudget: (id, daily, total) => call('projects.setBudget', id, daily, total),
     allowToday: (id) => call('projects.allowToday', id),
   },
@@ -196,6 +197,28 @@ const api: DureApi = {
     restore: (id) => call('checkpoints.restore', id),
   },
   usage: { summary: (projectId, days) => call('usage.summary', projectId, days) },
+  away: {
+    list: () => call('away.list'),
+    clear: (id) => call('away.clear', id ?? null),
+  },
+  memory: {
+    list: (projectId) => call('memory.list', projectId),
+    add: (projectId, kind, text) => call('memory.add', projectId, kind, text),
+    remove: (id) => call('memory.remove', id),
+  },
+  captures: {
+    list: () => call('captures.list'),
+    add: (text) => call('captures.add', text),
+    remove: (id) => call('captures.remove', id),
+    toTodo: (id, projectId, workspaceId) => call('captures.toTodo', id, projectId, workspaceId ?? null),
+  },
+  schedules: {
+    list: (projectId) => call('schedules.list', projectId),
+    save: (input) => call('schedules.save', input),
+    remove: (id) => call('schedules.remove', id),
+    setEnabled: (id, on) => call('schedules.setEnabled', id, on),
+    runNow: (id) => call('schedules.runNow', id),
+  },
   attention: {
     list: () => call('attention.list'),
     onOpen: (cb) => subscribe<[AttentionItem]>(IPC_EVENTS.attentionOpen, cb),

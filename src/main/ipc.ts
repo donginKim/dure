@@ -4,7 +4,7 @@ import type { Core } from '@core/index';
 import { AgentNotInstalledError, WorktreeMissingError } from '@core/workspaceService';
 import { ERROR_PREFIX, IPC_CHANNELS, IPC_EVENTS, IPC_ONE_WAY, ipcName, type ChangeTopic, type IpcChannel, type TerminalSize } from '@shared/ipc';
 import { DEFAULT_SETTINGS } from '@core/settings';
-import type { CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem } from '@shared/types';
+import type { ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -53,6 +53,21 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'projects.dashboard': () => core.dashboard(),
     'projects.paddy': (projectId: string | null) => core.paddy.days(typeof projectId === 'string' && projectId ? projectId : null),
     'projects.usageBar': () => core.usageBar(),
+    'away.list': () => core.awayChoices(),
+    'away.clear': (id: string | null) => core.clearAwayChoices(id ? String(id) : undefined),
+    'memory.list': (projectId: string) => core.memory.list(String(projectId)),
+    'memory.add': (projectId: string, kind: string, text: string) => core.memory.add(String(projectId), { kind, text, author: '사용자' }),
+    'memory.remove': (id: string) => core.memory.remove(String(id)),
+    'captures.list': () => core.captures.list(),
+    'captures.add': (text: string) => core.captures.add(text),
+    'captures.remove': (id: string) => core.captures.remove(String(id)),
+    'captures.toTodo': (id: string, projectId: string, workspaceId: string | null) => core.captures.toTodo(String(id), String(projectId), workspaceId ? String(workspaceId) : null),
+    'schedules.list': (projectId: string) => core.schedules.list(String(projectId)),
+    'schedules.save': (input: ScheduleInput) => core.schedules.save(input),
+    'schedules.remove': (id: string) => core.schedules.remove(String(id)),
+    'schedules.setEnabled': (id: string, on: boolean) => core.schedules.setEnabled(String(id), on === true),
+    'schedules.runNow': (id: string) => core.schedules.runNow(String(id)),
+    'projects.digest': (offsetDays: number) => core.digest.daily(Number(offsetDays) || 0),
     'projects.setBudget': (id: string, daily: number, total: number) => { assertOpen(String(id)); core.budget.setLimits(String(id), { daily: Number(daily), total: Number(total) }); changed('projects'); return core.budget.status(String(id)); },
     'projects.allowToday': (id: string) => { assertOpen(String(id)); core.budget.allowToday(String(id)); return core.budget.status(String(id)); },
     'coordinator.get': (projectId: string) => ({ workspace: core.coordinator.ensure(projectId), proposal: core.coordinator.pending(projectId), newRepoDir: core.coordinator.newRepoDir(projectId), people: core.peers.share(projectId)?.mine === false ? core.peers.people(projectId) : core.peers.assignable(projectId), ...(core.coordinator.team(projectId)?.mine === false ? { suggestTo: core.coordinator.team(projectId)!.leaderName, observer: core.peers.share(projectId)?.observer === true, assigned: core.assignments.incoming(projectId).length } : {}) }),
@@ -418,6 +433,12 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onShipChanged = (): void => changed('commit');
   core.autoShip.on('changed', onShipChanged);
   core.attention.on('changed', onAttentionChanged);
+  const onSchedulesChanged = (): void => changed('schedules');
+  core.schedules.on('changed', onSchedulesChanged);
+  const onCapturesChanged = (): void => changed('captures');
+  core.captures.on('changed', onCapturesChanged);
+  const onMemoryChanged = (): void => changed('memory');
+  core.memory.on('changed', onMemoryChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
@@ -451,6 +472,9 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.autoShip.off('changed', onShipChanged);
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
+    core.schedules.off('changed', onSchedulesChanged);
+    core.captures.off('changed', onCapturesChanged);
+    core.memory.off('changed', onMemoryChanged);
     clearTimeout(noteTimer);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);

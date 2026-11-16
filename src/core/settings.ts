@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultEngine: 'chat',
   theme: 'dark',
   companion: false,
+  captureShortcut: 'Alt+Shift+Space',
+  awayMode: false,
   defaultPermissionMode: 'auto',
   worktreeRoot: '',
   repoRoot: '',
@@ -142,6 +144,12 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   defaultEngine: oneOf('기본 방식', 'chat', 'terminal'),
   theme: oneOf('화면 모양', 'dark', 'light', 'system'),
   companion: bool('도트 일꾼'),
+  awayMode: bool('자리 비움'),
+  captureShortcut: (v: unknown): string => {
+    const t = String(v ?? '').trim();
+    if (t.length > 40 || (t && !/^[A-Za-z0-9+]+$/.test(t))) throw new Error('단축키: "Alt+Shift+Space" 처럼 적으세요.');
+    return t;
+  },
   defaultPermissionMode: oneOf('기본 권한 모드', 'ask', 'auto', 'bypass'),
   worktreeRoot: path('작업 폴더 위치'),
   repoRoot: path('새 저장소 위치'),

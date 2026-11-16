@@ -57,6 +57,38 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 자리 비움 동안 두레가 대신 고른 답 하나 */
+export interface AwayChoice { id: string; projectId: string; workspaceId: string; workspaceName: string; question: string; answer: string; at: number }
+/** 프로젝트 기억의 종류: 정한 것, 배운 것, 자주 쓰는 명령 */
+export type MemoryKind = 'decision' | 'lesson' | 'command';
+export interface MemoryItem { id: string; projectId: string; kind: MemoryKind; text: string; author: string; createdAt: number }
+/** 빠른 메모 한 건 */
+export interface Capture { id: string; text: string; createdAt: number }
+/** 예약 실행: 정한 때에 워크스페이스의 에이전트에게 시킬 일 */
+export interface Schedule {
+  id: string; projectId: string; workspaceId: string; title: string; prompt: string;
+  /** daily: 매일 time 에. weekly: 매주 weekday(0 일 ~ 6 토) 의 time 에. once: runAt 에 한 번 */
+  kind: 'daily' | 'weekly' | 'once';
+  /** HH:MM */
+  time: string; weekday: number | null; runAt: number | null;
+  enabled: boolean; lastRunAt: number | null; createdAt: number;
+  /** 다음에 돌 때 (꺼져 있거나 이미 돈 한 번짜리면 null) */
+  nextAt: number | null;
+}
+export interface ScheduleInput { id?: string; workspaceId: string; title: string; prompt: string; kind: Schedule['kind']; time?: string; weekday?: number | null; runAt?: number | null; enabled?: boolean }
+/** 하루 결산 (아침 브리핑과 퇴근 결산의 바탕) */
+export interface DailyDigest {
+  /** YYYY-MM-DD */
+  day: string;
+  projects: { projectId: string; name: string; done: { title: string; workspace: string }[]; commits: number; mains: number; tokens: number }[];
+  totals: { done: number; commits: number; mains: number; tokens: number; workMs: number };
+  /** 지금 하는 중인 일 (진행 중인 프로젝트) */
+  doing: { title: string; project: string }[];
+  /** 아직 시작하지 않은 TODO 의 수 */
+  todo: number;
+  /** 지금 내 확인을 기다리는 것 (오늘 결산에만) */
+  attention: { title: string; projectName: string }[];
+}
 /** 두레 논의 하루 한 칸 */
 export interface PaddyDay { date: string; todos: number; commits: number; mains: number; score: number }
 /** 하단바: 오늘 이 PC 의 에이전트가 쓴 토큰과 계정의 사용 한도 */
@@ -442,6 +474,10 @@ export interface Settings {
   theme: 'dark' | 'light' | 'system';
   /** 하단바의 도트 일꾼 */
   companion: boolean;
+  /** 자리 비움: 에이전트의 선택지 질문에 두레가 추천(첫째) 답을 대신 골라 멈추지 않게 한다. 고른 것은 적어 두었다가 돌아와서 본다 */
+  awayMode: boolean;
+  /** 빠른 메모를 여는 전역 단축키 (Electron 의 단축키 글. 비우면 끈다) */
+  captureShortcut: string;
   /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */
   coordinatorModel: string;
   /** 조율 에이전트의 effort. 비우면 Claude Code 의 기본 (일하는 에이전트의 effort 는 claudeEffort) */

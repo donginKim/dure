@@ -9,11 +9,11 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, DailyDigest, Schedule, ScheduleInput, Capture, MemoryItem, MemoryKind, AwayChoice, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
-export type ChangeTopic = 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
+export type ChangeTopic = 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -44,6 +44,8 @@ export interface DureApi {
     paddy(projectId?: string | null): Promise<PaddyDay[]>;
     /** 하단바: 오늘 쓴 토큰, 최근 7일, 프로젝트·모델별, 사용 한도 */
     usageBar(): Promise<UsageBar>;
+    /** 하루 결산. offsetDays: 0 오늘, 1 어제 */
+    digest(offsetDays?: number): Promise<DailyDigest>;
     setBudget(id: string, daily: number, total: number): Promise<BudgetStatus>;
     allowToday(id: string): Promise<BudgetStatus>;
     /** 자동 반영의 기록 (새것부터) */
@@ -293,6 +295,32 @@ export interface DureApi {
   /** 사용량: 프로젝트의 에이전트들이 쓴 토큰. days 가 있으면 최근 그 날수만 */
   usage: { summary(projectId: string, days?: number): Promise<UsageSummary> };
   /** 확인할 것: 에이전트나 다른 사람이 나를 기다리는 것 */
+  away: {
+    /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
+    list(): Promise<AwayChoice[]>;
+    /** 기록을 지운다 (id 를 비우면 전부) */
+    clear(id?: string | null): Promise<void>;
+  };
+  memory: {
+    list(projectId: string): Promise<MemoryItem[]>;
+    add(projectId: string, kind: MemoryKind, text: string): Promise<MemoryItem>;
+    remove(id: string): Promise<void>;
+  };
+  captures: {
+    list(): Promise<Capture[]>;
+    add(text: string): Promise<Capture>;
+    remove(id: string): Promise<void>;
+    /** 메모를 TODO 로 보낸다 (workspaceId 를 비우면 프로젝트 TODO) */
+    toTodo(id: string, projectId: string, workspaceId?: string | null): Promise<void>;
+  };
+  schedules: {
+    list(projectId: string): Promise<Schedule[]>;
+    save(input: ScheduleInput): Promise<Schedule>;
+    remove(id: string): Promise<void>;
+    setEnabled(id: string, on: boolean): Promise<void>;
+    /** 때와 상관없이 지금 한 번 돌린다 */
+    runNow(id: string): Promise<void>;
+  };
   attention: {
     list(): Promise<AttentionItem[]>;
     /** 알림을 눌렀을 때: 그 항목으로 가라고 알린다 */
@@ -399,7 +427,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',

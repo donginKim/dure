@@ -26,6 +26,7 @@ import { AttentionService } from './attention';
 import { DoingService } from './doing';
 import { PaddyService, dayOf } from './paddy';
 import { DigestService } from './digest';
+import { ScheduleService } from './schedule';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
@@ -115,6 +116,8 @@ export interface Core {
   paddy: PaddyService;
   /** 하루 결산 */
   digest: DigestService;
+  /** 예약 실행 */
+  schedules: ScheduleService;
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
@@ -481,9 +484,18 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     attention: () => attention.list().map((a) => ({ title: a.title, projectName: a.projectName })),
   });
 
+  const schedules = new ScheduleService({
+    db,
+    workspace: (id) => workspaces.get(id),
+    isProjectClosed: (id) => service.isProjectClosed(id),
+    blocked: (id) => budget.blocked(id),
+    send: (projectId, workspaceId, body, title) => { messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }); },
+  });
+  if (o.networkProbe !== null) schedules.start();
+
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     usageBar() {
       const COUNTED = 'coalesce(sum(input + cache_write + output), 0)';
       const start = new Date(); start.setHours(0, 0, 0, 0);
@@ -654,6 +666,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       worktime.dispose();
       attention.dispose();
       doing.dispose();
+      schedules.dispose();
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();

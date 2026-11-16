@@ -479,6 +479,13 @@ const MIGRATIONS: string[] = [
   CREATE TABLE work_events (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, project_id TEXT NOT NULL, workspace_id TEXT, at INTEGER NOT NULL);
   CREATE INDEX work_events_by_at ON work_events (at);
   `,
+  // 예약 실행: 정한 때에 워크스페이스의 에이전트에게 시킬 일
+  `
+  CREATE TABLE schedules (
+    id TEXT PRIMARY KEY, project_id TEXT NOT NULL, workspace_id TEXT NOT NULL, title TEXT NOT NULL, prompt TEXT NOT NULL,
+    kind TEXT NOT NULL, time TEXT NOT NULL, weekday INTEGER, run_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1, last_run_at INTEGER, created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

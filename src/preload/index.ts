@@ -197,6 +197,13 @@ const api: DureApi = {
     restore: (id) => call('checkpoints.restore', id),
   },
   usage: { summary: (projectId, days) => call('usage.summary', projectId, days) },
+  schedules: {
+    list: (projectId) => call('schedules.list', projectId),
+    save: (input) => call('schedules.save', input),
+    remove: (id) => call('schedules.remove', id),
+    setEnabled: (id, on) => call('schedules.setEnabled', id, on),
+    runNow: (id) => call('schedules.runNow', id),
+  },
   attention: {
     list: () => call('attention.list'),
     onOpen: (cb) => subscribe<[AttentionItem]>(IPC_EVENTS.attentionOpen, cb),

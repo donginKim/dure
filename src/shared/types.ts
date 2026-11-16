@@ -57,6 +57,18 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 예약 실행: 정한 때에 워크스페이스의 에이전트에게 시킬 일 */
+export interface Schedule {
+  id: string; projectId: string; workspaceId: string; title: string; prompt: string;
+  /** daily: 매일 time 에. weekly: 매주 weekday(0 일 ~ 6 토) 의 time 에. once: runAt 에 한 번 */
+  kind: 'daily' | 'weekly' | 'once';
+  /** HH:MM */
+  time: string; weekday: number | null; runAt: number | null;
+  enabled: boolean; lastRunAt: number | null; createdAt: number;
+  /** 다음에 돌 때 (꺼져 있거나 이미 돈 한 번짜리면 null) */
+  nextAt: number | null;
+}
+export interface ScheduleInput { id?: string; workspaceId: string; title: string; prompt: string; kind: Schedule['kind']; time?: string; weekday?: number | null; runAt?: number | null; enabled?: boolean }
 /** 하루 결산 (아침 브리핑과 퇴근 결산의 바탕) */
 export interface DailyDigest {
   /** YYYY-MM-DD */

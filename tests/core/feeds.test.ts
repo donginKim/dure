@@ -1,4 +1,4 @@
-import { FeedReader, parseFeed, publicHttps } from '@core/feeds';
+import { FeedReader, parseFeed, privateAddress, publicHttps } from '@core/feeds';
 
 test('publicHttps: https 의 바깥 주소만', () => {
   expect(publicHttps('https://feeds.bbci.co.uk/news/world/rss.xml')).toBe(true);
@@ -34,4 +34,29 @@ test('FeedReader: 받아 둔 것을 다시 쓰고, 안쪽 주소는 읽지 않�
   // 안쪽 주소로 넘겨지면 받지 않는다
   const redirect = new FeedReader(async () => ({ ok: true, status: 200, url: 'https://127.0.0.1/secret', text: async () => '<rss><item><title>비밀</title></item></rss>' }));
   expect(await redirect.read('https://y.example.com/rss')).toMatchObject({ items: [], error: '다른 주소로 넘겨졌습니다.' });
+});
+
+test('publicHttps: 끝점·안쪽 이름도 받지 않는다', () => {
+  for (const bad of ['https://localhost./x', 'https://printer.local./x', 'https://metadata.google.internal./x', 'https://foo.localhost/x', 'https://router.home/x']) expect(publicHttps(bad)).toBe(false);
+});
+
+test('privateAddress: 사설·이 PC·링크로컬 주소', () => {
+  for (const ip of ['127.0.0.1', '10.1.2.3', '192.168.0.1', '172.16.5.5', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', 'fd00::1', 'fe80::1', '::ffff:127.0.0.1']) expect(privateAddress(ip)).toBe(true);
+  for (const ip of ['8.8.8.8', '151.101.0.81', '2606:4700::1111']) expect(privateAddress(ip)).toBe(false);
+});
+
+test('parseFeed: 나쁜 피드가 앱을 붙잡지 못한다 (큰 입력도 금방 끝난다)', () => {
+  const t0 = Date.now();
+  expect(parseFeed(`<rss><item><title>${'<'.repeat(1_400_000)}</title></item></rss>`)).toEqual([]);
+  expect(parseFeed('<![CDATA['.repeat(160_000))).toEqual([]);
+  expect(parseFeed('<item>'.repeat(240_000))).toEqual([]);
+  expect(parseFeed(`<rss>${'<item><title>'.repeat(100_000)}</rss>`)).toEqual([]);
+  expect(Date.now() - t0).toBeLessThan(2000);
+  // 범위를 넘는 문자 번호는 버린다 (피드 전체가 깨지지 않는다)
+  expect(parseFeed('<rss><item><title>가&#99999999;나&#44032;</title></item></rss>')[0]!.title).toBe('가나가');
+});
+
+test('parseFeed: 소문자로 바꾸면 길이가 달라지는 글자가 있어도 자리가 어긋나지 않는다', () => {
+  const xml = `<rss>${Array.from({ length: 5 }, (_, i) => `<item><title>İstanbul İİİ ${i}</title><link>https://t.example.com/${i}</link></item>`).join('')}</rss>`;
+  expect(parseFeed(xml).map((x) => x.link)).toEqual([0, 1, 2, 3, 4].map((i) => `https://t.example.com/${i}`));
 });

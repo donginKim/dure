@@ -181,6 +181,8 @@ export class PluginService extends EventEmitter {
     const tmp = await this.clone(u);
     try {
       const from = sub ? join(tmp, sub) : tmp;
+      // 폴더 이름 중간에 바로가기가 끼어 저장소 밖을 가리키면 받지 않는다.
+      if (sub && !(existsSync(from) && realpathSync(from).startsWith(realpathSync(tmp) + sep))) throw new Error('폴더 이름이 올바르지 않습니다.');
       const { plugin } = readPlugin(from);
       copyPlugin(from, join(this.d.dir, plugin.id));
       return this.record(plugin.id, `git:${u}${sub ? `#${sub}` : ''}`);

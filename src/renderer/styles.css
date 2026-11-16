@@ -1184,3 +1184,4 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .paddy-legend .grow { flex: 1; }
 .ub-barwrap.lim > span { background: var(--ok); }
 .ub-barwrap.lim.hot > span { background: var(--warn); }
+.ub-row b[title] { min-width: 64px; }

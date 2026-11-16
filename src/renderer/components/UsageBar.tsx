@@ -46,7 +46,8 @@ export function UsageBar() {
   const lim = b.limit;
   // 가장 빠듯한 한도 창 (사용률이 가장 높은 것)
   const w0 = b.windows[0];
-  const windowText = (w: Bar['windows'][number]): string => `${KIND[w.kind] ?? w.kind} 한도 ${Math.round(w.utilization * 100)}%${w.resetsAt ? ` · ${whenText(w.resetsAt)} 초기화` : ''}`;
+  const leftPct = (w: Bar['windows'][number]): number => Math.max(0, 100 - Math.round(w.utilization * 100));
+  const windowText = (w: Bar['windows'][number]): string => `${KIND[w.kind] ?? w.kind} 한도 ${Math.round(w.utilization * 100)}% 씀 · ${leftPct(w)}% 남음${w.resetsAt ? ` · ${whenText(w.resetsAt)} 초기화` : ''}`;
   const etaText = (w: Bar['windows'][number]): string | null => (w.utilization >= 1 ? '한도에 걸림' : w.eta ? `이 속도면 ${left(w.eta - Date.now())} 뒤 한도` : null);
   const limText = lim
     ? `${lim.status === 'rejected' ? '한도 걸림' : lim.status === 'warning' ? '한도 가까움' : '한도 여유'}${lim.kind ? ` (${KIND[lim.kind] ?? lim.kind})` : ''}${lim.utilization !== null ? ` ${Math.round(lim.utilization * (lim.utilization <= 1 ? 100 : 1))}%` : ''}${lim.resetsAt ? ` · ${hhmm(lim.resetsAt)} 풀림` : ''}`
@@ -62,7 +63,7 @@ export function UsageBar() {
         <span className="ub-sep" />
         {w0
           ? <span className={`ub-limit ${w0.utilization >= 1 ? 'rejected' : w0.utilization >= 0.8 || (w0.eta && w0.eta - Date.now() < 2 * 3_600_000) ? 'warning' : 'allowed'}`} title={`${windowText(w0)}. 누르면 자세히 봅니다`}>
-              {KIND[w0.kind] ?? w0.kind} 한도 <b>{Math.round(w0.utilization * 100)}%</b>{etaText(w0) ? ` · ${etaText(w0)}` : ''}
+              {KIND[w0.kind] ?? w0.kind} 한도 <b>{leftPct(w0)}% 남음</b>{etaText(w0) ? ` · ${etaText(w0)}` : ''}
             </span>
           : lim ? <span className={`ub-limit ${lim.status}`}>{limText}</span>
             : <span className="muted" title="채팅 방식의 에이전트가 한 번 일하면 Claude 계정의 한도를 받아 옵니다">한도 —</span>}
@@ -71,12 +72,12 @@ export function UsageBar() {
         <div className="ub-pop" role="dialog" aria-label="오늘 사용량">
           {b.windows.length > 0 && (
             <>
-              <div className="ub-pop-head">Claude 계정의 사용 한도</div>
+              <div className="ub-pop-head">Claude 계정의 사용 한도 <span className="muted">(막대는 쓴 만큼)</span></div>
               {b.windows.map((w) => (
                 <div key={w.kind} className="ub-row">
                   <span className="grow">{KIND[w.kind] ?? w.kind}{w.resetsAt ? <span className="muted"> · {whenText(w.resetsAt)} 초기화</span> : null}</span>
                   <span className={`ub-barwrap lim${w.utilization >= 0.8 ? ' hot' : ''}`}><span style={{ width: `${Math.min(100, Math.round(w.utilization * 100))}%` }} /></span>
-                  <b>{Math.round(w.utilization * 100)}%</b>
+                  <b title={`${Math.round(w.utilization * 100)}% 씀`}>{leftPct(w)}% 남음</b>
                 </div>
               ))}
               {b.windows.some((w) => w.eta) && <div className="muted ub-note">{b.windows.filter((w) => w.eta).map((w) => `${KIND[w.kind] ?? w.kind}: ${etaText(w)}`).join(' · ')} (최근 1시간의 속도로 어림한 것입니다)</div>}

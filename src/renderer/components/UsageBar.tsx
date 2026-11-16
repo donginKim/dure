@@ -27,6 +27,12 @@ function Spark({ week }: { week: number[] }) {
 export function UsageBar({ onOpenAttention }: { onOpenAttention: () => void }) {
   const [b, setB] = useState<Bar | null>(null);
   const [open, setOpen] = useState(false);
+  const [companion, setCompanion] = useState(false);
+  useEffect(() => {
+    const load = (): void => { window.dure.settings.get().then((s) => setCompanion(s.companion)).catch(() => undefined); };
+    load();
+    return window.dure.onChanged((topic) => { if (topic === 'settings') load(); });
+  }, []);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let alive = true;
@@ -69,7 +75,7 @@ export function UsageBar({ onOpenAttention }: { onOpenAttention: () => void }) {
           : lim ? <span className={`ub-limit ${lim.status}`}>{limText}</span>
             : <span className="muted" title="채팅 방식의 에이전트가 한 번 일하면 Claude 계정의 한도를 받아 옵니다">한도 —</span>}
       </button>
-      <Companion onOpenAttention={onOpenAttention} limitHot={!!w0 && (w0.utilization >= 0.8 || (!!w0.eta && w0.eta - Date.now() < 2 * 3_600_000))} />
+      {companion && <Companion onOpenAttention={onOpenAttention} limitHot={!!w0 && (w0.utilization >= 0.8 || (!!w0.eta && w0.eta - Date.now() < 2 * 3_600_000))} />}
       {open && (
         <div className="ub-pop" role="dialog" aria-label="오늘 사용량">
           {b.windows.length > 0 && (

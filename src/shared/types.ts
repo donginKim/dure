@@ -438,6 +438,8 @@ export interface Settings {
   defaultEngine: AgentEngine;
   /** 화면 모양: 어둡게, 밝게, macOS 를 따라 */
   theme: 'dark' | 'light' | 'system';
+  /** 하단바의 도트 일꾼 */
+  companion: boolean;
   /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */
   coordinatorModel: string;
   /** 조율 에이전트의 effort. 비우면 Claude Code 의 기본 (일하는 에이전트의 effort 는 claudeEffort) */

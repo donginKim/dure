@@ -168,7 +168,7 @@ test('채팅 방식으로 띄우면 터미널이 없고, 구조화된 입출력 
   expect(core.pty.list(ws.id)).toEqual([]);
   expect(core.service.isAgentRunning(ws.id)).toBe(true);
   const argv = argvLog(ws.id)[0]!;
-  expect(argv).toEqual(expect.arrayContaining(['--output-format', 'stream-json', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages', '--permission-mode', 'acceptEdits', '--mcp-config', '--settings']));
+  expect(argv).toEqual(expect.arrayContaining(['--output-format', 'stream-json', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio', '--include-partial-messages', '--permission-mode', 'auto', '--mcp-config', '--settings']));
   expect(argv).not.toContain('--resume');
   expect(core.workspaces.getSessionId(ws.id)).toBe('s-new');
   // 두 번 불러도 하나만 뜬다
@@ -503,7 +503,7 @@ test('설정의 모델과 추가 인자가 에이전트의 인자로 들어간�
   expect(argv.slice(argv.indexOf('--effort'), argv.indexOf('--effort') + 2)).toEqual(['--effort', 'high']);
   expect(argv).toEqual(expect.arrayContaining(['--add-dir', '/a b']));
   // 두레가 정하는 인자는 그대로다
-  expect(argv).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits', '--output-format', 'stream-json']));
+  expect(argv).toEqual(expect.arrayContaining(['--permission-mode', 'auto', '--output-format', 'stream-json']));
 });
 
 test('설정의 실행 파일 경로를 쓴다. 쓸 수 없는 경로면 이유를 알려 주고 띄우지 않는다', async () => {

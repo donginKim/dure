@@ -2,7 +2,7 @@ import { ActivityPane } from './ActivityPane';
 import { ModelPicker } from './ModelPicker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ERROR_PREFIX } from '@shared/ipc';
-import type { Project, Repo, TerminalInfo, Todo, Workspace } from '@shared/types';
+import type { Project, Repo, TerminalInfo, Todo, Workspace, PermissionMode } from '@shared/types';
 import { recallView, rememberView, type ViewMode } from '../chatView';
 import { STATUS_LABEL, type Selection } from '../tree';
 import { BrowserPane } from './BrowserPane';
@@ -14,7 +14,7 @@ import { DbRequests } from './DbRequests';
 import { SlackRequests } from './SlackRequests';
 import { PeerInbox } from './PeerInbox';
 import { CommitDialog } from './CommitDialog';
-import { ConfirmDialog } from './dialogs';
+import { ConfirmDialog, BYPASS_WARNING } from './dialogs';
 import { TerminalPane } from './TerminalPane';
 import type { ConversationData } from './ConversationPanel';
 import { SidePanel } from './SidePanel';
@@ -180,7 +180,6 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
         <NameEditor workspace={workspace} readOnly={project?.status === 'done'} />
         <span className="branch" title={workspace.branch}>{workspace.branch}</span>
         <span className="tag">{AGENT_LABEL[workspace.agentKind]}</span>
-        {workspace.permissionMode === 'bypass' && <span className="tag warn">승인 생략</span>}
         <span className="tag">{STATUS_LABEL[workspace.status]}</span>
         {workspace.summary && <span className="ws-summary" title={`에이전트가 적은 요약: ${workspace.summary}`}>{workspace.summary}</span>}
         <span className="spacer" />
@@ -196,6 +195,21 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
         </div>
         {readOnly && <span className="tag">완료된 프로젝트 · 기록만 봅니다</span>}
         <ModelPicker workspace={workspace} readOnly={readOnly} onError={setError} onNote={setNote} />
+        <select
+          className={`perm-select${workspace.permissionMode === 'bypass' ? ' warn' : ''}`} value={workspace.permissionMode} disabled={readOnly}
+          title="에이전트가 명령을 실행할 때 묻는 방식. 자동 판단: 안전한 것은 스스로 하고 위험한 것만 묻습니다"
+          onChange={(e) => {
+            const mode = e.target.value as PermissionMode;
+            if (mode === 'bypass' && !window.confirm(BYPASS_WARNING)) return;
+            window.dure.workspaces.setPermissionMode(workspace.id, mode)
+              .then((r) => setNote(r.applied === 'now' ? '권한 방식을 바꿨습니다 (지금부터 적용).' : '권한 방식을 바꿨습니다. 에이전트를 다음에 시작할 때 적용됩니다.'))
+              .catch((err: Error) => setError(err.message));
+          }}
+        >
+          <option value="auto">권한: 자동 판단</option>
+          <option value="ask">권한: 승인 필요</option>
+          <option value="bypass">권한: 승인 생략</option>
+        </select>
         {canChat && !hasAgent && !readOnly && (
           <select
             className="engine-select" value={workspace.engine} onChange={(e) => setEngine(e.target.value as 'chat' | 'terminal')}

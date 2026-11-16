@@ -26,7 +26,7 @@ export function NewWorkspaceDialog({ projectId, repos, initialRepoId, onClose, o
   const [branches, setBranches] = useState<string[]>([]);
   const [baseBranch, setBaseBranch] = useState('');
   const [agentKind, setAgentKind] = useState<AgentKind>('claude');
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>('ask');
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('auto');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -96,6 +96,7 @@ export function NewWorkspaceDialog({ projectId, repos, initialRepoId, onClose, o
       <div className="field">
         <label>권한 모드</label>
         <div className="radio-row">
+          <label><input type="radio" checked={permissionMode === 'auto'} onChange={() => setPermissionMode('auto')} /> 자동 판단 (위험한 것만 묻기)</label>
           <label><input type="radio" checked={permissionMode === 'ask'} onChange={() => setPermissionMode('ask')} /> 승인 필요</label>
           <label><input type="radio" checked={permissionMode === 'bypass'} onChange={() => setPermissionMode('bypass')} /> 승인 생략</label>
         </div>

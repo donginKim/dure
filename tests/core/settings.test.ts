@@ -8,7 +8,7 @@ const fresh = (): SettingsService => new SettingsService(openDatabase(':memory:'
 
 test('처음에는 기본값이다', () => {
   expect(fresh().get()).toEqual(DEFAULT_SETTINGS);
-  expect(DEFAULT_SETTINGS).toMatchObject({ defaultEngine: 'chat', defaultAgent: 'claude', defaultPermissionMode: 'ask', threadCap: 10, projectCap: 50, autoTrust: true });
+  expect(DEFAULT_SETTINGS).toMatchObject({ defaultEngine: 'chat', defaultAgent: 'claude', defaultPermissionMode: 'auto', threadCap: 10, projectCap: 50, autoTrust: true });
 });
 
 test('바꾼 것만 바뀌고, changed 가 나고, 다시 열어도 남는다', () => {

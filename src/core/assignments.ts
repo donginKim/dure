@@ -550,7 +550,7 @@ export class AssignmentService extends EventEmitter {
           const repo = this.d.repos.get(repoId)!;
           const baseBranch = await this.d.coordinator().currentBranch(repo.path);
           // 권한은 "승인 필요" 로 만든다: 남이 나눠 준 일이 승인 생략으로 돌지 않게 한다.
-          const ws = await this.d.service.create({ projectId: r.project_id, repoId, name: p.name, baseBranch, agentKind: 'claude', permissionMode: 'ask' });
+          const ws = await this.d.service.create({ projectId: r.project_id, repoId, name: p.name, baseBranch, agentKind: 'claude', permissionMode: 'auto' });
           if (p.item.role) this.d.workspaces.update(ws.id, { summary: p.item.role.slice(0, 80) });
           created.push(this.d.workspaces.get(ws.id) ?? ws);
           for (const t of p.item.todos) todoIds.push(this.d.todos.add({ projectId: r.project_id, workspaceId: ws.id, ...t }, 'agent').id);

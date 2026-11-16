@@ -3,7 +3,7 @@ import { USER_NAME } from '@shared/messages';
 import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice, type LimitInfo, type StuckInfo } from '@shared/types';
+import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type PermissionMode, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice, type LimitInfo, type StuckInfo } from '@shared/types';
 import { baseInstructions, coordinatorInstructions } from './agents/instructions';
 import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
@@ -351,6 +351,28 @@ export class WorkspaceService extends EventEmitter {
    * 이 워크스페이스의 모델을 바꾼다 (빈 글이면 설정의 모델을 따른다). 한도에 걸렸을 때 다른 모델로 이어 가는 데 쓴다.
    * 채팅 방식으로 도는 중이면 대화를 끊지 않고 다음 응답부터 바꾼다. 터미널 방식이거나 꺼져 있으면 다음에 시작할 때 듣는다.
    */
+  /**
+   * 권한 방식을 바꾼다. 승인 필요 ↔ 자동 판단은 채팅 방식으로 도는 중이면 대화를 끊지 않고 바로 바꾼다.
+   * 승인 생략으로 바꾸거나 거기서 되돌리는 것, 터미널 방식, 꺼져 있을 때는 다음에 시작할 때 듣는다.
+   */
+  async setPermissionMode(id: string, mode: PermissionMode): Promise<{ applied: 'now' | 'next' }> {
+    const ws = this.mustGet(id);
+    if (ws.role === 'coordinator') throw new Error('조율 에이전트의 권한 방식은 바꿀 수 없습니다.');
+    if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
+    if (mode !== 'ask' && mode !== 'auto' && mode !== 'bypass') throw new Error('권한 방식이 올바르지 않습니다.');
+    let applied: 'now' | 'next' = 'next';
+    if (ws.agentKind === 'claude' && mode !== 'bypass' && ws.permissionMode !== 'bypass' && this.engine?.has(id)) {
+      try {
+        if (await this.engine.setPermissionMode(id, mode === 'auto' ? 'auto' : 'acceptEdits')) applied = 'now';
+      } catch (e) {
+        throw new Error(`에이전트가 권한 방식을 바꾸지 못했습니다: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    this.d.workspaces.update(id, { permissionMode: mode });
+    this.emit('changed', id);
+    return { applied };
+  }
+
   async setModel(id: string, model: string): Promise<{ applied: 'now' | 'next' }> {
     const ws = this.mustGet(id);
     if (ws.agentKind !== 'claude') throw new Error('모델은 Claude Code 워크스페이스에서만 바꿀 수 있습니다.');

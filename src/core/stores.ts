@@ -113,7 +113,7 @@ export class RepoStore {
 
 export type NewWorkspace = Omit<Workspace, 'summary' | 'status' | 'createdAt' | 'engine' | 'role' | 'model'> & { token: string; engine?: Workspace['engine']; role?: Workspace['role'] };
 
-const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine', model: 'model' } as const;
+const PATCH_COLUMNS = { name: 'name', nameLocked: 'name_locked', summary: 'summary', status: 'status', engine: 'engine', model: 'model', permissionMode: 'permission_mode' } as const;
 export type WorkspacePatch = Partial<Pick<Workspace, keyof typeof PATCH_COLUMNS>>;
 
 export class WorkspaceStore {

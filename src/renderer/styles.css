@@ -1120,3 +1120,5 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .composer-off > button, .composer-off .btn { flex: none; white-space: nowrap; }
 /* 창이 좁으면 오른쪽 TODO 칸이 대화 칸을 누르지 않게 줄인다 */
 .todo-panel { width: clamp(220px, 34%, 340px); }
+.perm-select { max-width: 150px; }
+.perm-select.warn { color: var(--warn); }

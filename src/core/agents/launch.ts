@@ -115,7 +115,8 @@ function buildBase(i: AgentLaunchInput): AgentLaunch {
         '--allowedTools', 'mcp__dure',
         '--settings', settings,
         '--append-system-prompt', i.instructions,
-        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', i.manualEdits ? 'default' : 'acceptEdits']),
+        // auto: Claude Code 가 안전한 동작은 스스로 허용하고, 되돌리기 어렵거나 위험한 것만 묻는다.
+        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', i.manualEdits ? 'default' : i.permissionMode === 'auto' ? 'auto' : 'acceptEdits']),
       ],
       env: {},
       files: [
@@ -139,7 +140,10 @@ function buildBase(i: AgentLaunchInput): AgentLaunch {
       '-c', `developer_instructions=${toml(i.instructions)}`,
       ...(i.permissionMode === 'bypass'
         ? ['--dangerously-bypass-approvals-and-sandbox']
-        : ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request']),
+        : i.permissionMode === 'auto'
+          // 작업 폴더 안에서만 쓰게 가두고, 승인 요청은 Codex 의 자동 검토로 넘긴다.
+          ? ['--sandbox', 'workspace-write', '--approve-for-me']
+          : ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request']),
     ],
     // 토큰은 인자에 넣지 않는다. 인자는 ps 로 누구나 볼 수 있다.
     env: { DURE_MCP_TOKEN: i.token },

@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, ProjectDashboard, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, PermissionMode, ProjectDashboard, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -121,6 +121,8 @@ export interface DureApi {
     setEngine(id: string, engine: AgentEngine): Promise<void>;
     /** 모델을 바꾼다 (빈 글이면 설정의 모델). 채팅 방식으로 도는 중이면 바로(now), 아니면 다음에 시작할 때(next) */
     setModel(id: string, model: string): Promise<{ applied: 'now' | 'next' }>;
+    /** 권한 방식을 바꾼다. 채팅 방식으로 도는 중이면 승인 필요 ↔ 자동 판단은 바로 적용된다 */
+    setPermissionMode(id: string, mode: PermissionMode): Promise<{ applied: 'now' | 'next' }>;
     /** 막혔다는 표시를 거둔다 (그대로 두기) */
     dismissStuck(id: string): Promise<void>;
     /** 표시 이름을 바꾼다 (브랜치와 작업 폴더는 그대로). 직접 지은 이름은 에이전트가 바꾸지 못한다 */
@@ -407,7 +409,7 @@ export const IPC_CHANNELS = [
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
   'workspaces.list', 'workspaces.doing', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
-  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.dismissStuck', 'workspaces.rename', 'workspaces.setAutoName',
+  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.setPermissionMode', 'workspaces.dismissStuck', 'workspaces.rename', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
   'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.setAfter', 'todos.pending', 'todos.nudge',

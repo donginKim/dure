@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { UsageBar as Bar } from '@shared/types';
+import { Companion } from './Companion';
 
 export const tokens = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 const hhmm = (sec: number): string => { const d = new Date(sec * 1000); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -23,7 +24,7 @@ function Spark({ week }: { week: number[] }) {
  * 하단바: 이 PC 의 두레 에이전트들이 오늘 쓴 토큰과 계정의 사용 한도를 한 줄로 본다. 누르면 프로젝트·모델별로 펼친다.
  * 토큰은 예산과 같은 셈(입력 + 캐시 쓰기 + 출력)이다. 캐시에서 읽은 것은 따로 보인다.
  */
-export function UsageBar() {
+export function UsageBar({ onOpenAttention }: { onOpenAttention: () => void }) {
   const [b, setB] = useState<Bar | null>(null);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -68,6 +69,7 @@ export function UsageBar() {
           : lim ? <span className={`ub-limit ${lim.status}`}>{limText}</span>
             : <span className="muted" title="채팅 방식의 에이전트가 한 번 일하면 Claude 계정의 한도를 받아 옵니다">한도 —</span>}
       </button>
+      <Companion onOpenAttention={onOpenAttention} limitHot={!!w0 && (w0.utilization >= 0.8 || (!!w0.eta && w0.eta - Date.now() < 2 * 3_600_000))} />
       {open && (
         <div className="ub-pop" role="dialog" aria-label="오늘 사용량">
           {b.windows.length > 0 && (

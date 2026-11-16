@@ -17,7 +17,6 @@ import { VerifyCommand } from './VerifyParts';
 import { MergeSection } from './MergeSection';
 import { AgreementsSection } from './AgreementsSection';
 import { AutoShipSection } from './AutoShipSection';
-import { Paddy } from './Paddy';
 import { remoteGroups } from '../boardView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -112,7 +111,6 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       {tab === 'db' && <DbPanel projectId={project.id} workspaces={everyone} readOnly={done} />}
       {tab === 'status' && (
     <div className="page">
-      <Paddy projectId={project.id} title={`${project.name} 의 논`} />
       <BoardSection projectId={project.id} />
       {done && (
         <div className="done-banner">

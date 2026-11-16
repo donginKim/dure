@@ -57,6 +57,8 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 빠른 메모 한 건 */
+export interface Capture { id: string; text: string; createdAt: number }
 /** 예약 실행: 정한 때에 워크스페이스의 에이전트에게 시킬 일 */
 export interface Schedule {
   id: string; projectId: string; workspaceId: string; title: string; prompt: string;
@@ -467,6 +469,8 @@ export interface Settings {
   theme: 'dark' | 'light' | 'system';
   /** 하단바의 도트 일꾼 */
   companion: boolean;
+  /** 빠른 메모를 여는 전역 단축키 (Electron 의 단축키 글. 비우면 끈다) */
+  captureShortcut: string;
   /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */
   coordinatorModel: string;
   /** 조율 에이전트의 effort. 비우면 Claude Code 의 기본 (일하는 에이전트의 effort 는 claudeEffort) */

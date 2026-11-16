@@ -1237,3 +1237,18 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .sched-when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .sched-when .grow { flex: 1; }
 .sched-min { width: 56px; text-align: right; }
+
+/* 빠른 메모 */
+html.capture-window body::before { display: none; }
+html.capture-window, html.capture-window body, html.capture-window #root { background: var(--panel); }
+.capture { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; -webkit-app-region: drag; }
+.capture-title { font-size: 12px; font-weight: 600; }
+.capture-title .muted { font-weight: 400; margin-left: 6px; }
+.capture textarea { flex: 1; resize: none; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px; outline: none; -webkit-app-region: no-drag; }
+.capture textarea:focus { border-color: var(--accent); }
+.inbox { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--panel); padding: 10px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+.inbox-head { display: flex; align-items: center; gap: 10px; }
+.inbox-head .grow, .inbox-row .grow { flex: 1; min-width: 0; }
+.inbox-head select { max-width: 260px; }
+.inbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.inbox-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

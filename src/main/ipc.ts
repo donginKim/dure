@@ -53,6 +53,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'projects.dashboard': () => core.dashboard(),
     'projects.paddy': (projectId: string | null) => core.paddy.days(typeof projectId === 'string' && projectId ? projectId : null),
     'projects.usageBar': () => core.usageBar(),
+    'captures.list': () => core.captures.list(),
+    'captures.add': (text: string) => core.captures.add(text),
+    'captures.remove': (id: string) => core.captures.remove(String(id)),
+    'captures.toTodo': (id: string, projectId: string, workspaceId: string | null) => core.captures.toTodo(String(id), String(projectId), workspaceId ? String(workspaceId) : null),
     'schedules.list': (projectId: string) => core.schedules.list(String(projectId)),
     'schedules.save': (input: ScheduleInput) => core.schedules.save(input),
     'schedules.remove': (id: string) => core.schedules.remove(String(id)),
@@ -426,6 +430,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.attention.on('changed', onAttentionChanged);
   const onSchedulesChanged = (): void => changed('schedules');
   core.schedules.on('changed', onSchedulesChanged);
+  const onCapturesChanged = (): void => changed('captures');
+  core.captures.on('changed', onCapturesChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
@@ -460,6 +466,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.attention.off('changed', onAttentionChanged);
     core.attention.off('added', onAttentionAdded);
     core.schedules.off('changed', onSchedulesChanged);
+    core.captures.off('changed', onCapturesChanged);
     clearTimeout(noteTimer);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);

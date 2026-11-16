@@ -486,6 +486,10 @@ const MIGRATIONS: string[] = [
     kind TEXT NOT NULL, time TEXT NOT NULL, weekday INTEGER, run_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1, last_run_at INTEGER, created_at INTEGER NOT NULL
   );
   `,
+  // 빠른 메모 (단축키로 적어 두는 받은함)
+  `
+  CREATE TABLE captures (id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at INTEGER NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

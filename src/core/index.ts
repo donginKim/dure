@@ -27,6 +27,7 @@ import { DoingService } from './doing';
 import { PaddyService, dayOf } from './paddy';
 import { DigestService } from './digest';
 import { ScheduleService } from './schedule';
+import { CaptureStore } from './captures';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
@@ -118,6 +119,8 @@ export interface Core {
   digest: DigestService;
   /** 예약 실행 */
   schedules: ScheduleService;
+  /** 빠른 메모 */
+  captures: CaptureStore;
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
@@ -492,10 +495,11 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     send: (projectId, workspaceId, body, title) => { messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }); },
   });
   if (o.networkProbe !== null) schedules.start();
+  const captures = new CaptureStore({ db, addTodo: (projectId, workspaceId, title, detail) => { todos.add({ projectId, workspaceId, title, detail }, 'user'); } });
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     usageBar() {
       const COUNTED = 'coalesce(sum(input + cache_write + output), 0)';
       const start = new Date(); start.setHours(0, 0, 0, 0);

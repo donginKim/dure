@@ -197,6 +197,12 @@ const api: DureApi = {
     restore: (id) => call('checkpoints.restore', id),
   },
   usage: { summary: (projectId, days) => call('usage.summary', projectId, days) },
+  captures: {
+    list: () => call('captures.list'),
+    add: (text) => call('captures.add', text),
+    remove: (id) => call('captures.remove', id),
+    toTodo: (id, projectId, workspaceId) => call('captures.toTodo', id, projectId, workspaceId ?? null),
+  },
   schedules: {
     list: (projectId) => call('schedules.list', projectId),
     save: (input) => call('schedules.save', input),

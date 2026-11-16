@@ -474,6 +474,11 @@ const MIGRATIONS: string[] = [
   `
   CREATE TABLE self_out (aid TEXT PRIMARY KEY, project_id TEXT NOT NULL, peer_id TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL);
   `,
+  // 두레 논: 커밋과 main 반영의 기록 (날마다 센다)
+  `
+  CREATE TABLE work_events (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, project_id TEXT NOT NULL, workspace_id TEXT, at INTEGER NOT NULL);
+  CREATE INDEX work_events_by_at ON work_events (at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

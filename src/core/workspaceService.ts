@@ -363,9 +363,15 @@ export class WorkspaceService extends EventEmitter {
   private readonly limits = new Map<string, LimitInfo>();
 
   /** 에이전트가 알려 온 사용 한도. 풀리면 지운다. */
+  private lastAccountLimit: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; at: number } | null = null;
+  /** 가장 최근에 받은 사용 한도 소식 (계정 전체) */
+  accountLimit(): { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; at: number } | null { return this.lastAccountLimit; }
+
   noteLimit(id: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null }): void {
     const ws = this.d.workspaces.get(id);
     if (!ws) return;
+    // 계정 전체의 최근 한도 소식 (하단바에 보인다): 어느 워크스페이스에서 왔든 가장 새 것.
+    this.lastAccountLimit = { status: info.status, kind: info.kind || this.lastAccountLimit?.kind || '', resetsAt: info.resetsAt, utilization: info.utilization, at: Date.now() };
     const before = this.limits.get(id);
     if (info.status === 'allowed') { if (this.limits.delete(id)) this.emit('changed', id); return; }
     // 걸린 뒤에 온 "가까워짐" 은 걸린 것을 덮지 않는다 (같은 한도이거나, 어느 한도인지 모르면).

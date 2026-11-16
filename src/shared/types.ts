@@ -57,6 +57,21 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 두레 논의 하루 한 칸 */
+export interface PaddyDay { date: string; todos: number; commits: number; mains: number; score: number }
+/** 하단바: 오늘 이 PC 의 에이전트가 쓴 토큰과 계정의 사용 한도 */
+export interface UsageBar {
+  /** 오늘 0시부터. counted 는 입력 + 캐시 쓰기 + 출력 (캐시에서 읽은 것은 뺀다, 예산과 같은 셈) */
+  today: { counted: number; cacheRead: number; output: number; requests: number };
+  /** 최근 7일, 날마다의 counted (오래된 것부터) */
+  week: number[];
+  projects: { projectId: string; name: string; counted: number }[];
+  models: { model: string; counted: number }[];
+  /** 가장 최근에 받은 사용 한도 소식 (어느 워크스페이스에서든). 없으면 null */
+  limit: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; at: number } | null;
+  /** 지금 일하는 에이전트 수 */
+  working: number;
+}
 export type AutoShipMode = 'off' | 'commit' | 'main';
 /** 자동 반영의 한 단계 기록 */
 export interface ShipEvent { id: string; projectId: string; workspaceId: string; workspaceName: string; at: number; stage: 'verify' | 'review' | 'secret' | 'commit' | 'merge' | 'advance' | 'done'; ok: boolean; message: string }

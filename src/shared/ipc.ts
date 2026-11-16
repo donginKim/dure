@@ -9,7 +9,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, PermissionMode, ProjectDashboard, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -40,6 +40,10 @@ export interface DureApi {
     budget(id: string): Promise<BudgetStatus>;
     /** 여러 프로젝트 대시보드 (완료되지 않은 프로젝트마다 한눈 요약) */
     dashboard(): Promise<ProjectDashboard[]>;
+    /** 두레 논: 최근 1년, 날마다 한 일. projectId 를 비우면 모든 프로젝트 */
+    paddy(projectId?: string | null): Promise<PaddyDay[]>;
+    /** 하단바: 오늘 쓴 토큰, 최근 7일, 프로젝트·모델별, 사용 한도 */
+    usageBar(): Promise<UsageBar>;
     setBudget(id: string, daily: number, total: number): Promise<BudgetStatus>;
     allowToday(id: string): Promise<BudgetStatus>;
     /** 자동 반영의 기록 (새것부터) */
@@ -395,7 +399,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',

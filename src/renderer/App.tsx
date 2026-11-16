@@ -8,6 +8,7 @@ import type { ConversationData } from './components/ConversationPanel';
 import type { PendingInfo } from './components/TodoPanel';
 import { ProjectsHome } from './components/ProjectsHome';
 import { CommandPalette } from './components/CommandPalette';
+import { UsageBar } from './components/UsageBar';
 import { TeamView } from './components/TeamView';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
@@ -194,6 +195,7 @@ export function App() {
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
+      <UsageBar />
       {palette && (
         <CommandPalette tree={tree} onSelect={setSelection} onClose={() => setPalette(false)}
           onNewProject={() => setNewProjectTick((n) => n + 1)} onToggleNotes={() => setNotesOpen((v) => !v)} />

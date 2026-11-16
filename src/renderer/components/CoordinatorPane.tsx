@@ -135,7 +135,7 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
               {proposal.suggestedBy
                 ? <div className="plan-sub"><b>{proposal.suggestedBy.name}</b> 이(가) 제안한 계획입니다 (다른 사람이 쓴 것입니다). <b>아직 아무것도 만들어지지 않았습니다.</b> 내 PC 에 만들 워크스페이스는 저장소를 골라야 합니다. 고칠 것을 고친 뒤 승인하면 반영되고, 승인이나 거절은 그 사람에게 알려집니다.</div>
                 : suggestTo
-                  ? <div className="plan-sub">이 프로젝트는 <b>{suggestTo}</b> 이(가) 열었습니다. 여기서 승인해도 만들어지지 않고, <b>{suggestTo} 에게 제안으로 갑니다.</b> 그 사람이 승인하면 각자에게 배정으로 가고 (내 몫도 배정으로 옵니다), 수락할 때 저장소를 고릅니다.</div>
+                  ? <div className="plan-sub">이 프로젝트의 리더는 <b>{suggestTo}</b> 입니다. 승인하면 <b>내 PC 에 바로 만들어지고</b>, {suggestTo} 에게는 내가 맡은 일로 알립니다 (그쪽의 승인은 필요 없습니다). 진행과 결과(끝낸 TODO, 커밋 제목, 확인 결과)는 두레가 {suggestTo} 에게 보냅니다. 다른 사람에게 일을 나눠 주는 것은 리더만 합니다.</div>
                   : <div className="plan-sub">조율 에이전트가 기획서를 분석해 올린 계획입니다. <b>아직 아무것도 만들어지지 않았습니다.</b> 고칠 것을 고친 뒤 승인하면, 여기 보이는 그대로 만들어집니다.</div>}
             </div>
             <button className="btn ghost" onClick={onBack} title="계획안은 그대로 두고 대화로 돌아갑니다">대화로 돌아가기</button>
@@ -276,10 +276,10 @@ function PlanReview({ proposal, repos, newRepoDir, people, suggestTo, onBack }: 
             </>
           ) : (
             <>
-              <span className="plan-count">{problem ?? (suggestTo ? `${suggestTo} 이(가) 승인해야 반영됩니다. 지금은 아무것도 만들어지지 않습니다` : null) ?? `승인하면 ${counts.added ? `저장소 ${counts.added}개가 등록되고, ` : ''}${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다${counts.handed ? `. 워크스페이스 ${counts.handed}개는 다른 사람에게 나눠 줍니다` : ''}`}</span>
+              <span className="plan-count">{problem ??  `승인하면 ${counts.added ? `저장소 ${counts.added}개가 등록되고, ` : ''}${counts.repos ? `저장소 ${counts.repos}개, ` : ''}워크스페이스 ${counts.workspaces}개, TODO ${counts.todos}개가 만들어집니다${counts.handed ? `. 워크스페이스 ${counts.handed}개는 다른 사람에게 나눠 줍니다` : ''}`}</span>
               <button className="btn" disabled={busy} title="계획안은 그대로 두고, 고칠 곳만 조율 에이전트에게 말합니다. 검토 화면에서 고친 것도 함께 갑니다" onClick={() => setRevising('')}>고쳐 달라기</button>
               <button className="btn" disabled={busy} onClick={() => setRejecting(true)}>거절</button>
-              <button className="btn primary" disabled={busy || problem !== null} onClick={() => void approve()}>{busy ? (suggestTo ? '보내는 중…' : '만드는 중…') : suggestTo ? `${suggestTo} 에게 제안 보내기` : approveLabel(decision)}</button>
+              <button className="btn primary" disabled={busy || problem !== null} onClick={() => void approve()}>{busy ? '만드는 중…' : approveLabel(decision)}</button>
             </>
           )}
         </div>
@@ -346,7 +346,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
   // 참여한 프로젝트에서 아직 받은 일도, 내 워크스페이스도 없다: 리더에게 내 몫을 제안하는 길을 보인다.
   const noWork = !readOnly && !!info.suggestTo && !info.observer && (info.assigned ?? 0) === 0 && everyone.every((w) => w.role === 'coordinator');
   const askForShare = (): void => {
-    const text = `${info.suggestTo} 이(가) 보낸 기획서 정리와 현황판을 보고, 내가 맡으면 좋을 일을 골라 계획안으로 올려 줘. 리더가 이미 맡은 일과 겹치지 않게 하고, 왜 그 일을 고르는지도 짧게 적어 줘. 내가 보고 ${info.suggestTo} 에게 제안으로 보낼게.`;
+    const text = `${info.suggestTo} 이(가) 보낸 기획서 정리와 현황판을 보고, 내가 맡을 일을 골라 계획안(워크스페이스와 TODO)으로 올려 줘. 리더가 이미 맡은 일과 겹치지 않게 하고, 왜 그 일을 고르는지도 짧게 적어 줘. 내가 승인하면 내 PC 에 만들고, 리더에게는 결과만 간다.`;
     setError('');
     // 꺼져 있으면 켜고, 받을 수 있게 될 때까지 잠깐씩 다시 보낸다 (막 켠 에이전트는 몇 초 뒤에 받는다).
     const sendSoon = async (): Promise<void> => {
@@ -381,10 +381,10 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
       {noWork && !proposal && (
         <div className="member-nowork">
           <div className="grow">
-            <b>아직 받은 일이 없습니다.</b> 이 프로젝트의 리더는 {info.suggestTo} 입니다. 리더가 일을 나눠 주면 여기에 배정으로 오고, 수락하면 워크스페이스와 TODO 가 만들어집니다.
-            <div className="muted">먼저 하고 싶은 일이 있으면, 조율 에이전트가 기획서에서 내 몫을 골라 계획안을 만들고 내가 보고 리더에게 제안할 수 있습니다.</div>
+            <b>아직 맡은 일이 없습니다.</b> 이 프로젝트의 리더는 {info.suggestTo} 입니다. 내 몫은 내가 정해 바로 시작할 수 있습니다.
+            <div className="muted">조율 에이전트가 기획서에서 내 몫을 골라 계획안을 만들고, 내가 승인하면 내 PC 에 워크스페이스와 TODO 가 만들어집니다. 리더에게는 진행과 결과만 갑니다 (리더의 승인은 필요 없습니다). 리더가 나눠 준 일은 배정으로 옵니다.</div>
           </div>
-          <button className="btn primary" onClick={askForShare}>내 몫 정해서 제안하기</button>
+          <button className="btn primary" onClick={askForShare}>내 몫 정해서 시작하기</button>
         </div>
       )}
       {!(proposal && reviewing) && <AssignPanel projectId={project.id} repos={repos} readOnly={readOnly} />}

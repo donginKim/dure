@@ -96,6 +96,8 @@ export class CoordinatorService extends EventEmitter {
        * mine: 내가 열었다 (리더). 아니면 계획안은 리더에게 제안으로 간다. auto: 참여자의 제안을 승인 없이 반영한다 (리더가 정한 것)
        */
       team?(projectId: string): { mine: boolean; myId: string; leaderName: string; auto: boolean } | null;
+      /** 참여자가 스스로 맡은 일을 리더에게 알린다 (승인이 필요 없다). 진행과 작업 보고는 이 뒤로 리더에게 간다 */
+      reportSelf?(projectId: string, body: { summary: string; items: { name: string; role: string; todos: PlanTodo[] }[] }, workspaceIds: string[]): void;
       /** 리더에게 계획안을 제안으로 보낸다 (닿지 않거나 받지 않으면 던진다) */
       suggest?(projectId: string, plan: SuggestedPlan): Promise<void>;
       /** 제안한 사람에게 결과를 알린다 */
@@ -496,34 +498,11 @@ export class CoordinatorService extends EventEmitter {
       if (problems.length) throw new Error(problems.join(' / '));
       if (newRepos.length === 0 && addRepos.length === 0 && items.length === 0 && projectTodos.length === 0) throw new Error('만들 것이 없습니다. 거절하려면 "거절" 을 누르세요.');
       const people = this.d.assign?.people(r.project_id) ?? [];
-      // 다른 사람이 연 프로젝트: 만들지 않고 그 사람(리더)에게 제안으로 보낸다. 리더가 승인하면 각자에게 배정으로 간다.
+      // 다른 사람이 연 프로젝트: 내 몫은 내가 정해 내 PC 에 바로 만든다. 리더에게는 "스스로 맡은 일" 로 알리기만 한다
+      // (리더 쪽의 승인이나 에이전트가 필요 없다: 리더의 사용 한도와 상관없이 진행된다). 남에게 나눠 주는 것은 리더만 한다.
       const team = this.d.assign?.team?.(r.project_id) ?? null;
-      if (team && !team.mine) {
-        const fresh = items.filter((it) => !it.existing);
-        if (fresh.length === 0 && projectTodos.length === 0 && items.every((it) => it.todos.length === 0)) throw new Error('제안할 것이 없습니다.');
-        if (fresh.length || projectTodos.length) {
-          await this.d.assign!.suggest!(r.project_id, {
-            summary: toProposal(r).summary, projectTodos,
-            items: fresh.map((it) => ({ name: it.name, role: it.role, owner: it.owner || team.myId, todos: it.todos })),
-          });
-        }
-        // 이미 있는 내 워크스페이스에 더하는 TODO 는 내 것이다: 바로 적는다.
-        const mineNow = items.filter((it) => it.existing);
-        let added = 0;
-        for (const it of mineNow) {
-          const ws = this.d.workspaces.list(r.project_id).find((w) => w.name === it.name);
-          if (ws) for (const t of it.todos) { this.d.todos.add({ projectId: r.project_id, workspaceId: ws.id, title: t.title, detail: t.detail, assignee: t.assignee }, 'agent'); added++; }
-        }
-        this.d.db.prepare("UPDATE proposals SET status = 'approved', items = ? WHERE id = ? AND status = 'pending'")
-          .run(JSON.stringify({ summary: toProposal(r).summary, newRepos: [], addRepos: [], items, projectTodos }), proposalId);
-        this.emit('changed', r.project_id);
-        this.tell(r.project_id, [
-          `사용자가 계획안을 보고, 프로젝트를 연 사람(${team.leaderName})에게 제안으로 보냈다. 아직 아무것도 만들어지지 않았다.`,
-          `${team.leaderName} 이(가) 승인하면 각자에게 배정으로 간다: 네 사용자의 몫도 배정으로 오고, 사용자가 수락하면 워크스페이스와 TODO 가 만들어진다. 승인이나 거절은 두레가 알려 준다. 그때까지 일을 시키지 말고 기다려라.`,
-          ...(added ? [`이미 있던 워크스페이스에 더하는 TODO ${added}개는 바로 적었다.`] : []),
-        ].join('\n'));
-        return { assigned: 0, repos: [], created: [], todos: added, suggested: true };
-      }
+      const member = team !== null && !team.mine;
+      if (member) for (const it of items) it.owner = '';
       const madeRepos: { path: string; repo?: Repo }[] = [];
       // 이 승인에서 등록한, 이미 있던 폴더. 되돌릴 때 등록만 푼다 (폴더는 건드리지 않는다).
       const added: Repo[] = [];
@@ -618,6 +597,13 @@ export class CoordinatorService extends EventEmitter {
       this.d.db.prepare("UPDATE proposals SET status = 'approved', items = ? WHERE id = ? AND status = 'pending'")
         .run(JSON.stringify({ summary, newRepos, addRepos, items: all, projectTodos, ...(from ? { from } : {}), ...(o.unseen ? { unseen: true } : {}) }), proposalId);
       this.emit('changed', r.project_id);
+      // 참여자: 리더에게 내가 맡은 일로 알린다 (못 닿으면 두레가 나중에 다시 보낸다).
+      const fresh = created.filter((w) => !mine.find((it) => it.name === w.name)?.existing);
+      if (member && team && fresh.length) {
+        try {
+          this.d.assign?.reportSelf?.(r.project_id, { summary, items: mine.filter((it) => !it.existing).map((it) => ({ name: it.name, role: it.role, todos: it.todos })) }, fresh.map((w) => w.id));
+        } catch { /* 알리지 못해도 만든 것은 그대로다 */ }
+      }
       // 다른 사람이 제안한 것이었으면 그 사람에게 결과를 알린다.
       if (from) void this.d.assign?.result?.(r.project_id, from.peerId, from.sid, 'approved', '').catch(() => undefined);
       // 일을 받지 않는 사람에게도 기획서 정리를 보낸다 (사용자가 골랐을 때). 못 보내도 승인은 그대로다.
@@ -640,6 +626,7 @@ export class CoordinatorService extends EventEmitter {
         ...[...byOwner].map(([peerId, list]) => `- ${people.find((p) => p.peerId === peerId)?.name ?? '다른 사람'} 에게 나눠 줬다 (아직 만들어지지 않았다. 그 사람이 자기 두레에서 수락해야 만들어진다. 수락하거나 거절하면 두레가 알려 준다): ${list.map((it) => `"${it.name}"`).join(', ')}`),
         ...(briefed.sent.length ? [`- 기획서 정리를 ${briefed.sent.join(', ')} 에게도 보냈다 (일은 맡기지 않았다. 그 사람이 자료로 받으면 그쪽 에이전트가 읽을 수 있다).`] : []),
         ...(briefed.failed.length ? [`- ${briefed.failed.join(', ')} 에게는 기획서 정리가 닿지 않았다 (꺼져 있다).`] : []),
+        ...(member && team ? [`- 이 프로젝트의 리더는 ${team.leaderName} 이다. 네 사용자가 스스로 맡은 일로 ${team.leaderName} 에게 알렸다 (승인은 필요 없다). 진행과 결과(끝낸 TODO, 커밋 제목, 확인 결과)는 두레가 리더에게 보낸다.`] : []),
         mine.length ? 'TODO 는 이미 적혀 있다. 다시 적지 마라. 이제 내 PC 의 각 워크스페이스에 message_send 로 작업을 시작하라고 알려라 (할 일은 그 워크스페이스의 TODO 에 있다고 알려 주면 된다).' : '내 PC 에 만든 워크스페이스는 없다. 나눠 준 사람들의 수락을 기다려라.',
       ].join('\n'));
       return { assigned: sent.length, repos: [...added, ...madeRepos.flatMap((m) => (m.repo ? [m.repo] : []))], created, todos: todoIds.length };

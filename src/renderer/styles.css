@@ -1129,7 +1129,7 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .usage-num.heavy { color: var(--warn); }
 
 /* 하단바 */
-:root { --statusbar: 30px; --paddy-1: #7cc46a; --paddy-2: #55b04e; --paddy-3: #3e9a48; --paddy-4: #e2ae45; --paddy-ear: #a8c65a; --paddy-bank: #5a4a36; --paddy-water: #1f3340; --paddy-summer: #1e3324; --paddy-autumn: #3a3220; --paddy-winter: #2a2d33; }
+:root { --statusbar: 26px; --paddy-1: #7cc46a; --paddy-2: #55b04e; --paddy-3: #3e9a48; --paddy-4: #e2ae45; --paddy-ear: #a8c65a; --paddy-bank: #5a4a36; --paddy-water: #1f3340; --paddy-summer: #1e3324; --paddy-autumn: #3a3220; --paddy-winter: #2a2d33; }
 :root[data-theme='light'] { --paddy-1: #6bb85a; --paddy-2: #3f9e3f; --paddy-3: #2c7f35; --paddy-4: #c98f1c; --paddy-ear: #8aa83a; --paddy-bank: #a88a62; --paddy-water: #d6e8ef; --paddy-summer: #dcebd6; --paddy-autumn: #f1e5c8; --paddy-winter: #e8e9ec; }
 .app { padding-bottom: var(--statusbar); }
 .notes { bottom: var(--statusbar); }
@@ -1193,7 +1193,7 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .companion { all: unset; display: flex; align-items: flex-end; gap: 2px; height: 100%; padding: 0 10px 0 6px; cursor: default; }
 .companion.wave { cursor: pointer; }
 .companion:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.companion svg { display: block; margin-bottom: -1px; }
+.companion svg { display: block; margin-bottom: -1px; height: 24px; width: auto; }
 .companion.cheer svg { animation: cp-hop 0.45s steps(2) infinite; }
 @keyframes cp-hop { 50% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .companion.cheer svg { animation: none; } }

@@ -138,6 +138,9 @@ export function SettingsView() {
           <Row label="화면 모양" help="밝게는 밝은 사무실이나 발표 화면에 좋습니다. 시스템은 macOS 의 모양(다크 모드)을 따릅니다. 터미널은 늘 어둡게 보입니다." {...row('theme')}>
             <Choice value={s.theme} onChange={(v) => save('theme', v)} options={[{ value: 'dark', label: '어둡게' }, { value: 'light', label: '밝게' }, { value: 'system', label: '시스템' }]} />
           </Row>
+          <Row label="도트 일꾼" help="하단바 오른쪽에 에이전트의 상태를 몸짓으로 보여 주는 작은 농부를 둡니다 (일하면 호미질, 답을 기다리면 손을 듦)." {...row('companion')}>
+            <Toggle on={s.companion} onChange={(v) => save('companion', v)} label="도트 일꾼" />
+          </Row>
         </div>
       </div>
 

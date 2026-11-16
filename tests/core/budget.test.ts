@@ -93,3 +93,17 @@ test('기본 하루 예산: 프로젝트에 상한이 없으면 설정의 기본
   expect(core.budget.status(projectId)).toMatchObject({ dailyLimit: 0, state: 'ok' });
   expect(() => core.settings.update({ autoCompactTokens: 5_000 })).toThrow('자동 압축');
 });
+
+test('하단바: 오늘 쓴 토큰(캐시 읽기는 따로), 최근 7일, 프로젝트별, 계정의 한도 소식', () => {
+  spend(4_000);
+  spend(1_000, Date.now() - 2 * 86_400_000);
+  const b = core.usageBar();
+  expect(b.today).toMatchObject({ counted: 4_000, cacheRead: 1_000_000, requests: 1 });
+  expect(b.week).toHaveLength(7);
+  expect(b.week.at(-1)).toBe(4_000);
+  expect(b.week.at(-3)).toBe(1_000);
+  expect(b.projects).toEqual([{ projectId, name: '쇼핑몰', counted: 4_000 }]);
+  expect(b.limit).toBeNull();
+  core.service.noteLimit(ws.id, { status: 'warning', kind: 'five_hour', resetsAt: 1_900_000_000, utilization: 0.8 });
+  expect(core.usageBar().limit).toMatchObject({ status: 'warning', kind: 'five_hour', utilization: 0.8 });
+});

@@ -30,6 +30,8 @@ const api: DureApi = {
     shipLog: (id) => call('projects.shipLog', id),
     budget: (id) => call('projects.budget', id),
     dashboard: () => call('projects.dashboard'),
+    paddy: (projectId) => call('projects.paddy', projectId ?? null),
+    usageBar: () => call('projects.usageBar'),
     setBudget: (id, daily, total) => call('projects.setBudget', id, daily, total),
     allowToday: (id) => call('projects.allowToday', id),
   },

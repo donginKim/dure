@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ProjectDashboard, Repo } from '@shared/types';
 import { Onboarding } from './Onboarding';
+import { Paddy } from './Paddy';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
 /** 아무것도 고르지 않았을 때 보이는 화면: 운영 중인 프로젝트 전체. */
@@ -24,6 +25,7 @@ export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNo
         프로젝트는 함께 움직이는 저장소와 워크스페이스의 묶음입니다. 보통 프론트와 백엔드 한 세트가 한 프로젝트입니다.
       </div>
 
+      {tree.length > 0 && <Paddy />}
       {tree.length > 1 && (
         <div className="dash-total">
           <span>일하는 에이전트 <b>{total.working}</b></span>

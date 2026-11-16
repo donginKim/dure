@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport } from '@shared/types';
+import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport, UsageBar } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
@@ -24,6 +24,7 @@ import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
 import { AttentionService } from './attention';
 import { DoingService } from './doing';
+import { PaddyService, dayOf } from './paddy';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
@@ -109,6 +110,10 @@ export interface Core {
   activity: ActivityService;
   /** 워크스페이스마다 지금 하는 일 (마지막 도구 사용) */
   doing: DoingService;
+  /** 두레 논 (날마다 한 일) */
+  paddy: PaddyService;
+  /** 하단바: 오늘 쓴 토큰과 사용 한도 */
+  usageBar(): UsageBar;
   /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
   dashboard(): ProjectDashboard[];
   pty: PtyManager;
@@ -386,7 +391,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   for (const src of [service, coordinator, dbs, slack, browser, peers, assignments, agreements]) src.on('changed', () => attention.poke());
   attention.poke();
 
-  const commit = new CommitService({ workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
+  const paddy = new PaddyService(db);
+  const commit = new CommitService({ onCommitted: (projectId, workspaceId) => paddy.note('commit', projectId, workspaceId), workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
   // 리뷰 에이전트: 커밋 초안이 올라오면 다른 에이전트가 변경을 읽고 문제를 찾는다.
   const review = new ReviewService({
     db, workspaces, git, env: o.baseEnv, runner: o.reviewRunner,
@@ -401,6 +407,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   });
   // 합치기 도우미: 워크스페이스 브랜치들을 차례로 합쳐 보고, 합치기 브랜치를 만들어 확인한 뒤, 사용자가 누르면 기준 브랜치를 옮긴다.
   const merges = new MergeService({
+    onAdvanced: (projectId) => paddy.note('main', projectId, null),
     db,
     repos, workspaces, git, messages, todos: (id) => todos.listProject(id), worktreeRoot: o.worktreeRoot, env: o.baseEnv,
     run: o.verifyRunner ?? shellRunner, timeoutMs: () => settings.get().verifyTimeoutSec * 1000, isProjectClosed: (id) => service.isProjectClosed(id),
@@ -465,7 +472,23 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    usageBar() {
+      const COUNTED = 'coalesce(sum(input + cache_write + output), 0)';
+      const start = new Date(); start.setHours(0, 0, 0, 0);
+      const t0 = start.getTime();
+      const today = db.prepare(`SELECT ${COUNTED} AS counted, coalesce(sum(cache_read), 0) AS cacheRead, coalesce(sum(output), 0) AS output, count(*) AS requests FROM token_usage WHERE at >= ?`).get(t0) as UsageBar['today'];
+      const byDay = new Map((db.prepare(`SELECT at, input + cache_write + output AS n FROM token_usage WHERE at >= ?`).all(t0 - 6 * 86_400_000) as { at: number; n: number }[])
+        .reduce((m, r) => m.set(dayOf(r.at), (m.get(dayOf(r.at)) ?? 0) + r.n), new Map<string, number>()));
+      const week = Array.from({ length: 7 }, (_, i) => byDay.get(dayOf(t0 - (6 - i) * 86_400_000 + 3_600_000)) ?? 0);
+      const names = new Map(projects.list().map((p) => [p.id, p.name]));
+      const projectsToday = (db.prepare(`SELECT project_id, ${COUNTED} AS n FROM token_usage WHERE at >= ? GROUP BY project_id ORDER BY n DESC LIMIT 8`).all(t0) as { project_id: string; n: number }[])
+        .map((r) => ({ projectId: r.project_id, name: names.get(r.project_id) ?? '지운 프로젝트', counted: r.n }));
+      const models = (db.prepare(`SELECT model, ${COUNTED} AS n FROM token_usage WHERE at >= ? AND model NOT LIKE '<%' GROUP BY model ORDER BY n DESC`).all(t0) as { model: string; n: number }[])
+        .map((r) => ({ model: r.model || '(알 수 없음)', counted: r.n }));
+      const working = projects.list().flatMap((p) => workspaces.listAll(p.id)).filter((w) => w.status === 'working').length;
+      return { today, week, projects: projectsToday, models, limit: service.accountLimit(), working };
+    },
     dashboard() {
       const att = new Map<string, number>();
       for (const a of attention.list()) if (a.projectId) att.set(a.projectId, (att.get(a.projectId) ?? 0) + 1);

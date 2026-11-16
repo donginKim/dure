@@ -69,6 +69,8 @@ export class MergeService extends EventEmitter {
   private readonly memory = new Map<string, { commit: string; verified: boolean | null; only: string }>();
 
   constructor(private readonly d: {
+    /** 기준 브랜치를 앞으로 감았다 (두레 논에 적는다) */
+    onAdvanced?: (projectId: string) => void;
     repos: RepoStore; workspaces: WorkspaceStore; git: Git; messages: MessageService;
     todos(projectId: string): Todo[];
     worktreeRoot: string; env: Record<string, string>;
@@ -230,6 +232,7 @@ export class MergeService extends EventEmitter {
         await this.git(repo.path, 'update-ref', `refs/heads/${base}`, target, head);
       }
       this.emit('changed', projectId);
+      try { this.d.onAdvanced?.(projectId); } catch { /* 기록만 못 한다 */ }
       return `${base} 를 ${target.slice(0, 7)} 로 옮겼습니다.`;
     } finally {
       this.busy.delete(key);

@@ -728,6 +728,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       // 워크스페이스는 터미널과 에이전트만 끄고 작업 폴더는 남긴다. 정리 대기에 옮겨 둔 것은 함께 지운다.
       for (const ws of workspaces.listAll(projectId)) await service.remove(ws.id, { deleteWorktree: false, withCoordinator: true });
       cleanup.removeProject(projectId);
+      makes.removeProject(projectId);
       // 조율 에이전트의 폴더는 두레의 것이다. 함께 지운다.
       const coordDir = join(o.dataDir, 'coordinators', projectId);
       if (coordDir.startsWith(join(o.dataDir, 'coordinators') + sep)) rmSync(coordDir, { recursive: true, force: true });

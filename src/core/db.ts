@@ -511,7 +511,7 @@ const MIGRATIONS: string[] = [
   `,
   // 만들기: 프로젝트의 자료로 만든 문서 (보고서, 발표 자료, 눌러 보는 그림). 스스로 완결된 HTML 한 장.
   `
-  CREATE TABLE makes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, kind_name TEXT NOT NULL, title TEXT NOT NULL, direction TEXT NOT NULL, state TEXT NOT NULL, error TEXT NOT NULL, html TEXT NOT NULL, tokens INTEGER NOT NULL, created_at INTEGER NOT NULL);
+  CREATE TABLE makes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, kind_name TEXT NOT NULL, title TEXT NOT NULL, direction TEXT NOT NULL, state TEXT NOT NULL, error TEXT NOT NULL, html TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL, created_at INTEGER NOT NULL);
   CREATE INDEX makes_project ON makes (project_id, created_at);
   `,
 ];

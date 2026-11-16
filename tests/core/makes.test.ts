@@ -23,7 +23,13 @@ test('sealHtml: 문서만 꺼내고, 바깥과 주고받지 못하게 하는 규
   const s = sealHtml(`설명\n${DOC}\n끝`)!;
   expect(s.html.startsWith('<!doctype html>')).toBe(true);
   expect(s.html.endsWith('</html>')).toBe(true);
-  expect(s.html).toContain(`<head><meta http-equiv="Content-Security-Policy" content="${MAKE_CSP}">`);
+  expect(s.html.startsWith(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${MAKE_CSP}"><html>`)).toBe(true);
+  // 가짜 <head> 나 앞선 스크립트로 규칙을 비켜 가지 못한다: 규칙은 늘 맨 앞에 온다
+  for (const trick of ['<!doctype html><!--<head>--><script>x()</script><html><body>가</body></html>', '<html><script>x()</script><header>가</header></html>']) {
+    const t = sealHtml(trick)!.html;
+    expect(t.indexOf('Content-Security-Policy')).toBeLessThan(t.indexOf('<script>'));
+    expect(t.indexOf('Content-Security-Policy')).toBeLessThan(t.indexOf('<!--') < 0 ? Infinity : t.indexOf('<!--'));
+  }
   expect(s.title).toBe('쇼핑몰 & 주간 보고');
   expect(sealHtml('<html><body>머리 없음</body></html>')!.html).toContain('Content-Security-Policy');
   expect(sealHtml('문서가 아니다')).toBeNull();
@@ -46,6 +52,10 @@ test('만들기: 자료와 방향을 건네 문서를 받고, 쓴 토큰을 적�
   expect(prompts[0]).toContain('임원 보고용');
   expect(prompts[0]).toContain('회의록: 다음 주 출시');
   expect(prompts[0]).toContain('한 화면에 한 장');
+  // 자료 표에는 이번에만 쓰는 번호가 붙는다 (자료 안의 글이 표를 흉내 내지 못하게)
+  expect(prompts[0]).toMatch(/\[자료 [0-9a-f]{8} — 끝\]/);
+  expect(prompts[0]).not.toContain('[자료 — 끝]');
+  expect(after.size).toBe(svc.html(after.id)!.length);
   svc.remove(after.id);
   expect(svc.list('p1')).toEqual([]);
 });

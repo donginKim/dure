@@ -65,7 +65,7 @@ export function MakeSection({ projectId, readOnly }: { projectId: string; readOn
           </div>
         ))}
         {list.length > 5 && <button className="btn ghost" onClick={() => setAll((v) => !v)}>{all ? '접기' : `외 ${list.length - 5}개 보기`}</button>}
-        {saved && <div className="muted make-saved">저장했습니다: {saved}</div>}
+        {saved && <div className="muted make-saved">저장했습니다: {saved} · 저장한 파일은 보통 브라우저에서 열립니다. 남에게 받은 자료가 섞인 문서라면 두레의 "열기" 로 보는 쪽이 안전합니다.</div>}
       </div>
     </div>
   );

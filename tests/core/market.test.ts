@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '@core/db';
@@ -7,7 +7,7 @@ import { SettingsService } from '@core/settings';
 
 const URL = 'https://example.com/team/plugins.git';
 
-function setup() {
+function setup(gap = -1) {
   const root = mkdtempSync(join(tmpdir(), 'dure-market-'));
   const repo = join(root, 'repo');
   const put = (dir: string, manifest: Record<string, unknown>): void => { mkdirSync(join(repo, dir), { recursive: true }); writeFileSync(join(repo, dir, 'plugin.json'), JSON.stringify(manifest)); };
@@ -17,10 +17,10 @@ function setup() {
   mkdirSync(join(repo, 'docs'), { recursive: true }); // plugin.json 이 없는 폴더는 건너뛴다
   let clones = 0; let fail = false;
   const svc = new PluginService({
-    db: openDatabase(':memory:'), dir: join(root, 'plugins'), addMemory: () => undefined,
+    db: openDatabase(':memory:'), dir: join(root, 'plugins'), addMemory: () => undefined, marketGapMs: gap,
     git: async (args) => { if (!args.includes('clone')) return ''; clones++; if (fail) throw new Error('fatal: could not read from remote'); cpSync(repo, args[args.length - 1]!, { recursive: true }); return ''; },
   });
-  return { svc, put, clones: () => clones, setFail: (v: boolean) => { fail = v; } };
+  return { svc, put, repo, root, clones: () => clones, setFail: (v: boolean) => { fail = v; } };
 }
 
 test('마켓: 모음에 든 플러그인과 담긴 것의 갈래를 보인다', async () => {
@@ -62,11 +62,14 @@ test('마켓: 받지 못한 모음은 까닭을 보이고, 앞서 받은 목록�
   await svc.market([{ url: URL, base: true }]);
   setFail(true);
   const out = await svc.market([{ url: URL, base: true }, { url: 'git@example.com:other/more.git', base: false }], true);
-  expect(out[0]!.error).toContain('could not read');
+  // 까닭은 정해 둔 말로만 보인다 (git 과 서버가 남긴 글, 경로는 보이지 않는다)
+  expect(out[0]!.error).toBe('저장소를 받지 못했습니다. 주소와 접근 권한을 확인하세요.');
   expect(out[0]!.entries).toHaveLength(3);
   expect(out[1]).toMatchObject({ label: 'other/more', base: false, entries: [] });
   expect(out[1]!.error).not.toBe('');
-  await expect(svc.market([{ url: 'file:///etc', base: false }])).resolves.toMatchObject([{ entries: [], error: expect.stringContaining('git 주소') }]);
+  await expect(svc.market([{ url: 'file:///etc', base: false }])).resolves.toMatchObject([{ entries: [], error: 'git 주소가 올바르지 않습니다.' }]);
+  // https 주소에 든 계정·토큰은 받지 않는다
+  await expect(svc.market([{ url: 'https://user:tok3n@example.com/a/b.git', base: false }])).resolves.toMatchObject([{ entries: [], error: 'git 주소가 올바르지 않습니다.' }]);
 });
 
 test('설정: 더한 모음은 git 주소만, 10개까지, 겹치지 않게', () => {
@@ -74,8 +77,52 @@ test('설정: 더한 모음은 git 주소만, 10개까지, 겹치지 않게', ()
   expect(s.get().pluginSources).toEqual([]);
   expect(s.update({ pluginSources: [' https://example.com/a.git ', 'https://example.com/a.git', 'git@example.com:b/c.git'] }).pluginSources).toEqual(['https://example.com/a.git', 'git@example.com:b/c.git']);
   expect(() => s.update({ pluginSources: ['file:///etc/passwd'] })).toThrow('git 주소');
+  expect(() => s.update({ pluginSources: ['https://user:tok3n@example.com/a.git'] })).toThrow('토큰');
+  try { s.update({ pluginSources: ['https://user:tok3n@example.com/a.git'] }); } catch (e) { expect((e as Error).message).not.toContain('tok3n'); }
+  expect(() => s.update({ pluginCatalog: 'https://tok3n@example.com/a.git' })).toThrow('git 주소');
   expect(() => s.update({ pluginSources: ['https://example.com/a.git --upload-pack=x'] })).toThrow('git 주소');
   expect(() => s.update({ pluginSources: Array.from({ length: 11 }, (_, i) => `https://example.com/${i}.git`) })).toThrow('10개');
   expect(() => s.update({ pluginSources: 'https://example.com/a.git' as never })).toThrow();
   expect(s.get().pluginSources).toHaveLength(2);
+});
+
+test('마켓: 같은 이름의 플러그인을 다른 모음의 것으로 덮어쓰지 않는다', async () => {
+  const { svc } = setup();
+  const OTHER = 'https://example.com/evil/plugins.git';
+  await svc.installFromGit(`${URL}#kit`);
+  svc.approve('kit', svc.list().find((p) => p.id === 'kit')!.hash);
+  const out = await svc.market([{ url: URL, base: true }, { url: OTHER, base: false }]);
+  expect(out[0]!.entries.find((e) => e.id === 'kit')).toMatchObject({ installed: true, elsewhere: false });
+  expect(out[1]!.entries.find((e) => e.id === 'kit')).toMatchObject({ installed: true, elsewhere: true });
+  await expect(svc.installFromGit(`${OTHER}#kit`)).rejects.toThrow('다른 곳에서 설치돼');
+  expect(svc.list().find((p) => p.id === 'kit')).toMatchObject({ approved: true, source: `git:${URL}#kit` });
+  // 지운 뒤에는 받을 수 있다
+  svc.remove('kit');
+  await expect(svc.installFromGit(`${OTHER}#kit`)).resolves.toMatchObject({ id: 'kit', approved: false });
+});
+
+test('마켓: 링크로 된 plugin.json 은 읽지 않고, 승인에 들어가지 않는 깊이의 파일은 베끼지 않는다', async () => {
+  const { svc, repo, root } = setup();
+  mkdirSync(join(repo, 'trap'), { recursive: true });
+  symlinkSync('/dev/zero', join(repo, 'trap', 'plugin.json'));
+  const deep = join(repo, 'kit', 'a', 'b', 'c', 'd', 'e', 'f');
+  mkdirSync(deep, { recursive: true });
+  writeFileSync(join(deep, 'run.txt'), '승인받지 않은 글');
+  writeFileSync(join(repo, 'kit', 'a', 'b', 'c', 'd', 'e', 'ok.txt'), '지문에 드는 깊이');
+  const [src] = await svc.market([{ url: URL, base: true }]);
+  expect(src!.entries.map((e) => e.dir)).toEqual(['kit', 'news', 'tool']); // trap 은 목록에 없다
+  await svc.installFromGit(`${URL}#kit`);
+  const at = join(root, 'plugins', 'kit');
+  expect(existsSync(join(at, 'a', 'b', 'c', 'd', 'e', 'ok.txt'))).toBe(true);
+  expect(existsSync(join(at, 'a', 'b', 'c', 'd', 'e', 'f'))).toBe(false);
+  // 받고 난 임시 폴더는 남지 않는다
+  expect(readdirSync(join(root, 'plugins')).filter((n) => n.startsWith('.incoming'))).toEqual([]);
+});
+
+test('마켓: 새로 고침을 연달아 눌러도 곧바로 다시 받지 않고, 같이 연 것은 한 번만 받는다', async () => {
+  const { svc, clones } = setup(5000);
+  await Promise.all([svc.market([{ url: URL, base: true }]), svc.market([{ url: URL, base: true }])]);
+  expect(clones()).toBe(1);
+  await svc.market([{ url: URL, base: true }], true);
+  expect(clones()).toBe(1);
 });

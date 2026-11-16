@@ -79,7 +79,8 @@ export function MarketView({ onSelect }: { onSelect: (s: Selection) => void }) {
               {entries.map((e) => {
                 const key = `${s.url}#${e.dir}`;
                 const have = mine.find((p) => p.id === e.id);
-                const newer = have !== undefined && e.installedVersion !== '' && e.installedVersion !== e.version;
+                // 같은 이름이 다른 곳에서 설치돼 있으면 여기서 덮어쓰지 않는다 (지운 뒤에 설치한다).
+                const newer = have !== undefined && !e.elsewhere && e.installedVersion !== '' && e.installedVersion !== e.version;
                 const isOpen = open === key && have !== undefined;
                 return (
                   <article key={key} className={`market-card${isOpen ? ' open' : ''}`}>
@@ -90,7 +91,8 @@ export function MarketView({ onSelect }: { onSelect: (s: Selection) => void }) {
                     </div>
                     <div className="market-card-foot">
                       {!have && <span className="muted">설치 안 됨</span>}
-                      {have && (have.approved ? <span className="tag market-ok">설치됨 · 승인됨</span> : <span className="tag warn">{have.changed ? '내용이 바뀜 · 다시 승인 필요' : '승인 필요'}</span>)}
+                      {have && e.elsewhere && <span className="tag warn" title={`같은 이름(${e.id})의 플러그인이 다른 곳에서 설치돼 있습니다: ${have.source.replace(/^(folder|git):/, '')}. 이 모음의 것으로 바꾸려면 먼저 지우세요.`}>다른 곳에서 설치됨</span>}
+                      {have && !e.elsewhere && (have.approved ? <span className="tag market-ok">설치됨 · 승인됨</span> : <span className="tag warn">{have.changed ? '내용이 바뀜 · 다시 승인 필요' : '승인 필요'}</span>)}
                       <span className="grow" />
                       {have && <button className="btn ghost" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? '' : key)}>{isOpen ? '접기' : '내용 보기'}</button>}
                       {!have && <button className="btn primary" disabled={working !== ''} onClick={() => act(key, window.dure.plugins.installFrom(s.url, e.dir), () => setOpen(key))}>{working === key ? '받는 중…' : '설치'}</button>}

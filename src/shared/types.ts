@@ -68,6 +68,8 @@ export interface CatalogEntry {
   dir: string; id: string; name: string; version: string; description: string; installed: boolean; summary: string;
   /** 설치돼 있으면 그 판. 모음의 것과 다르면 새 판이 있다 */
   installedVersion: string;
+  /** 같은 이름(id)의 플러그인이 다른 곳(다른 모음, 폴더)에서 설치돼 있다: 여기서 덮어쓸 수 없다 */
+  elsewhere: boolean;
   /** 담긴 것의 갈래 (마켓에서 거르는 데 쓴다) */
   kinds: MarketKind[];
   /** 담긴 것의 이름 (갈래마다) */

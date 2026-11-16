@@ -13,6 +13,7 @@ import type { ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
 import { PeerInbox } from './PeerInbox';
 import { describeError } from './WorkspaceView';
+import { PanelResizer } from './PanelResizer';
 
 /** 계획안의 TODO 목록: 제목을 고치고, 담당을 바꾸고, 빼고, 더한다. */
 function TodoEditor({ todos, onChange, agentLabel, parents }: { todos: PlanTodo[]; onChange: (next: PlanTodo[]) => void; agentLabel: string;
@@ -408,7 +409,7 @@ export function CoordinatorPane({ project, repos, everyone, conversation, readOn
             ) : null}
           />
         )}
-      {showFigures && <aside className="todo-panel coord-figures"><div className="side-tabs"><span className="side-tab on">그림</span><span className="spacer" /><button className="btn ghost" onClick={() => setShowFigures(false)}>접기</button></div><FigurePanel workspaceId={ws.id} readOnly={readOnly} /></aside>}
+      {showFigures && <aside className="todo-panel coord-figures"><PanelResizer /><div className="side-tabs"><span className="side-tab on">그림</span><span className="spacer" /><button className="btn ghost" onClick={() => setShowFigures(false)}>접기</button></div><FigurePanel workspaceId={ws.id} readOnly={readOnly} /></aside>}
       </div>
     </div>
   );

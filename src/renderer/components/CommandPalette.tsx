@@ -25,8 +25,8 @@ export function fuzzy(text: string, q: string): number {
  * ⌘K 명령 창: 프로젝트·워크스페이스로 가고, 확인할 것을 열고, 자주 쓰는 화면을 연다. 키보드만으로 쓴다.
  * ↑↓ 로 고르고 Enter 로 실행, Esc 로 닫는다.
  */
-export function CommandPalette({ tree, onSelect, onClose, onNewProject, onToggleNotes }: {
-  tree: TreeNode[]; onSelect: (s: Selection) => void; onClose: () => void; onNewProject: () => void; onToggleNotes: () => void;
+export function CommandPalette({ tree, onSelect, onClose, onNewProject, onToggleNotes, onToggleSide }: {
+  tree: TreeNode[]; onSelect: (s: Selection) => void; onClose: () => void; onNewProject: () => void; onToggleNotes: () => void; onToggleSide: () => void;
 }) {
   const [q, setQ] = useState('');
   const [at, setAt] = useState(0);
@@ -50,13 +50,14 @@ export function CommandPalette({ tree, onSelect, onClose, onNewProject, onToggle
     act('new-project', '새 프로젝트', 'new project 만들기', () => { onNewProject(); onClose(); });
     act('attention', '확인할 것 열기', 'attention inbox', go({ type: 'attention' }));
     act('notes', '메모 열기/닫기', 'notes memo', () => { onToggleNotes(); onClose(); }, '⌘⇧M');
+    act('side', '왼쪽 목록 접기/펼치기', 'sidebar 사이드바 메뉴', () => { onToggleSide(); onClose(); }, '⌘B');
     act('team', '팀 현황', 'team board', go({ type: 'team' }));
     act('people', '사람', 'people peers 연결', go({ type: 'people' }));
     act('worktime', '근무시간', 'worktime', go({ type: 'worktime' }));
     act('settings', '설정', 'settings preferences', go({ type: 'settings' }), '⌘,');
     act('home', '프로젝트 전체 보기', 'home dashboard 대시보드', go(null));
     return out;
-  }, [tree, attention, onSelect, onClose, onNewProject, onToggleNotes]);
+  }, [tree, attention, onSelect, onClose, onNewProject, onToggleNotes, onToggleSide]);
 
   const shown = useMemo(() => {
     if (!q.trim()) return all.filter((c) => c.group !== '워크스페이스' || all.length < 40).slice(0, 60);

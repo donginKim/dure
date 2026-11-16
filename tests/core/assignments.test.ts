@@ -623,3 +623,26 @@ test('보기만 하는 사람(윗사람): 현황판과 작업 보고 요약만 �
   await expect(boss.core.peers.sendMember(bossProject, pm.id, { type: 'plan.suggest', sid: crypto.randomUUID(), plan: { items: [], projectTodos: [] } })).rejects.toThrow('보기만 한다');
   await expect(pm.core.peers.handOver(pm.projectId, boss.id)).rejects.toThrow('보기만');
 });
+
+test('참여자: 리더의 현황판을 처음 받으면 조율 에이전트에게 브리핑을 부탁한다 (한 번만). 기획서 정리를 자료로 받아도 알린다. 보기만 하는 사람과 리더에게는 하지 않는다', async () => {
+  const pm = await node('팀장', '10.0.0.1'); const dev = await node('개발', '10.0.0.2');
+  const cDev = dev.core.coordinator.ensure(dev.projectId);
+  const cPm = pm.core.coordinator.ensure(pm.projectId);
+  await team(pm, dev);
+  await pm.core.assignments.boardNow();
+  const notes = (): string[] => dev.core.messages.undelivered(cDev.id).map((m) => m.body);
+  await until(() => notes().some((b) => b.includes('참여자로 들어왔다')));
+  expect(notes().find((b) => b.includes('참여자로 들어왔다'))).toContain('아직 받은 일이 없다');
+  // 현황판이 다시 와도 되풀이하지 않는다
+  pm.core.todos.add({ projectId: pm.projectId, title: '큰 일', status: 'todo' }, 'user');
+  await pm.core.assignments.boardNow();
+  await tick(300);
+  expect(notes().filter((b) => b.includes('참여자로 들어왔다')).length).toBe(1);
+  // 기획서 정리를 자료로 받으면 요지를 알리라고 한다
+  await pm.core.assignments.sendBrief(pm.projectId, '## 기획서 정리\n로그인을 만든다');
+  await until(() => dev.core.assignments.briefs(dev.projectId).length === 1);
+  dev.core.assignments.takeBrief(dev.core.assignments.briefs(dev.projectId)[0]!.id);
+  expect(notes().some((b) => b.includes('기획서 정리를 네 사용자가 자료로 받았다'))).toBe(true);
+  // 리더 쪽 조율 에이전트에게는 이런 알림이 가지 않는다
+  expect(pm.core.messages.undelivered(cPm.id).some((m) => m.body.includes('참여자로 들어왔다'))).toBe(false);
+});

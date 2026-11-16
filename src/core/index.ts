@@ -34,6 +34,8 @@ import { PrService } from './pr';
 import { WorkTimeService, type NetworkProbe } from './worktime';
 import { noteTools } from './mcp/tools/notes';
 import { agreementTools } from './mcp/tools/agreements';
+import { memoryTools } from './mcp/tools/memory';
+import { MemoryStore } from './memory';
 import { figureTools } from './mcp/tools/figures';
 import { FigureService } from './figures';
 import { AgreementService } from './agreements';
@@ -121,6 +123,8 @@ export interface Core {
   schedules: ScheduleService;
   /** 빠른 메모 */
   captures: CaptureStore;
+  /** 프로젝트 기억 */
+  memory: MemoryStore;
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
@@ -222,6 +226,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   if (o.networkProbe !== null) worktime.start();
   settings.on('changed', () => { void worktime.tick(); });
   const cleanup = new CleanupService({ db, workspaces, git, dir: join(o.dataDir, 'cleanup') });
+  const memory = new MemoryStore(db);
   messages.useCaps(() => { const s = settings.get(); return { thread: s.threadCap, project: s.projectCap }; });
   const commitDrafts = new CommitDraftStore(db);
   const pty = new PtyManager();
@@ -243,6 +248,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     verify,
     agreements,
     figures,
+    memory,
     get browser() { return browser; },
     get peers() { return peers; },
     get assignments() { return assignments; },
@@ -280,7 +286,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'Stop' && out === '') service.maybeFresh(workspace.id);
       return out;
     },
-  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools]);
+  }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools, memoryTools]);
   const service = new WorkspaceService({
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -343,6 +349,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   settings.on('changed', () => { void peers.apply(); });
   await peers.apply();
   service.attachDelivery(delivery);
+  service.attachMemory((projectId) => memory.digest(projectId));
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
   const engine = new ChatEngine({
@@ -499,7 +506,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     usageBar() {
       const COUNTED = 'coalesce(sum(input + cache_write + output), 0)';
       const start = new Date(); start.setHours(0, 0, 0, 0);

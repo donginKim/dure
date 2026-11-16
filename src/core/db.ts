@@ -490,6 +490,11 @@ const MIGRATIONS: string[] = [
   `
   CREATE TABLE captures (id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at INTEGER NOT NULL);
   `,
+  // 프로젝트 기억 (대화가 끊겨도 남는 짧은 사실)
+  `
+  CREATE TABLE project_memory (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, author TEXT NOT NULL, created_at INTEGER NOT NULL);
+  CREATE INDEX project_memory_by_project ON project_memory (project_id, created_at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

@@ -197,6 +197,11 @@ const api: DureApi = {
     restore: (id) => call('checkpoints.restore', id),
   },
   usage: { summary: (projectId, days) => call('usage.summary', projectId, days) },
+  memory: {
+    list: (projectId) => call('memory.list', projectId),
+    add: (projectId, kind, text) => call('memory.add', projectId, kind, text),
+    remove: (id) => call('memory.remove', id),
+  },
   captures: {
     list: () => call('captures.list'),
     add: (text) => call('captures.add', text),

@@ -57,6 +57,9 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 프로젝트 기억의 종류: 정한 것, 배운 것, 자주 쓰는 명령 */
+export type MemoryKind = 'decision' | 'lesson' | 'command';
+export interface MemoryItem { id: string; projectId: string; kind: MemoryKind; text: string; author: string; createdAt: number }
 /** 빠른 메모 한 건 */
 export interface Capture { id: string; text: string; createdAt: number }
 /** 예약 실행: 정한 때에 워크스페이스의 에이전트에게 시킬 일 */

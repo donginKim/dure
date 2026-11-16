@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { MemoryStore } from '../memory';
 import type { AddressInfo } from 'node:net';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -45,6 +46,8 @@ export interface McpDeps {
   verify: VerifyService;
   agreements: AgreementService;
   figures: FigureService;
+  /** 프로젝트 기억 (없으면 도구를 싣지 않는다) */
+  memory?: MemoryStore;
   /** 사용자가 에이전트에게 메모를 열어 두었는가 */
   notesForAgents(): boolean;
   /** 사용자가 에이전트에게 메모 쓰기를 열어 두었는가 */

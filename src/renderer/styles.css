@@ -1252,3 +1252,10 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .inbox-head select { max-width: 260px; }
 .inbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .inbox-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 프로젝트 기억 */
+.mem-text { font-size: 13px; }
+.mem-by { font-size: 11.5px; }
+.mem-add { display: flex; gap: 8px; margin-top: 8px; }
+.mem-add input { flex: 1; min-width: 0; }
+.tag.mem-command { font-family: ui-monospace, SFMono-Regular, monospace; }

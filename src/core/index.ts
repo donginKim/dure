@@ -349,10 +349,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // Oracle 에 접속하는 방식 (설정의 Oracle Instant Client 폴더). 이미 접속한 뒤에 바꾸면 다시 켜야 듣는다.
   setOracleClient(settings.get().oracleClientDir);
   settings.on('changed', () => setOracleClient(settings.get().oracleClientDir));
-  const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  // 다른 사람에게 공개된 워크스페이스인가 (공개 범위가 정해져 있다)
+  const exposed = (workspaceId: string): boolean => db.prepare('SELECT 1 FROM workspace_sharing WHERE workspace_id = ?').get(workspaceId) !== undefined;
+  const dbs: DbService = new DbService({ db, exposed, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
-  const slack: SlackService = new SlackService({ db, workspaces, messages, secrets: o.secrets ?? noSecrets, fetch: o.slackFetch, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  const slack: SlackService = new SlackService({ db, exposed, workspaces, messages, secrets: o.secrets ?? noSecrets, fetch: o.slackFetch, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   service.on('changed', (id: string) => { if (!workspaces.get(id)) slack.dropWorkspace(id); });
   const updates = new UpdateService({ git, dataDir: o.dataDir, infoPath: join(o.dataDir, 'install.json'), runningApp: o.runningApp ?? null, env: o.baseEnv, reopen: o.updateReopen });
   updates.start();

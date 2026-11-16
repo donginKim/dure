@@ -56,6 +56,8 @@ export function pendingMessage(lines: string[]): string {
 // 줄바꿈만 남긴다.
 // eslint-disable-next-line no-control-regex
 const clean = (s: string): string => s.replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '');
+// 제목은 한 줄이다: 줄을 바꿔 두레가 보낸 알림처럼 보이는 줄("[두레] …")을 끼워 넣지 못하게 한다.
+const oneLine = (s: string): string => clean(s).replace(/\s*\n\s*/g, ' ').trim().slice(0, 300);
 
 /**
  * 컨텍스트가 새로 시작되거나 압축된 에이전트에게 현재 TODO 를 다시 알려주는 글.
@@ -263,7 +265,7 @@ export class TodoService extends EventEmitter {
     i: { projectId: string; workspaceId?: string | null; title: string; detail?: string; assignee?: TodoAssignee; status?: TodoStatus; parentId?: string | null; after?: string[] },
     actor: Actor,
   ): Todo {
-    const title = clean(i.title).trim();
+    const title = oneLine(i.title);
     if (!title) throw new Error('제목을 입력하세요.');
     const workspaceId = i.workspaceId ?? null;
     const parentId = i.parentId ?? null;
@@ -295,7 +297,7 @@ export class TodoService extends EventEmitter {
     const next = { ...current };
     const lines: string[] = [];
     if (patch.title !== undefined) {
-      const title = clean(patch.title).trim();
+      const title = oneLine(patch.title);
       if (!title) throw new Error('제목을 입력하세요.');
       if (title !== current.title) { lines.push(`제목 바뀜: "${current.title}" → "${title}"`); next.title = title; }
     }

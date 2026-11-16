@@ -123,6 +123,8 @@ export class SlackService extends EventEmitter {
   constructor(private readonly d: {
     db: Database.Database; workspaces: WorkspaceStore; messages: MessageService; secrets: SecretBox;
     isProjectClosed(projectId: string): boolean;
+    /** 이 워크스페이스가 다른 사람(다른 PC 의 두레)에게 공개돼 있는가 */
+    exposed?: (workspaceId: string) => boolean;
     /** 시험에서 가짜 슬랙으로 바꾼다 */
     fetch?: Fetch;
     waitMs?: number;
@@ -325,7 +327,8 @@ export class SlackService extends EventEmitter {
     if (r.access === 'off') throw new Error('사용자가 에이전트의 슬랙 읽기를 꺼 두었다. 필요하면 사용자에게 두레의 설정에서 켜 달라고 하라.');
     const { op, what } = cleanSlackOp(raw);
     const token = this.d.secrets.decrypt(r.secret);
-    if (r.access === 'auto') return { kind: 'result', result: await this.run(token, op) };
+    // 다른 사람에게 공개된 워크스페이스는 "바로 읽기" 여도 승인을 받는다 (읽은 내용이 그 사람에게 전해질 수 있다).
+    if (r.access === 'auto' && !this.d.exposed?.(workspaceId)) return { kind: 'result', result: await this.run(token, op) };
     const mine = [...this.requests.values()].filter((q) => q.workspaceId === workspaceId && q.status === 'pending');
     if (mine.length >= 3) throw new Error('승인을 기다리는 슬랙 읽기가 이미 3개다. 사용자의 결정을 기다려라.');
     const held: Held = { id: crypto.randomUUID(), projectId: ws.projectId, workspaceId, what, createdAt: Date.now(), op, status: 'pending', announced: false, running: false, token: r.secret };

@@ -1,7 +1,7 @@
 import type { DbConnection } from '@shared/types';
 import { cellText, DEFAULT_PORT, emptyForm, formOf, formProblem, KIND_LABEL, previewSql, toInput } from '../../src/renderer/dbView';
 
-const conn: DbConnection = { id: 'c1', projectId: 'p1', name: '운영', kind: 'mysql', host: 'db', port: 3306, database: 'shop', user: 'reader', ssl: true, agentAccess: 'auto', hasPassword: true, createdAt: 1 };
+const conn: DbConnection = { id: 'c1', projectId: 'p1', name: '운영', kind: 'mysql', host: 'db', port: 3306, database: 'shop', user: 'reader', ssl: true, sslVerify: false, agentAccess: 'auto', hasPassword: true, createdAt: 1 };
 
 test('formProblem: 빈 칸과 잘못된 포트', () => {
   const f = { ...emptyForm(), name: 'a', user: 'u', database: 'd' };
@@ -17,7 +17,10 @@ test('formProblem: 빈 칸과 잘못된 포트', () => {
 
 test('toInput: 새 연결은 비밀번호를 보내고, 고칠 때 비워 두면 보내지 않는다', () => {
   const f = { ...emptyForm(), name: ' a ', user: ' u ', database: 'd', password: 'pw' };
-  expect(toInput(f, 'p1', null)).toEqual({ projectId: 'p1', name: 'a', kind: 'postgres', host: 'localhost', port: 5432, database: 'd', user: 'u', ssl: false, agentAccess: 'ask', password: 'pw' });
+  expect(toInput(f, 'p1', null)).toEqual({ projectId: 'p1', name: 'a', kind: 'postgres', host: 'localhost', port: 5432, database: 'd', user: 'u', ssl: false, sslVerify: false, agentAccess: 'ask', password: 'pw' });
+  // SSL 을 켜면 인증서 확인이 기본이다. 옛 연결(확인 안 함)은 고칠 때 그대로 둔다
+  expect(toInput({ ...f, ssl: true }, 'p1', null)).toMatchObject({ ssl: true, sslVerify: true });
+  expect(toInput(formOf(conn), 'p1', conn)).toMatchObject({ ssl: true, sslVerify: false });
   expect(toInput({ ...f, password: '' }, 'p1', null).password).toBe('');
   const edit = formOf(conn);
   expect(edit.password).toBe('');

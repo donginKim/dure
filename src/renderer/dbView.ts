@@ -21,10 +21,10 @@ export const ACCESS_HELP: Record<DbAccess, string> = {
 };
 
 /** 연결 등록 화면의 값. 포트는 글로 받는다 */
-export interface DbForm { name: string; kind: DbKind; host: string; port: string; database: string; user: string; password: string; ssl: boolean; agentAccess: DbAccess }
+export interface DbForm { name: string; kind: DbKind; host: string; port: string; database: string; user: string; password: string; ssl: boolean; sslVerify: boolean; agentAccess: DbAccess }
 
-export const emptyForm = (): DbForm => ({ name: '', kind: 'postgres', host: 'localhost', port: String(DEFAULT_PORT.postgres), database: '', user: '', password: '', ssl: false, agentAccess: 'ask' });
-export const formOf = (c: DbConnection): DbForm => ({ name: c.name, kind: c.kind, host: c.host, port: String(c.port), database: c.database, user: c.user, password: '', ssl: c.ssl, agentAccess: c.agentAccess });
+export const emptyForm = (): DbForm => ({ name: '', kind: 'postgres', host: 'localhost', port: String(DEFAULT_PORT.postgres), database: '', user: '', password: '', ssl: false, sslVerify: true, agentAccess: 'ask' });
+export const formOf = (c: DbConnection): DbForm => ({ name: c.name, kind: c.kind, host: c.host, port: String(c.port), database: c.database, user: c.user, password: '', ssl: c.ssl, sslVerify: c.sslVerify, agentAccess: c.agentAccess });
 
 /** 저장할 수 없으면 이유. */
 export function formProblem(f: DbForm): string | null {
@@ -50,7 +50,7 @@ export function formProblem(f: DbForm): string | null {
  */
 export function toInput(f: DbForm, projectId: string, editing: DbConnection | null, clearPassword = false): DbConnectionInput {
   const base: DbConnectionInput = {
-    projectId, name: f.name.trim(), kind: f.kind, host: f.host.trim(), port: Number(f.port), database: f.database.trim(), user: f.user.trim(), ssl: f.ssl, agentAccess: f.agentAccess,
+    projectId, name: f.name.trim(), kind: f.kind, host: f.host.trim(), port: Number(f.port), database: f.database.trim(), user: f.user.trim(), ssl: f.ssl, sslVerify: f.ssl && f.sslVerify, agentAccess: f.agentAccess,
   };
   if (editing) base.id = editing.id;
   if (clearPassword) base.password = '';

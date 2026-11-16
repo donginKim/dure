@@ -107,3 +107,20 @@ test('하단바: 오늘 쓴 토큰(캐시 읽기는 따로), 최근 7일, 프로
   core.service.noteLimit(ws.id, { status: 'warning', kind: 'five_hour', resetsAt: 1_900_000_000, utilization: 0.8 });
   expect(core.usageBar().limit).toMatchObject({ status: 'warning', kind: 'five_hour', utilization: 0.8 });
 });
+
+test('한도 창: 사용률과 초기화 시각을 기억하고, 최근 속도로 한도에 닿는 때를 어림한다 (초기화 전에 닿지 않으면 없음)', () => {
+  const t0 = 1_800_000_000_000;
+  const now = vi.spyOn(Date, 'now');
+  const reset = Math.round((t0 + 5 * 3_600_000) / 1000);
+  now.mockReturnValue(t0);
+  core.service.noteLimit(ws.id, { status: 'allowed', kind: 'five_hour', resetsAt: reset, utilization: null, windows: [{ kind: 'five_hour', utilization: 0.4, resetsAt: reset, status: 'allowed' }, { kind: 'seven_day', utilization: 0.05, resetsAt: reset + 86_400 * 3, status: 'allowed' }] });
+  now.mockReturnValue(t0 + 30 * 60_000);
+  core.service.noteLimit(ws.id, { status: 'allowed', kind: 'five_hour', resetsAt: reset, utilization: null, windows: [{ kind: 'five_hour', utilization: 0.6, resetsAt: reset, status: 'allowed' }, { kind: 'seven_day', utilization: 0.05, resetsAt: reset + 86_400 * 3, status: 'allowed' }] });
+  const w = core.usageBar().windows;
+  expect(w.map((x) => x.kind)).toEqual(['five_hour', 'seven_day']);
+  // 30분에 20% 올랐다: 남은 40% 는 60분 뒤
+  expect(w[0]!.eta).toBe(t0 + 90 * 60_000);
+  // 7일 창은 오르지 않았다
+  expect(w[1]!.eta).toBeNull();
+  now.mockRestore();
+});

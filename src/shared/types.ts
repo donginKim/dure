@@ -69,6 +69,11 @@ export interface UsageBar {
   models: { model: string; counted: number }[];
   /** 가장 최근에 받은 사용 한도 소식 (어느 워크스페이스에서든). 없으면 null */
   limit: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; at: number } | null;
+  /**
+   * 한도 창마다 (5시간, 7일 등): 사용률(0~1), 초기화 시각(초), 그리고 지금 속도로 쓰면 한도에 닿는 때(ms, 초기화 전에 닿지 않으면 null).
+   * 채팅 방식의 에이전트가 일할 때마다 새로 받는다. 받은 것이 없으면 비어 있다.
+   */
+  windows: { kind: string; utilization: number; resetsAt: number | null; status: string; at: number; eta: number | null }[];
   /** 지금 일하는 에이전트 수 */
   working: number;
 }

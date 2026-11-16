@@ -367,9 +367,37 @@ export class WorkspaceService extends EventEmitter {
   /** 가장 최근에 받은 사용 한도 소식 (계정 전체) */
   accountLimit(): { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; at: number } | null { return this.lastAccountLimit; }
 
-  noteLimit(id: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null }): void {
+  /** 한도 창마다 받은 사용률의 기록 (속도를 재서 언제 한도에 닿을지 어림한다) */
+  private readonly windowSamples = new Map<string, { at: number; u: number; resetsAt: number | null; status: string }[]>();
+
+  /** 한도 창마다 지금 사용률과, 지금 속도면 언제 한도에 닿는지 (최근 1시간의 오름세로 어림한다) */
+  limitWindows(now = Date.now()): { kind: string; utilization: number; resetsAt: number | null; status: string; at: number; eta: number | null }[] {
+    const out = [];
+    for (const [kind, list] of this.windowSamples) {
+      const last = list[list.length - 1];
+      if (!last) continue;
+      // 같은 창 안(초기화 시각이 같은 것)에서 최근 1시간의 첫 기록과 비교한다.
+      const same = list.filter((s) => s.resetsAt === last.resetsAt && s.at >= last.at - 3_600_000);
+      const first = same[0]!;
+      const rate = last.at > first.at ? (last.u - first.u) / (last.at - first.at) : 0; // 1ms 당
+      let eta: number | null = null;
+      if (rate > 0 && last.u < 1) {
+        const at = last.at + (1 - last.u) / rate;
+        eta = last.resetsAt && at > last.resetsAt * 1000 ? null : at;
+      }
+      out.push({ kind, utilization: last.u, resetsAt: last.resetsAt, status: last.status, at: last.at, eta: last.u >= 1 ? now : eta });
+    }
+    return out.sort((a, b) => b.utilization - a.utilization);
+  }
+
+  noteLimit(id: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; windows?: { kind: string; utilization: number; resetsAt: number | null; status: string }[] }): void {
     const ws = this.d.workspaces.get(id);
     if (!ws) return;
+    for (const w of info.windows ?? []) {
+      const list = (this.windowSamples.get(w.kind) ?? []).filter((s) => s.at >= Date.now() - 6 * 3_600_000);
+      list.push({ at: Date.now(), u: Math.max(0, Math.min(1.5, w.utilization)), resetsAt: w.resetsAt, status: w.status });
+      this.windowSamples.set(w.kind, list.slice(-200));
+    }
     // 계정 전체의 최근 한도 소식 (하단바에 보인다): 어느 워크스페이스에서 왔든 가장 새 것.
     this.lastAccountLimit = { status: info.status, kind: info.kind || this.lastAccountLimit?.kind || '', resetsAt: info.resetsAt, utilization: info.utilization, at: Date.now() };
     const before = this.limits.get(id);

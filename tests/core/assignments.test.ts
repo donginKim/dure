@@ -667,7 +667,9 @@ test('참여자는 내 몫을 바로 만든다: 리더의 승인 없이 내 PC �
   // 리더가 켜지면 내가 맡은 일이 가고, 진행도 이어서 간다
   net.set(addr, handle);
   await (dev.core.peers as unknown as { pingAll(): Promise<void> }).pingAll();
-  await until(() => pm.core.assignments.outgoing(pm.projectId).length === 1, 6000);
+  // 닿으면 저절로 다시 보낸다. 시험이 바쁜 때에도 기다리지 않게 한 번 직접 부른다 (두 번 가도 한 번만 적힌다).
+  await dev.core.assignments.resendResults();
+  await until(() => pm.core.assignments.outgoing(pm.projectId).length === 1, 10_000);
   const out = pm.core.assignments.outgoing(pm.projectId)[0]!;
   expect(out).toMatchObject({ peerId: dev.id, state: 'accepted', note: '스스로 맡은 일' });
   expect(out.items.map((it) => it.name)).toEqual(['결제 API']);

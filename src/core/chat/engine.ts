@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+/** 한도 창 하나 (5시간, 7일 등): 사용률 0~1 과 초기화 시각(초) */
+export interface LimitWindowInfo { kind: string; utilization: number; resetsAt: number | null; status: string }
 import type { ChatPermission, ChatQuestion, ModelChoice, SlashCommand } from '@shared/types';
 import { AgentSession, type AgentEvent, type SessionSpawn } from '../agents/session';
 import { stepInput, stepSummary } from './transcript';
@@ -65,7 +67,7 @@ export interface EngineHooks {
   /** 한 차례가 오류 없이 끝났다 (한도가 풀렸다는 뜻이다) */
   onTurnOk?(workspaceId: string): void;
   /** 사용 한도가 바뀌었다 (status: allowed 면 풀렸다) */
-  onLimit?(workspaceId: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null }): void;
+  onLimit?(workspaceId: string, info: { status: 'allowed' | 'warning' | 'rejected'; kind: string; resetsAt: number | null; utilization: number | null; windows?: LimitWindowInfo[] }): void;
 }
 
 /** 한도에 걸려 끝났을 때 Claude Code 가 남기는 글 */
@@ -244,7 +246,9 @@ export class ChatEngine extends EventEmitter {
         const i = isObj(e.rate_limit_info) ? e.rate_limit_info : {};
         const status = i.status === 'rejected' ? 'rejected' : i.status === 'allowed_warning' ? 'warning' : 'allowed';
         const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-        this.hooks.onLimit?.(workspaceId, { status, kind: str(i.rateLimitType), resetsAt: num(i.resetsAt), utilization: num(i.utilization) });
+        // 한도 창마다(5시간, 7일 등) 사용률과 초기화 시각이 함께 온다.
+        const windows = isObj(i.unifiedWindows) ? Object.entries(i.unifiedWindows).flatMap(([kind, w]) => (isObj(w) && num(w.utilization) !== null ? [{ kind, utilization: num(w.utilization)!, resetsAt: num(w.resetsAt), status: str(w.status) }] : [])) : [];
+        this.hooks.onLimit?.(workspaceId, { status, kind: str(i.rateLimitType), resetsAt: num(i.resetsAt), utilization: num(i.utilization), windows });
         return;
       }
       case 'result':

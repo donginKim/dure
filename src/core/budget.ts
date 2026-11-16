@@ -17,20 +17,22 @@ export class BudgetService extends EventEmitter {
   private readonly override = new Map<string, number>();
   private readonly lastState = new Map<string, BudgetStatus['state']>();
 
-  constructor(private readonly db: Database.Database, private readonly projects: ProjectStore, private readonly now: () => number = Date.now) { super(); }
+  /** defaultDaily: 프로젝트에 하루 상한이 없을 때 쓰는 설정의 기본 하루 상한 (0 이면 없음) */
+  constructor(private readonly db: Database.Database, private readonly projects: ProjectStore, private readonly now: () => number = Date.now, private readonly defaultDaily: () => number = () => 0) { super(); }
 
   status(projectId: string): BudgetStatus {
     const p = this.projects.get(projectId);
     const now = this.now();
     const today = (this.db.prepare(`SELECT ${COUNTED} AS n FROM token_usage WHERE project_id = ? AND at >= ?`).get(projectId, startOfToday(now)) as { n: number }).n;
     const total = (this.db.prepare(`SELECT ${COUNTED} AS n FROM token_usage WHERE project_id = ?`).get(projectId) as { n: number }).n;
-    const dailyLimit = p?.budgetDaily ?? 0;
+    const own = p?.budgetDaily ?? 0;
+    const dailyLimit = own > 0 ? own : Math.max(0, this.defaultDaily());
     const totalLimit = p?.budgetTotal ?? 0;
     const overrideUntil = (this.override.get(projectId) ?? 0) > now ? this.override.get(projectId)! : 0;
     const over = (dailyLimit > 0 && today >= dailyLimit) || (totalLimit > 0 && total >= totalLimit);
     const near = (dailyLimit > 0 && today >= dailyLimit * 0.8) || (totalLimit > 0 && total >= totalLimit * 0.8);
     const state: BudgetStatus['state'] = over && !overrideUntil ? 'over' : over || near ? 'warning' : 'ok';
-    return { projectId, today, total, dailyLimit, totalLimit, state, overrideUntil };
+    return { projectId, today, total, dailyLimit, totalLimit, state, overrideUntil, dailyFromDefault: own === 0 && dailyLimit > 0 };
   }
 
   /** 새로 일을 시켜도 되는가. 안 되면 까닭 */

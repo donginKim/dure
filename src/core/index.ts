@@ -183,7 +183,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const notes = new NoteStore(db);
   const usage = new UsageStore(db, workspaces);
   // 예산: 하루·전체 상한을 넘으면 그 프로젝트의 에이전트를 멈추고 새로 일을 시키지 않는다.
-  const budget = new BudgetService(db, projects);
+  const budget = new BudgetService(db, projects, Date.now, () => settings.get().defaultBudgetDaily);
   const checkpoints = new CheckpointService({ db, workspaces, git });
   const prs = new PrService({ db, workspaces, git, env: o.baseEnv });
   // 일의 순서: 앞의 일이 다 끝난 항목이 생기면 그 워크스페이스에 알린다 (꺼져 있으면 이 알림으로 뜬다).

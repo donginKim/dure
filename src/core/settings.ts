@@ -19,7 +19,10 @@ export const DEFAULT_SETTINGS: Settings = {
   peerName: '',
   peerPort: 47800,
   claudePath: '',
-  claudeModel: '',
+  claudeModel: 'claude-sonnet-5-5',
+  coordinatorModel: 'claude-opus-5-5',
+  autoCompactTokens: 120_000,
+  defaultBudgetDaily: 2_000_000,
   claudeEffort: '',
   claudeArgs: '',
   codexPath: '',
@@ -30,7 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoStartOnMessage: true,
   notifyAgentOnCommit: true,
   reviewOnDraft: true,
-  reviewModel: '',
+  reviewModel: 'claude-sonnet-5-5',
   notesForAgents: false,
   notesWriteForAgents: false,
   notifications: true,
@@ -75,7 +78,7 @@ const RESERVED: Record<'claude' | 'codex', { flags: string[]; prefixes?: string[
   claude: { flags: [
     '--mcp-config', '--strict-mcp-config', '--settings', '--setting-sources', '--append-system-prompt', '--system-prompt', '--allowedTools', '--allowed-tools',
     '--permission-mode', '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--permission-prompt-tool',
-    '--output-format', '--input-format', '--include-partial-messages', '--verbose', '--print', '-p', '--resume', '-r', '--continue', '-c', '--session-id', '--model', '--effort', '--disallowedTools', '--disallowed-tools', '--tools',
+    '--output-format', '--input-format', '--include-partial-messages', '--verbose', '--print', '-p', '--resume', '-r', '--continue', '-c', '--session-id', '--model', '--effort', '--autocompact', '--disallowedTools', '--disallowed-tools', '--tools',
   ] },
   codex: { flags: [
     '--dangerously-bypass-approvals-and-sandbox', '--sandbox', '-s', '--ask-for-approval', '-a', '--full-auto', '--yolo', '-c', '--config', '--profile', '-p',
@@ -158,6 +161,17 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   peerPort: int('연결 포트', 1024, 65535),
   claudePath: path('Claude Code 실행 파일'),
   claudeModel: model,
+  coordinatorModel: model,
+  autoCompactTokens: (v: unknown): number => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || (n !== 0 && (n < 100_000 || n > 1_000_000))) throw new Error('자동 압축: 0(기본) 이거나 100,000 ~ 1,000,000 사이여야 합니다.');
+    return n;
+  },
+  defaultBudgetDaily: (v: unknown): number => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 1_000_000_000) throw new Error('기본 하루 예산: 0 이상의 정수여야 합니다.');
+    return n;
+  },
   claudeEffort: oneOf('effort', '', 'low', 'medium', 'high', 'xhigh', 'max'),
   claudeArgs: args('Claude Code 추가 인자', 'claude'),
   codexPath: path('Codex 실행 파일'),

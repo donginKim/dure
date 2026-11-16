@@ -186,10 +186,36 @@ export function SettingsView() {
       <div className="section">
         <div className="section-head"><h2>Claude Code</h2></div>
         <div className="set-box">
+          <Row label="조율 에이전트의 모델" help="계획을 세우고 일을 나누는 조율 에이전트만 이 모델로 돕니다. 일하는 에이전트는 아래 '모델' 을 씁니다. 비우면 같은 모델을 씁니다." {...row('coordinatorModel')}>
+            <select className="set-select" value={s.coordinatorModel} onChange={(e) => save('coordinatorModel', e.target.value)}>
+              <option value="">일하는 에이전트와 같게</option>
+              {claudeModels.length > 0 && <optgroup label="Claude">{claudeModels.map(modelOption)}</optgroup>}
+              {otherModels.length > 0 && <optgroup label="그 밖의 모델">{otherModels.map(modelOption)}</optgroup>}
+              {s.coordinatorModel && !models.some((m) => m.value === s.coordinatorModel) && <option value={s.coordinatorModel}>{s.coordinatorModel}</option>}
+            </select>
+          </Row>
+          <Row label="대화 자동 압축" help="대화가 이 크기를 넘으면 Claude Code 가 앞부분을 요약해 줄입니다. 에이전트는 걸음마다 대화 전체를 다시 읽으므로, 작게 둘수록 토큰을 덜 씁니다 (대신 오래된 세부를 잊을 수 있습니다). 0 이면 Claude Code 의 기본." {...row('autoCompactTokens')}>
+            <select value={String(s.autoCompactTokens)} onChange={(e) => save('autoCompactTokens', Number(e.target.value))}>
+              <option value="100000">10만 토큰 (가장 아낌)</option>
+              <option value="120000">12만 토큰 (권장)</option>
+              <option value="200000">20만 토큰</option>
+              <option value="400000">40만 토큰</option>
+              <option value="0">Claude Code 의 기본</option>
+            </select>
+          </Row>
+          <Row label="프로젝트 기본 하루 예산" help="프로젝트에 하루 상한을 따로 정하지 않았으면 이 값을 씁니다 (입력·캐시 쓰기·출력으로 세고, 캐시에서 읽은 것은 뺍니다). 80% 에서 알리고, 넘으면 그 프로젝트의 에이전트를 멈춥니다. 프로젝트 현황 탭의 사용량에서 프로젝트마다 바꾸거나 '오늘만 더 쓰기' 를 할 수 있습니다." {...row('defaultBudgetDaily')}>
+            <select value={String(s.defaultBudgetDaily)} onChange={(e) => save('defaultBudgetDaily', Number(e.target.value))}>
+              <option value="0">없음</option>
+              <option value="1000000">100만 토큰</option>
+              <option value="2000000">200만 토큰 (권장)</option>
+              <option value="5000000">500만 토큰</option>
+              <option value="10000000">1,000만 토큰</option>
+            </select>
+          </Row>
           <Row
             label="모델" {...row('claudeModel')}
             error={errors.claudeModel ?? (modelsError ? `모델 목록을 받아오지 못했습니다: ${modelsError}` : undefined)}
-            help='다음에 시작하는 에이전트부터 적용됩니다. "Claude Code 의 기본" 은 Claude Code 에 정해 둔 모델을 그대로 씁니다.'
+            help='일하는 에이전트의 모델입니다 (조율 에이전트는 위에서 따로 정합니다). 다음에 시작하는 에이전트부터 적용됩니다. 코드 작업은 Sonnet 으로도 충분한 경우가 많고, Opus 보다 토큰 값이 쌉니다. "Claude Code 의 기본" 은 Claude Code 에 정해 둔 모델을 그대로 씁니다.'
           >
             <select className="set-select" value={s.claudeModel} disabled={modelsLoading && models.length === 0} onChange={(e) => save('claudeModel', e.target.value)}>
               <option value="">{modelsLoading && models.length === 0 ? '목록을 받아오는 중…' : 'Claude Code 의 기본'}</option>

@@ -20,7 +20,7 @@ beforeEach(async () => {
 afterEach(async () => { await core.dispose(); });
 
 test('하루·전체 상한: 캐시에서 읽은 것은 빼고 세고, 80% 면 알리고, 넘으면 새로 일을 시키지 못한다', async () => {
-  expect(core.budget.status(projectId)).toMatchObject({ state: 'ok', dailyLimit: 0 });
+  expect(core.budget.status(projectId)).toMatchObject({ state: 'ok', dailyLimit: 2_000_000, dailyFromDefault: true });
   core.budget.setLimits(projectId, { daily: 10_000, total: 0 });
   spend(8_500, Date.now() - 2 * 86_400_000); // 어제 이전 것은 하루 상한에 들지 않는다
   spend(8_000);
@@ -80,4 +80,16 @@ test('여러 프로젝트 대시보드: 진행 중인 프로젝트마다 TODO �
   expect(core.dashboard().find((x) => x.projectId === projectId)!.budget.today).toBe(1234);
   core.projects.setStatus(other.id, 'done');
   expect(core.dashboard().map((x) => x.projectId)).toEqual([projectId]);
+});
+
+test('기본 하루 예산: 프로젝트에 상한이 없으면 설정의 기본값을 쓰고, 프로젝트에 정한 값이 이긴다', () => {
+  core.settings.update({ defaultBudgetDaily: 10_000 });
+  spend(9_000);
+  expect(core.budget.status(projectId)).toMatchObject({ dailyLimit: 10_000, dailyFromDefault: true, state: 'warning' });
+  core.budget.setLimits(projectId, { daily: 50_000, total: 0 });
+  expect(core.budget.status(projectId)).toMatchObject({ dailyLimit: 50_000, dailyFromDefault: false, state: 'ok' });
+  core.budget.setLimits(projectId, { daily: 0, total: 0 });
+  core.settings.update({ defaultBudgetDaily: 0 });
+  expect(core.budget.status(projectId)).toMatchObject({ dailyLimit: 0, state: 'ok' });
+  expect(() => core.settings.update({ autoCompactTokens: 5_000 })).toThrow('자동 압축');
 });

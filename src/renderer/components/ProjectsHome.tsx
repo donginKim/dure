@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { throttled } from '../throttle';
 import type { ProjectDashboard, Repo } from '@shared/types';
 import { Onboarding } from './Onboarding';
 import { DailyCard } from './DailyCard';
 import { CaptureInbox } from './CaptureInbox';
+import { AwayCard } from './AwayCard';
 import { STATUS_LABEL, type Selection, type TreeNode } from '../tree';
 
 /** 아무것도 고르지 않았을 때 보이는 화면: 운영 중인 프로젝트 전체. */
@@ -12,10 +14,10 @@ export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNo
   const [dash, setDash] = useState<Record<string, ProjectDashboard>>({});
   useEffect(() => {
     let alive = true;
-    const load = (): void => { window.dure.projects.dashboard().then((list) => { if (alive) setDash(Object.fromEntries(list.map((d) => [d.projectId, d]))); }).catch(() => undefined); };
+    const load = throttled(() => { window.dure.projects.dashboard().then((list) => { if (alive) setDash(Object.fromEntries(list.map((d) => [d.projectId, d]))); }).catch(() => undefined); }, 3000);
     load();
-    const t = setInterval(load, 10_000);
-    return () => { alive = false; clearInterval(t); };
+    const t = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(t); load.cancel(); };
   }, [tree]);
   const total = Object.values(dash).reduce((a, d) => ({ attention: a.attention + d.attention, waiting: a.waiting + d.agents.waiting, working: a.working + d.agents.working, tokens: a.tokens + d.budget.today }), { attention: 0, waiting: 0, working: 0, tokens: 0 });
   return (
@@ -26,6 +28,7 @@ export function ProjectsHome({ tree, repos, onSelect, onCreate }: { tree: TreeNo
         프로젝트는 함께 움직이는 저장소와 워크스페이스의 묶음입니다. 보통 프론트와 백엔드 한 세트가 한 프로젝트입니다.
       </div>
 
+      <AwayCard onSelect={onSelect} />
       <CaptureInbox tree={tree} />
       {tree.length > 0 && <DailyCard onSelect={onSelect} />}
       {tree.length > 1 && (

@@ -1,4 +1,5 @@
 import { UpdateNotice } from './UpdateNotice';
+import { throttled } from '../throttle';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Project, Repo, Todo, Workspace } from '@shared/types';
 import { deliveryNote } from '../conversationView';
@@ -28,19 +29,19 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   const [doing, setDoing] = useState<Record<string, { text: string; at: number }>>({});
   useEffect(() => {
     let alive = true;
-    const load = (): void => { window.dure.workspaces.doing().then((d) => { if (alive) setDoing(d); }).catch(() => undefined); };
+    const load = throttled(() => { window.dure.workspaces.doing().then((d) => { if (alive) setDoing(d); }).catch(() => undefined); }, 1500);
     load();
     const off = window.dure.onChanged((topic) => { if (topic === 'workspaces') load(); });
-    return () => { alive = false; off(); };
+    return () => { alive = false; off(); load.cancel(); };
   }, []);
   // 팀 현황은 다른 사람이 리더인 함께하는 프로젝트가 있을 때만 보인다.
   const [hasTeam, setHasTeam] = useState(false);
   useEffect(() => {
     let alive = true;
-    const load = (): void => { window.dure.projects.dashboard().then((d) => { if (alive) setHasTeam(d.some((x) => x.share && !x.share.mine)); }).catch(() => undefined); };
+    const load = throttled(() => { window.dure.projects.dashboard().then((d) => { if (alive) setHasTeam(d.some((x) => x.share && !x.share.mine)); }).catch(() => undefined); }, 5000);
     load();
     const off = window.dure.onChanged((topic) => { if (topic === 'peers' || topic === 'projects') load(); });
-    return () => { alive = false; off(); };
+    return () => { alive = false; off(); load.cancel(); };
   }, []);
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);

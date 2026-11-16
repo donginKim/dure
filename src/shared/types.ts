@@ -57,6 +57,8 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 자리 비움 동안 두레가 대신 고른 답 하나 */
+export interface AwayChoice { id: string; projectId: string; workspaceId: string; workspaceName: string; question: string; answer: string; at: number }
 /** 프로젝트 기억의 종류: 정한 것, 배운 것, 자주 쓰는 명령 */
 export type MemoryKind = 'decision' | 'lesson' | 'command';
 export interface MemoryItem { id: string; projectId: string; kind: MemoryKind; text: string; author: string; createdAt: number }
@@ -472,6 +474,8 @@ export interface Settings {
   theme: 'dark' | 'light' | 'system';
   /** 하단바의 도트 일꾼 */
   companion: boolean;
+  /** 자리 비움: 에이전트의 선택지 질문에 두레가 추천(첫째) 답을 대신 골라 멈추지 않게 한다. 고른 것은 적어 두었다가 돌아와서 본다 */
+  awayMode: boolean;
   /** 빠른 메모를 여는 전역 단축키 (Electron 의 단축키 글. 비우면 끈다) */
   captureShortcut: string;
   /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */

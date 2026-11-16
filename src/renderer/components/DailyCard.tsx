@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { throttled } from '../throttle';
 import type { DailyDigest } from '@shared/types';
 import { hm, reportText, tok } from '../digestView';
 import type { Selection } from '../tree';
@@ -31,9 +32,10 @@ export function DailyCard({ onSelect }: { onSelect: (s: Selection) => void }) {
     window.dure.projects.digest(1).then(setPrev).catch(() => undefined);
   }, []);
   useEffect(() => {
-    load();
-    const off = window.dure.onChanged((topic) => { if (topic === 'todos' || topic === 'commit' || topic === 'attention') load(); });
-    return off;
+    const soon = throttled(load, 5000);
+    soon();
+    const off = window.dure.onChanged((topic) => { if (topic === 'todos' || topic === 'commit' || topic === 'attention') soon(); });
+    return () => { off(); soon.cancel(); };
   }, [load]);
   if (!now || !prev) return null;
   const fold = (v: boolean): void => { setFolded(v); try { if (v) window.localStorage.setItem(FOLD_KEY, today()); else window.localStorage.removeItem(FOLD_KEY); } catch { /* 못 기억해도 된다 */ } };

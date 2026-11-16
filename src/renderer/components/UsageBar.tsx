@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { throttled } from '../throttle';
 import type { UsageBar as Bar } from '@shared/types';
 import { Companion } from './Companion';
 
@@ -19,19 +20,21 @@ export function UsageBar({ onOpenAttention }: { onOpenAttention: () => void }) {
   const [b, setB] = useState<Bar | null>(null);
   const [open, setOpen] = useState(false);
   const [companion, setCompanion] = useState(false);
+  const [away, setAway] = useState(false);
   useEffect(() => {
-    const load = (): void => { window.dure.settings.get().then((s) => setCompanion(s.companion)).catch(() => undefined); };
+    const load = (): void => { window.dure.settings.get().then((s) => { setCompanion(s.companion); setAway(s.awayMode); }).catch(() => undefined); };
     load();
     return window.dure.onChanged((topic) => { if (topic === 'settings') load(); });
   }, []);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let alive = true;
-    const load = (): void => { window.dure.projects.usageBar().then((x) => { if (alive) setB(x); }).catch(() => undefined); };
+    // 글이 흐르는 동안 변경 알림이 아주 자주 온다: 5초에 한 번만 다시 읽고, 창이 가려져 있으면 읽지 않는다.
+    const load = throttled(() => { window.dure.projects.usageBar().then((x) => { if (alive) setB(x); }).catch(() => undefined); }, 5000);
     load();
-    const t = setInterval(load, 15_000);
-    const off = window.dure.onChanged((topic) => { if (topic === 'workspaces' || topic === 'chat') load(); });
-    return () => { alive = false; clearInterval(t); off(); };
+    const t = setInterval(load, 30_000);
+    const off = window.dure.onChanged((topic) => { if (topic === 'workspaces') load(); });
+    return () => { alive = false; clearInterval(t); off(); load.cancel(); };
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -69,6 +72,8 @@ export function UsageBar({ onOpenAttention }: { onOpenAttention: () => void }) {
           : lim ? <span className={`ub-limit ${lim.status}`}>{limText}</span>
             : <span className="muted" title="채팅 방식의 에이전트가 한 번 일하면 Claude 계정의 한도를 받아 옵니다">한도 —</span>}
       </button>
+      <button className={`ub-away${away ? ' on' : ''}`} title={away ? '자리 비움 켜짐: 에이전트의 선택지 질문에 두레가 추천(첫째) 답을 대신 골라 멈추지 않게 합니다. 고른 것은 적어 두었다가 첫 화면에 보입니다. 명령 실행 승인은 대신 하지 않습니다. 누르면 끕니다' : '자리를 비울 때 켜면, 에이전트가 선택지 질문에서 멈추지 않고 추천 답으로 진행합니다 (고른 것은 적어 둡니다)'}
+        onClick={() => { window.dure.settings.update({ awayMode: !away }).then((s) => setAway(s.awayMode)).catch(() => undefined); }}>{away ? '자리 비움 중' : '자리 비움'}</button>
       {companion && <Companion onOpenAttention={onOpenAttention} limitHot={!!w0 && (w0.utilization >= 0.8 || (!!w0.eta && w0.eta - Date.now() < 2 * 3_600_000))} />}
       {open && (
         <div className="ub-pop" role="dialog" aria-label="오늘 사용량">

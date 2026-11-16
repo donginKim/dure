@@ -1259,3 +1259,11 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .mem-add { display: flex; gap: 8px; margin-top: 8px; }
 .mem-add input { flex: 1; min-width: 0; }
 .tag.mem-command { font-family: ui-monospace, SFMono-Regular, monospace; }
+
+/* 자리 비움 */
+.ub-away { all: unset; flex: none; padding: 0 10px; height: 100%; display: flex; align-items: center; cursor: pointer; color: var(--muted); border-left: 1px solid var(--line); white-space: nowrap; }
+.ub-away:hover { background: var(--panel-2); color: var(--text); }
+.ub-away.on { color: var(--warn); font-weight: 600; }
+.ub-away:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.inbox.away { border-left-color: var(--warn); }
+.inbox.away .inbox-head { flex-wrap: wrap; }

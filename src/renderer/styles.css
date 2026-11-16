@@ -1197,3 +1197,16 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .companion.cheer svg { animation: cp-hop 0.45s steps(2) infinite; }
 @keyframes cp-hop { 50% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .companion.cheer svg { animation: none; } }
+/* 하단바를 더 작게 */
+:root { --statusbar: 22px; }
+.statusbar { font-size: 11px; }
+.ub-main { gap: 8px; padding: 0 10px; }
+.ub-main .dot { width: 6px; height: 6px; }
+.ub-win { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.ub-win b { font-weight: 600; }
+.ub-win.warning b { color: var(--warn); }
+.ub-win.rejected b { color: var(--danger); }
+.ub-mini { width: 28px; height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; display: inline-block; }
+.ub-mini > span { display: block; height: 100%; background: var(--ok); }
+.ub-win.warning .ub-mini > span { background: var(--warn); }
+.ub-win.rejected .ub-mini > span { background: var(--danger); }

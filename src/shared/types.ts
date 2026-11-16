@@ -65,6 +65,8 @@ export interface UsageBar {
   today: { counted: number; cacheRead: number; output: number; requests: number };
   /** 최근 7일, 날마다의 counted (오래된 것부터) */
   week: number[];
+  /** 오늘, 이번 주(월요일부터), 이번 달(1일부터)의 counted */
+  periods: { today: number; week: number; month: number };
   projects: { projectId: string; name: string; counted: number }[];
   models: { model: string; counted: number }[];
   /** 가장 최근에 받은 사용 한도 소식 (어느 워크스페이스에서든). 없으면 null */

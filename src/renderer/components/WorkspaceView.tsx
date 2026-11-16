@@ -18,6 +18,7 @@ import { ConfirmDialog, BYPASS_WARNING } from './dialogs';
 import { TerminalPane } from './TerminalPane';
 import type { ConversationData } from './ConversationPanel';
 import { SidePanel } from './SidePanel';
+import { AgentConfigGate } from './AgentConfigGate';
 import type { PendingInfo } from './TodoPanel';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -235,6 +236,7 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
         </button>
         <button className="btn ghost danger" onClick={() => void askRemove()}>지우기</button>
       </div>
+      {!readOnly && <AgentConfigGate workspaceId={workspace.id} />}
       <DbRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <SlackRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />
       <BrowserRequests projectId={workspace.projectId} workspaceId={workspace.id} workspaces={workspaces} />

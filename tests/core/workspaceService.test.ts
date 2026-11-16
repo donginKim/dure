@@ -79,6 +79,15 @@ test('같은 이름으로 두 번 만들면 두 번째 브랜치는 -2 가 붙�
   expect(b.worktreePath).not.toBe(a.worktreePath);
 });
 
+test('대소문자만 다른 브랜치가 이미 있으면 다른 이름을 쓰고, 있던 브랜치는 지우지 않는다', async () => {
+  // 지워진 워크스페이스가 남긴 브랜치 (합치지 않은 일이 들어 있다)
+  gitOut(repoPath, 'branch', 'dure/Old-Work', 'main');
+  const ws = await create({ name: 'old work' });
+  expect(ws.branch).toBe('dure/old-work-2');
+  expect(gitOut(repoPath, 'branch', '--list', 'dure/Old-Work').trim()).toContain('dure/Old-Work');
+  await expect(create({ name: 'x', baseBranch: '--orphan' })).rejects.toThrow('기준 브랜치의 이름');
+});
+
 test('없는 기준 브랜치면 실패하고 워크스페이스 목록이 비어 있다', async () => {
   await expect(create({ name: 'x', baseBranch: 'no-such' })).rejects.toThrow();
   expect(core.workspaces.list(projectId)).toEqual([]);

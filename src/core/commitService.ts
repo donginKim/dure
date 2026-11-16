@@ -20,7 +20,7 @@ const MAX_DIFF = 400_000;
 export class CommitService extends EventEmitter {
   constructor(private readonly d: {
     /** 커밋했다 (두레 논에 적는다) */
-    onCommitted?: (projectId: string, workspaceId: string) => void;
+    onCommitted?: (projectId: string, workspaceId: string, hash: string) => void;
     workspaces: WorkspaceStore;
     git: Git;
     drafts: CommitDraftStore;
@@ -90,7 +90,7 @@ export class CommitService extends EventEmitter {
     // 실패하면 여기서 던져지고 초안은 그대로 남는다.
     const result = await this.d.git.commitFiles({ path: ws.worktreePath, files: i.files, message: i.message });
     this.d.drafts.clear(workspaceId);
-    try { this.d.onCommitted?.(ws.projectId, ws.id); } catch { /* 기록만 못 한다 */ }
+    try { this.d.onCommitted?.(ws.projectId, ws.id, result.hash); } catch { /* 기록만 못 한다 */ }
     this.notify(ws, o.auto ? `두레가 자동 반영 설정에 따라 커밋했다 (확인 명령 통과, 리뷰에 높음 없음): ${result.hash} ${result.subject}` : `사용자가 커밋했다: ${result.hash} ${result.subject}`);
     this.emit('changed', workspaceId);
     return result;

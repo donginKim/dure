@@ -94,6 +94,10 @@ export interface PluginScheduleTemplate { title: string; prompt: string; kind: '
  * 설치형 플러그인. 글과 설정만 담는다 (두레 안에서 플러그인의 코드를 돌리지 않는다).
  * approved: 지금의 내용을 사용자가 승인했다. changed: 승인한 뒤 내용이 바뀌었다 (다시 승인해야 쓴다)
  */
+/** 작업 폴더에 든 에이전트 설정 파일 하나 (.claude/settings.json, .mcp.json 등) */
+export interface AgentConfigFile { path: string; text: string; /** 길어서 잘랐다 */ cut: boolean }
+/** 작업 폴더의 에이전트 설정 파일들과, 사용자가 이 내용을 허용했는가. 파일이 없으면 hash 가 빈 글이고 trusted 다 */
+export interface AgentConfig { files: AgentConfigFile[]; hash: string; trusted: boolean }
 /** 만들기의 틀 */
 export type MakeFormat = 'report' | 'slides' | 'visual';
 export interface PluginMaker { name: string; prompt: string; format: MakeFormat }

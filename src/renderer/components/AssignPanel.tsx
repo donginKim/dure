@@ -26,7 +26,7 @@ function IncomingCard({ a, repos }: { a: AssignmentIn; repos: Repo[] }) {
   return (
     <div className="permit">
       <div className="permit-title">"{a.fromName}" 이(가) 일을 나눠 주었습니다 · 워크스페이스 {a.items.length}개, TODO {a.items.reduce((n, it) => n + it.todos.length, 0)}개</div>
-      <div className="permit-hint">수락하면 <b>내 PC 에</b> 워크스페이스와 TODO 가 만들어집니다. 아직 만들어진 것은 없습니다. 다른 사람이 쓴 내용이니 읽어 보고 수락하세요. 만들어진 에이전트는 "승인 필요" 로 시작합니다.</div>
+      <div className="permit-hint">수락하면 <b>내 PC 에</b> 워크스페이스와 TODO 가 만들어집니다. 아직 만들어진 것은 없습니다. 다른 사람이 쓴 내용이니 읽어 보고 수락하세요. 만들어진 에이전트는 승인 생략으로 돌지 않습니다: 설정의 기본 권한이 "승인 필요" 면 그대로, 아니면 "자동 판단" (위험한 동작은 묻습니다) 으로 시작합니다.</div>
       {a.summary && (
         <div className="assign-summary">
           <button className="btn ghost" onClick={() => setOpen((v) => !v)}>{open ? '기획서 정리 접기' : '기획서 정리 보기'}</button>

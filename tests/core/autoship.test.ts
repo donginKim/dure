@@ -149,6 +149,23 @@ describe('보안 리뷰에서 나온 경우들', () => {
     expect(gitOut(ws.worktreePath, 'rev-list', '--count', 'main..HEAD')).toBe('0');
   });
 
+  test('main 까지: 에이전트가 직접 한 커밋(검사를 거치지 않았다)이 브랜치에 있으면 main 으로 옮기지 않는다', async () => {
+    core.projects.setAutoShip(projectId, 'main');
+    const before = gitOut(repo.path, 'rev-parse', 'main');
+    // 에이전트가 두레를 거치지 않고 커밋한다
+    writeFileSync(join(ws.worktreePath, 'sneaky.ts'), 'export const leak = 1;\n');
+    gitOut(ws.worktreePath, 'add', 'sneaky.ts');
+    gitOut(ws.worktreePath, '-c', 'user.name=a', '-c', 'user.email=a@example.com', 'commit', '-q', '-m', 'sneak');
+    // 그러고는 사소한 변경만 초안으로 올린다
+    writeFileSync(join(ws.worktreePath, 'ok.ts'), 'export const ok = 1;\n');
+    core.commitDrafts.save(ws.id, 'feat: ok');
+    await until(() => core.autoShip.events(projectId).some((e) => e.stage === 'merge' || e.stage === 'done'));
+    const last = core.autoShip.events(projectId)[0]!;
+    expect(last).toMatchObject({ stage: 'merge', ok: false });
+    expect(last.message).toContain('두레가 만들지 않은 커밋이 1개');
+    expect(gitOut(repo.path, 'rev-parse', 'main')).toBe(before);
+  });
+
   test('main 까지: 이 워크스페이스의 브랜치만 합친다 (다른 워크스페이스의 커밋은 넣지 않는다)', async () => {
     const web = await core.service.create({ projectId, repoId: repo.id, name: 'WEB', baseBranch: 'main', agentKind: 'claude' });
     writeFileSync(join(web.worktreePath, 'wip.ts'), 'half done\n');

@@ -191,3 +191,13 @@ test('모든 에이전트에게: 고를 것이 있으면 글이 아니라 질문
     expect(text).toContain('"(추천)"');
   }
 });
+
+test('자동 판단: Claude Code 는 auto 권한 모드, Codex 는 작업 폴더 안에 가두고 자동 검토. 조율(파일 수정 수동)은 그대로 default', () => {
+  const c = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'auto' });
+  expect(c.args.slice(c.args.indexOf('--permission-mode'), c.args.indexOf('--permission-mode') + 2)).toEqual(['--permission-mode', 'auto']);
+  expect(c.args).not.toContain('--dangerously-skip-permissions');
+  const k = buildAgentLaunch({ ...common, kind: 'codex', permissionMode: 'auto' });
+  expect(k.args.slice(-3)).toEqual(['--sandbox', 'workspace-write', '--approve-for-me']);
+  const m = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'auto', manualEdits: true });
+  expect(m.args[m.args.indexOf('--permission-mode') + 1]).toBe('default');
+});

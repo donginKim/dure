@@ -54,7 +54,7 @@ const create = (over = {}) => core.service.create({ projectId, repoId, baseBranc
 
 test('create 는 worktree 와 브랜치 dure/<slug> 를 만들고 status 는 stopped', async () => {
   const ws = await create({ name: '로그인 화면' });
-  expect(ws).toMatchObject({ name: '로그인 화면', branch: 'dure/로그인-화면', baseBranch: 'main', status: 'stopped', permissionMode: 'ask', agentKind: 'claude' });
+  expect(ws).toMatchObject({ name: '로그인 화면', branch: 'dure/로그인-화면', baseBranch: 'main', status: 'stopped', permissionMode: 'auto', agentKind: 'claude' });
   expect(ws.worktreePath).toBe(join(worktreeRoot, '쇼핑몰', '로그인-화면'));
   expect(existsSync(join(ws.worktreePath, 'README.md'))).toBe(true);
   expect(gitOut(ws.worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe('dure/로그인-화면');
@@ -171,7 +171,7 @@ test('가짜 claude 는 worktree 를 cwd 로, 두레 설정 파일이 쓰인 상
   const cfg = join(dataDir, 'workspaces', ws.id, 'mcp.json');
   expect(out).toContain(`CWD:${ws.worktreePath}`);
   expect(out).toContain(`--mcp-config ${cfg}`);
-  expect(out).toContain('--permission-mode acceptEdits');
+  expect(out).toContain('--permission-mode auto');
   const parsed = JSON.parse(readFileSync(cfg, 'utf8'));
   expect(parsed.mcpServers.dure.url).toBe(core.mcpUrl);
   expect(parsed.mcpServers.dure.headers.Authorization).toBe(`Bearer ${core.workspaces.getToken(ws.id)}`);
@@ -438,7 +438,7 @@ test('startAgent 에 첫 프롬프트를 주면 에이전트의 마지막 인자
   await until(() => core.pty.buffer(t.id).includes('TOKEN_ENV:'));
   const out = core.pty.buffer(t.id);
   const at = out.lastIndexOf('[두레] 첫 지시');
-  expect(at).toBeGreaterThan(out.indexOf('--permission-mode acceptEdits'));
+  expect(at).toBeGreaterThan(out.indexOf('--permission-mode auto'));
   // 가짜 에이전트는 인자를 다 찍은 뒤 TOKEN_ENV 줄을 찍는다: 그 바로 앞이 마지막 인자다
   expect(out.slice(at, out.indexOf('TOKEN_ENV:')).trim()).toBe('[두레] 첫 지시');
 });
@@ -833,4 +833,16 @@ describe('폴더 신뢰 창에 대신 답하기', () => {
     await new Promise((r) => setTimeout(r, 1500));
     expect(core.pty.buffer(t.id)).not.toContain('KEY1');
   });
+});
+
+test('권한 방식 바꾸기: 저장되고, 꺼져 있으면 다음 시작부터. 조율 에이전트와 잘못된 값은 받지 않는다', async () => {
+  const projectId = core.projects.create('권한').id;
+  const repo = await core.addRepo(projectId, makeRepo('perm'));
+  const w = await core.service.create({ projectId, repoId: repo.id, name: 'a', baseBranch: 'main', agentKind: 'claude' });
+  expect(w.permissionMode).toBe('auto');
+  expect(await core.service.setPermissionMode(w.id, 'ask')).toEqual({ applied: 'next' });
+  expect(core.workspaces.get(w.id)!.permissionMode).toBe('ask');
+  await expect(core.service.setPermissionMode(w.id, 'yolo' as never)).rejects.toThrow('올바르지 않습니다');
+  const coord = core.coordinator.ensure(projectId);
+  await expect(core.service.setPermissionMode(coord.id, 'auto')).rejects.toThrow('조율');
 });

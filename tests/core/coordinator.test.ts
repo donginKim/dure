@@ -109,7 +109,7 @@ describe('조율 에이전트', () => {
     await until(() => core.workspaces.get(ws.id)?.status === 'idle');
     const l = launch(ws.id);
     expect(l.argv).not.toContain('--disallowedTools');
-    expect(l.argv[l.argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits');
+    expect(l.argv[l.argv.indexOf('--permission-mode') + 1]).toBe('auto');
     expect(l.argv).not.toContain('--add-dir');
     expect(l.path.startsWith(join(dataDir, 'workspaces', ws.id, 'bin'))).toBe(true);
     expect(l.argv.join(' ')).toContain('조율이 일을 시키면');
@@ -254,7 +254,7 @@ describe('계획안', () => {
     });
     expect(res.todos).toBe(3);
     // 설정의 기본 권한이 "승인 생략" 이어도 승인으로 만든 것은 "승인 필요" 다
-    expect(res.created.map((w) => [w.name, w.baseBranch, w.summary, w.engine, w.permissionMode])).toEqual([['로그인', 'develop', '폼과 흐름', 'chat', 'ask']]);
+    expect(res.created.map((w) => [w.name, w.baseBranch, w.summary, w.engine, w.permissionMode])).toEqual([['로그인', 'develop', '폼과 흐름', 'chat', 'auto']]);
     expect(core.workspaces.list(projectId).map((w) => w.name)).toEqual(['로그인']);
     expect(existsSync(res.created[0]!.worktreePath)).toBe(true);
     const made = res.created[0]!.id;

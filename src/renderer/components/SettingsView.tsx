@@ -155,9 +155,9 @@ export function SettingsView() {
           </Row>
           <Row
             label="기본 권한 모드" {...row('defaultPermissionMode')}
-            help={s.defaultPermissionMode === 'bypass' ? <span className="set-warn">{BYPASS_WARNING}</span> : '승인 필요: 파일 수정은 자동 승인, 명령 실행은 승인을 거칩니다.'}
+            help={s.defaultPermissionMode === 'bypass' ? <span className="set-warn">{BYPASS_WARNING}</span> : s.defaultPermissionMode === 'auto' ? '자동 판단: 에이전트가 안전한 명령은 스스로 실행하고, 되돌리기 어렵거나 위험한 것만 묻습니다. 계획안을 승인해 만든 워크스페이스도 이 방식으로 돕니다.' : '승인 필요: 파일 수정은 자동 승인, 명령 실행은 승인을 거칩니다.'}
           >
-            <Choice value={s.defaultPermissionMode} onChange={(v) => save('defaultPermissionMode', v)} options={[{ value: 'ask', label: '승인 필요' }, { value: 'bypass', label: '승인 생략' }]} />
+            <Choice value={s.defaultPermissionMode} onChange={(v) => save('defaultPermissionMode', v)} options={[{ value: 'ask', label: '승인 필요' }, { value: 'auto', label: '자동 판단' }, { value: 'bypass', label: '승인 생략' }]} />
           </Row>
           <Row label="작업 폴더를 만드는 위치" help="워크스페이스의 작업 폴더(worktree)가 이 아래에 프로젝트 이름으로 만들어집니다. 비워 두면 기본 위치(~/dure/worktrees)입니다. 이미 만든 워크스페이스는 옮기지 않습니다." {...row('worktreeRoot')}>
             <TextInput wide value={s.worktreeRoot} placeholder="~/dure/worktrees" onCommit={(v) => save('worktreeRoot', v)} />

@@ -1,5 +1,10 @@
 export type AgentKind = 'claude' | 'codex';
-export type PermissionMode = 'ask' | 'bypass';
+/**
+ * ask: 파일 수정은 저절로, 명령 실행은 사용자에게 묻는다.
+ * auto: 에이전트(Claude Code 의 auto 모드, Codex 의 자동 검토)가 안전한 것은 스스로 허용하고 위험한 것만 묻는다.
+ * bypass: 묻지 않고 모두 실행한다.
+ */
+export type PermissionMode = 'ask' | 'auto' | 'bypass';
 /**
  * 에이전트를 돌리는 방식.
  * chat: 터미널 화면 없이 구조화된 입출력으로 돌린다 (글이 실시간으로 흐르고, 승인과 질문이 화면의 버튼으로 온다). Claude Code 만 된다.

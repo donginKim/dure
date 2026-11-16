@@ -281,6 +281,14 @@ export class ChatEngine extends EventEmitter {
     return true;
   }
 
+  /** 도는 중인 에이전트의 권한 방식을 바꾼다 (다음 동작부터). 에이전트가 없으면 false */
+  async setPermissionMode(workspaceId: string, mode: 'acceptEdits' | 'auto'): Promise<boolean> {
+    const l = this.live.get(workspaceId);
+    if (!l?.session.alive) return false;
+    await l.session.control({ subtype: 'set_permission_mode', mode }, 15_000);
+    return true;
+  }
+
   async interrupt(workspaceId: string): Promise<void> {
     const l = this.live.get(workspaceId);
     if (!l?.session.alive) return;

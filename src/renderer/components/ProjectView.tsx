@@ -179,6 +179,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
               </div>
               <span className="tag">{AGENT_LABEL[w.agentKind]}</span>
               {w.permissionMode === 'bypass' && <span className="tag warn">승인 생략</span>}
+              {w.permissionMode === 'ask' && w.role !== 'coordinator' && <span className="tag" title="명령을 실행할 때마다 묻습니다. 워크스페이스 머리 줄에서 자동 판단으로 바꿀 수 있습니다">승인 필요</span>}
               <span className="tag">{STATUS_LABEL[w.status]}</span>
             </div>
           ))}

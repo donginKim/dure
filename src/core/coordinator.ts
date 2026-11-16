@@ -562,8 +562,9 @@ export class CoordinatorService extends EventEmitter {
         const targets = new Map<string, Workspace>();
         for (const it of items) {
           if (it.existing) { targets.set(it.name, this.d.workspaces.list(r.project_id).find((w) => w.name === it.name)!); continue; }
-          // 권한은 설정의 기본값을 따르지 않고 "승인 필요" 로 만든다: 검토 화면에 보이지 않은 채 승인 생략으로 돌지 않게 한다.
-          const ws = await this.d.service.create({ projectId: r.project_id, repoId: it.repoId, name: it.name, baseBranch: it.baseBranch, agentKind: 'claude', permissionMode: 'ask' });
+          // 계획안을 승인했으니 그 안의 일은 자동 판단으로 돈다 (위험한 것만 묻는다). 설정이 "승인 필요" 면 그대로 따른다.
+          // 승인 생략은 계획 승인으로 켜지 않는다: 검토 화면에 보이지 않은 채 모든 명령을 묻지 않고 돌지 않게 한다.
+          const ws = await this.d.service.create({ projectId: r.project_id, repoId: it.repoId, name: it.name, baseBranch: it.baseBranch, agentKind: 'claude', permissionMode: this.d.settings?.().defaultPermissionMode === 'ask' ? 'ask' : 'auto' });
           // 다른 사람이 제안한 것이면 요약을 짧게 둔다 (배정을 수락할 때와 같다).
           if (it.role) this.d.workspaces.update(ws.id, { summary: from ? it.role.slice(0, 80) : it.role });
           const fresh = this.d.workspaces.get(ws.id) ?? ws;

@@ -106,7 +106,7 @@ test('받는 사람이 수락하면 그 사람의 PC 에 워크스페이스와 T
   await expect(dev.core.assignments.accept(a.id, [])).rejects.toThrow('저장소를 골라야');
   await expect(dev.core.assignments.accept(a.id, [{ repoId: pm.repo.id }])).rejects.toThrow('등록된 저장소가 아닙니다');
   const made = await dev.core.assignments.accept(a.id, [{ repoId: dev.repo.id }]);
-  expect(made.map((w) => [w.name, w.permissionMode, w.summary])).toEqual([['로그인 API', 'ask', '인증 API']]);
+  expect(made.map((w) => [w.name, w.permissionMode, w.summary])).toEqual([['로그인 API', 'auto', '인증 API']]);
   expect(dev.core.todos.listProject(dev.projectId).map((t) => [t.title, t.assignee, t.workspaceId === made[0]!.id])).toEqual([['POST /login', 'agent', true], ['커밋', 'user', true]]);
   expect(gitOut(dev.repo.path, 'branch', '--list', 'dure/*').trim()).not.toBe('');
   // 그 워크스페이스의 에이전트에게: 누가 나눠 줬는지, 기획서 정리, 어디에 보고하는지

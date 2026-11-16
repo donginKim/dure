@@ -25,6 +25,7 @@ import { NoteStore } from './notes';
 import { AttentionService } from './attention';
 import { DoingService } from './doing';
 import { PaddyService, dayOf } from './paddy';
+import { DigestService } from './digest';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
@@ -112,6 +113,8 @@ export interface Core {
   doing: DoingService;
   /** 두레 논 (날마다 한 일) */
   paddy: PaddyService;
+  /** 하루 결산 */
+  digest: DigestService;
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 여러 프로젝트 대시보드: 진행 중인 프로젝트마다 한눈 요약 */
@@ -470,9 +473,17 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 커밋, 확인 명령, 리뷰가 바뀌면 작업 보고를 다시 보낸다.
   for (const src of [verify, review, commit, settings]) src.on('changed', () => assignments.poke());
 
+  const digest = new DigestService({
+    db,
+    projects: () => projects.list(),
+    workspaceName: (id) => { const w = workspaces.get(id); return !w ? '' : w.role === 'coordinator' ? '조율' : w.name; },
+    workMs: (day) => { try { const [y, m] = day.split('-').map(Number); return worktime.month(y!, m!).find((x) => x.day === day)?.totalMs ?? 0; } catch { return 0; } },
+    attention: () => attention.list().map((a) => ({ title: a.title, projectName: a.projectName })),
+  });
+
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     usageBar() {
       const COUNTED = 'coalesce(sum(input + cache_write + output), 0)';
       const start = new Date(); start.setHours(0, 0, 0, 0);

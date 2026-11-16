@@ -1210,3 +1210,20 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .ub-mini > span { display: block; height: 100%; background: var(--ok); }
 .ub-win.warning .ub-mini > span { background: var(--warn); }
 .ub-win.rejected .ub-mini > span { background: var(--danger); }
+
+/* 오늘의 두레 */
+.daily { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
+.daily.folded { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 8px 14px; margin-bottom: 14px; cursor: pointer; font-size: 12.5px; }
+.daily.folded:hover { border-color: var(--line-strong); }
+.daily .grow, .daily.folded .grow { flex: 1; }
+.daily-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.daily-head > b { font-size: 14px; }
+.daily-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 22px; }
+.daily-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.daily-line { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+.daily-line.warn::before { content: '●'; color: var(--warn); font-size: 8px; margin-right: 6px; vertical-align: 2px; }
+.daily-line.done::before { content: '✓'; color: var(--ok); margin-right: 6px; }
+.daily-totals { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+.daily-totals b { color: var(--text); font-variant-numeric: tabular-nums; }
+.daily-evening { display: flex; flex-direction: column; gap: 8px; }
+.daily-more { padding: 0; margin-top: 4px; font-size: 12px; }

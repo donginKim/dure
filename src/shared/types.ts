@@ -57,6 +57,19 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 하루 결산 (아침 브리핑과 퇴근 결산의 바탕) */
+export interface DailyDigest {
+  /** YYYY-MM-DD */
+  day: string;
+  projects: { projectId: string; name: string; done: { title: string; workspace: string }[]; commits: number; mains: number; tokens: number }[];
+  totals: { done: number; commits: number; mains: number; tokens: number; workMs: number };
+  /** 지금 하는 중인 일 (진행 중인 프로젝트) */
+  doing: { title: string; project: string }[];
+  /** 아직 시작하지 않은 TODO 의 수 */
+  todo: number;
+  /** 지금 내 확인을 기다리는 것 (오늘 결산에만) */
+  attention: { title: string; projectName: string }[];
+}
 /** 두레 논의 하루 한 칸 */
 export interface PaddyDay { date: string; todos: number; commits: number; mains: number; score: number }
 /** 하단바: 오늘 이 PC 의 에이전트가 쓴 토큰과 계정의 사용 한도 */

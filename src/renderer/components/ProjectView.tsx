@@ -226,7 +226,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       <SchedulesSection projectId={project.id} workspaces={everyone} readOnly={done} />
       <MemorySection projectId={project.id} readOnly={done} />
       <MakeSection projectId={project.id} readOnly={done} />
-      <ProjectPlugins projectId={project.id} readOnly={done} onOpenSettings={() => onSelect({ type: 'settings' })} />
+      <ProjectPlugins projectId={project.id} readOnly={done} onOpenSettings={() => onSelect({ type: 'market' })} />
 
       <MergeSection projectId={project.id} readOnly={done} />
 

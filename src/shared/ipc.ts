@@ -10,7 +10,7 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, DailyDigest, Schedule, ScheduleInput, Capture, MemoryItem, MemoryKind, AwayChoice, Plugin, PluginScheduleTemplate, NewsPanel, CatalogEntry, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, DailyDigest, Schedule, ScheduleInput, Capture, MemoryItem, MemoryKind, AwayChoice, Plugin, PluginScheduleTemplate, NewsPanel, MarketSource, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
@@ -314,10 +314,10 @@ export interface DureApi {
     news(force?: boolean): Promise<NewsPanel[]>;
     /** 소식의 링크를 바깥 브라우저로 연다 */
     openLink(url: string): Promise<void>;
-    /** 설정의 플러그인 모음에 든 플러그인 목록 */
-    catalog(): Promise<CatalogEntry[]>;
-    /** 모음의 플러그인 하나를 설치한다 */
-    installCatalog(dir: string): Promise<Plugin>;
+    /** 마켓: 모음(저장소)마다 설치할 수 있는 플러그인 목록. 10분 동안은 받아 둔 것을 쓴다 (force 면 새로 받는다) */
+    market(force?: boolean): Promise<MarketSource[]>;
+    /** 마켓의 모음에서 플러그인 하나를 설치한다 (설치한 뒤 승인해야 쓰인다) */
+    installFrom(source: string, dir: string): Promise<Plugin>;
   };
   away: {
     /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
@@ -466,7 +466,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'makes.kinds', 'makes.list', 'makes.create', 'makes.remove', 'makes.open', 'makes.save', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.catalog', 'plugins.installCatalog', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'makes.kinds', 'makes.list', 'makes.create', 'makes.remove', 'makes.open', 'makes.save', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.market', 'plugins.installFrom', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',

@@ -64,7 +64,27 @@ export interface PluginPanel { title: string; feeds: { name: string; url: string
 /** 소식 화면에 보이는 판 하나 */
 export interface NewsPanel { plugin: string; title: string; feeds: { name: string; url: string; items: FeedItem[]; error: string; at: number }[] }
 /** 플러그인 모음(저장소)에 든 플러그인 하나 */
-export interface CatalogEntry { dir: string; id: string; name: string; version: string; description: string; installed: boolean; summary: string }
+export interface CatalogEntry {
+  dir: string; id: string; name: string; version: string; description: string; installed: boolean; summary: string;
+  /** 설치돼 있으면 그 판. 모음의 것과 다르면 새 판이 있다 */
+  installedVersion: string;
+  /** 담긴 것의 갈래 (마켓에서 거르는 데 쓴다) */
+  kinds: MarketKind[];
+  /** 담긴 것의 이름 (갈래마다) */
+  contents: { panels: string[]; makers: string[]; schedules: string[]; mcp: string[] };
+}
+export type MarketKind = 'panels' | 'makers' | 'schedules' | 'instructions' | 'mcp';
+/** 마켓의 모음 하나 (git 저장소) */
+export interface MarketSource {
+  url: string;
+  /** 보이는 이름 (저장소의 주인/이름) */
+  label: string;
+  /** 설정의 기본 모음인가 (아니면 사용자가 더한 것) */
+  base: boolean;
+  entries: CatalogEntry[]; error: string;
+  /** 받아 온 때 */
+  at: number;
+}
 /** 플러그인이 붙이는 MCP 서버: 주소(http) 이거나, 이 PC 에서 실행할 명령 */
 export interface PluginMcpServer { name: string; url?: string; command?: string; args?: string[]; env?: Record<string, string> }
 export interface PluginScheduleTemplate { title: string; prompt: string; kind: 'daily' | 'weekly'; time: string; weekday: number | null; target: 'coordinator' | 'workspace' }
@@ -526,6 +546,8 @@ export interface Settings {
   awayMode: boolean;
   /** 플러그인 모음의 git 주소 (설정의 "기본 플러그인" 목록을 여기서 받는다) */
   pluginCatalog: string;
+  /** 마켓에 더한 다른 모음들 (git 주소) */
+  pluginSources: string[];
   /** 빠른 메모를 여는 전역 단축키 (Electron 의 단축키 글. 비우면 끈다) */
   captureShortcut: string;
   /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */

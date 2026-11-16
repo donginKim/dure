@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
-import type { CatalogEntry, MakeFormat, Plugin, PluginMaker, PluginMcpServer, PluginPanel, PluginScheduleTemplate } from '@shared/types';
+import type { CatalogEntry, MarketKind, MarketSource, MakeFormat, Plugin, PluginMaker, PluginMcpServer, PluginPanel, PluginScheduleTemplate } from '@shared/types';
 import { publicHttps } from './feeds';
 
 const MAX_INSTRUCTIONS = 4000;       // 플러그인 하나의 지시문 (글자)
@@ -15,6 +15,13 @@ const DANGEROUS_ENV = /^(PATH|NODE_OPTIONS|NODE_PATH|DYLD_.*|LD_.*|PYTHONPATH|PY
 const line = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, max);
 // eslint-disable-next-line no-control-regex
 const block = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '').trim().slice(0, max);
+/** git 이 남긴 긴 말에서 까닭만 꺼낸다 (임시 폴더 경로 같은 것은 보이지 않는다). */
+function marketError(e: unknown): string {
+  const text = e instanceof Error ? e.message : String(e);
+  if (text.includes('git 주소가 올바르지')) return text.slice(0, 200);
+  const why = /(?:fatal|remote|error):\s*([^\n]+)/i.exec(text)?.[1]?.trim() ?? '';
+  return `저장소를 받지 못했습니다. 주소와 접근 권한을 확인하세요.${why ? ` (${why.slice(0, 120)})` : ''}`;
+}
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 interface Parsed { plugin: Omit<Plugin, 'approved' | 'changed' | 'source' | 'installedAt'>; hash: string }
@@ -199,7 +206,7 @@ export class PluginService extends EventEmitter {
     const u = String(url ?? '').trim();
     const tmp = await this.clone(u);
     try {
-      const installed = new Set((this.d.db.prepare('SELECT id FROM plugins').all() as { id: string }[]).map((r) => r.id));
+      const have = new Map(this.list().map((x) => [x.id, x.version]));
       const out: CatalogEntry[] = [];
       const dirs = ['', ...readdirSync(tmp).filter((n) => !n.startsWith('.') && n !== 'node_modules' && lstatSync(join(tmp, n)).isDirectory()).sort()];
       for (const dir of dirs.slice(0, 60)) {
@@ -207,11 +214,39 @@ export class PluginService extends EventEmitter {
         try {
           const { plugin: p } = readPlugin(join(tmp, dir));
           const summary = [p.panels.length ? `소식판 ${p.panels.length}` : '', p.instructions ? `지시문 ${p.instructions.length.toLocaleString('ko-KR')}자` : '', p.schedules.length ? `예약 본보기 ${p.schedules.length}` : '', p.mcpServers.length ? `MCP 서버 ${p.mcpServers.length}` : '', p.memory.length ? `기억 ${p.memory.length}` : '', p.makers.length ? `만들기 양식 ${p.makers.length}` : ''].filter(Boolean).join(' · ');
-          out.push({ dir, id: p.id, name: p.name, version: p.version, description: p.description, installed: installed.has(p.id), summary });
+          const kinds: MarketKind[] = [p.panels.length ? 'panels' as const : null, p.makers.length ? 'makers' as const : null, p.schedules.length ? 'schedules' as const : null, p.instructions ? 'instructions' as const : null, p.mcpServers.length ? 'mcp' as const : null].filter((k): k is MarketKind => k !== null);
+          out.push({
+            dir, id: p.id, name: p.name, version: p.version, description: p.description, installed: have.has(p.id), installedVersion: have.get(p.id) ?? '', summary, kinds,
+            contents: { panels: p.panels.map((x) => x.title), makers: p.makers.map((x) => x.name), schedules: p.schedules.map((x) => x.title), mcp: p.mcpServers.map((x) => x.name) },
+          });
         } catch { /* 읽지 못하는 것은 목록에 넣지 않는다 */ }
       }
       return out;
     } finally { rmSync(tmp, { recursive: true, force: true }); }
+  }
+
+  private readonly shelf = new Map<string, { at: number; entries: CatalogEntry[]; error: string }>();
+
+  /**
+   * 마켓: 모음(저장소)들을 훑어 무엇을 설치할 수 있는지 본다. 받아 둔 것은 10분 동안 다시 쓴다 (열 때마다 저장소를 받지 않는다).
+   * 설치 여부와 설치된 판은 받아 둔 것에도 지금 것으로 채운다.
+   */
+  async market(sources: { url: string; base: boolean }[], force = false): Promise<MarketSource[]> {
+    const out: MarketSource[] = [];
+    for (const src of sources.slice(0, 11)) {
+      let hit = this.shelf.get(src.url);
+      if (!hit || force || Date.now() - hit.at > 10 * 60_000) {
+        try { hit = { at: Date.now(), entries: await this.catalog(src.url), error: '' }; }
+        catch (e) { hit = { at: Date.now(), entries: hit?.entries ?? [], error: marketError(e) }; }
+        this.shelf.set(src.url, hit);
+      }
+      const have = new Map(this.list().map((x) => [x.id, x.version]));
+      out.push({
+        url: src.url, base: src.base, label: src.url.replace(/^(https:\/\/|ssh:\/\/|git@)/, '').replace(/^[^/:]+[/:]/, '').replace(/\.git$/, '') || src.url,
+        entries: hit.entries.map((e) => ({ ...e, installed: have.has(e.id), installedVersion: have.get(e.id) ?? '' })), error: hit.error, at: hit.at,
+      });
+    }
+    return out;
   }
 
   /** git 에서 받은 플러그인을 다시 받는다. 내용이 바뀌면 다시 승인해야 한다. */

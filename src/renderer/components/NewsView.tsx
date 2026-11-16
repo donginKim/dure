@@ -22,7 +22,7 @@ export function NewsView({ onSelect }: { onSelect: (s: Selection) => void }) {
     <div className="page">
       <div className="section-head"><h1>소식</h1><button className="btn ghost" disabled={busy} onClick={() => load(true)}>{busy ? '읽는 중…' : '새로 고침'}</button></div>
       {panels && panels.length === 0 && (
-        <Empty hint="소식판이 든 플러그인을 설치하고 승인하면 여기에 모입니다 (예: 오늘의 뉴스, 이주의 트렌드)." actions={<button className="btn" onClick={() => onSelect({ type: 'settings' })}>설정에서 플러그인 설치</button>}>보여 줄 소식판이 없습니다.</Empty>
+        <Empty hint="소식판이 든 플러그인을 설치하고 승인하면 여기에 모입니다 (예: 오늘의 뉴스, 이주의 트렌드)." actions={<button className="btn" onClick={() => onSelect({ type: 'market' })}>플러그인 마켓 열기</button>}>보여 줄 소식판이 없습니다.</Empty>
       )}
       <div className="news-grid">
         {(panels ?? []).map((p) => {

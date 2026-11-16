@@ -10,6 +10,7 @@ import { ProjectsHome } from './components/ProjectsHome';
 import { CommandPalette } from './components/CommandPalette';
 import { UsageBar } from './components/UsageBar';
 import { TeamView } from './components/TeamView';
+import { NewsView } from './components/NewsView';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
 import { AttentionView } from './components/AttentionView';
@@ -190,10 +191,11 @@ export function App() {
         )}
         {current?.type === 'settings' && <SettingsView />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
+        {current?.type === 'news' && <NewsView onSelect={setSelection} />}
         {current?.type === 'team' && <TeamView tree={tree.filter((n) => n.project.status !== 'done')} onSelect={setSelection} />}
         {current?.type === 'worktime' && <WorkTimeView onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && current?.type !== 'news' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
       <UsageBar onOpenAttention={() => setSelection({ type: 'attention' })} />
       {palette && (

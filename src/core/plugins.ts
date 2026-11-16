@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events';
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
-import type { Plugin, PluginMcpServer, PluginScheduleTemplate } from '@shared/types';
+import type { CatalogEntry, Plugin, PluginMcpServer, PluginPanel, PluginScheduleTemplate } from '@shared/types';
+import { publicHttps } from './feeds';
 
 const MAX_INSTRUCTIONS = 4000;       // 플러그인 하나의 지시문 (글자)
 const MAX_PROJECT_INSTRUCTIONS = 8000; // 한 프로젝트에 실리는 지시문 전체
@@ -81,13 +82,18 @@ export function readPlugin(dir: string): Parsed {
       });
     }
   }
+  // 소식판: https 의 바깥 주소만
+  const panels: PluginPanel[] = (Array.isArray(raw.panels) ? raw.panels : []).slice(0, 6).filter(isObj).map((pn) => ({
+    title: line(pn.title, 40),
+    feeds: (Array.isArray(pn.feeds) ? pn.feeds : []).slice(0, 8).filter(isObj).map((f) => ({ name: line(f.name, 30), url: String(f.url ?? '').trim().slice(0, 500) })).filter((f) => f.name && publicHttps(f.url)),
+  })).filter((pn) => pn.title && pn.feeds.length > 0);
   const name = line(raw.name, 60).replace(/["\[\]]/g, '') || id;
   // 승인의 대상: 에이전트와 이 PC 에 닿는 것 전부, 그리고 폴더에 든 모든 글 파일의 내용
   // (MCP 서버의 명령이 폴더 안의 파일을 읽어 돌릴 수 있다: 그 파일만 바뀌어도 다시 승인받게 한다).
-  const h = createHash('sha256').update(JSON.stringify([instructions, schedules, memory, mcpServers]));
+  const h = createHash('sha256').update(JSON.stringify([instructions, schedules, memory, mcpServers, panels]));
   for (const f of walk(dir)) h.update(`\n${f.slice(dir.length)}\n`).update(readFileSync(f));
   const hash = h.digest('hex');
-  const plugin = { id, name, version: line(raw.version, 20) || '0.0.0', description: line(raw.description, 300), instructions, schedules, memory, mcpServers, hash };
+  const plugin = { id, name, version: line(raw.version, 20) || '0.0.0', description: line(raw.description, 300), instructions, schedules, memory, mcpServers, panels, hash };
   return { plugin, hash };
 }
 
@@ -142,7 +148,7 @@ export class PluginService extends EventEmitter {
         const { plugin, hash } = readPlugin(join(this.d.dir, r.id));
         out.push({ ...plugin, source: r.source, installedAt: r.installed_at, approved: r.approved_hash === hash, changed: r.approved_hash !== null && r.approved_hash !== hash });
       } catch (e) {
-        out.push({ id: r.id, name: r.id, version: '', description: `읽지 못했습니다: ${e instanceof Error ? e.message : String(e)}`, instructions: '', schedules: [], memory: [], mcpServers: [], hash: '', source: r.source, installedAt: r.installed_at, approved: false, changed: false });
+        out.push({ id: r.id, name: r.id, version: '', description: `읽지 못했습니다: ${e instanceof Error ? e.message : String(e)}`, instructions: '', schedules: [], memory: [], mcpServers: [], panels: [], hash: '', source: r.source, installedAt: r.installed_at, approved: false, changed: false });
       }
     }
     return out;
@@ -155,17 +161,49 @@ export class PluginService extends EventEmitter {
     return this.record(plugin.id, `folder:${folder}`);
   }
 
-  /** git 주소에서 설치한다 (얕게 받는다). 받은 저장소의 hook 은 돌지 않는다. */
-  async installFromGit(url: string): Promise<Plugin> {
-    const u = String(url ?? '').trim();
+  /** 받아 온다 (얕게). 받은 저장소의 hook 은 돌지 않는다. '--' 뒤에 두어 주소가 옵션으로 읽히지 않게 하고, https 와 ssh 만 받는다. */
+  private async clone(u: string): Promise<string> {
     if (!/^(https:\/\/|git@|ssh:\/\/)[\w.@:/~+-]+$/.test(u) || u.length > 300) throw new Error('git 주소가 올바르지 않습니다 (https:// 또는 git@ 으로 시작).');
     const tmp = join(this.d.dir, `.incoming-${Date.now()}`);
     try {
-      // '--' 뒤에 두어 주소가 옵션으로 읽히지 않게 한다. 받는 프로토콜은 https 와 ssh 만.
       await this.d.git(['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'protocol.ssh.allow=always', 'clone', '--depth', '1', '--no-tags', '--', u, tmp]);
-      const { plugin } = readPlugin(tmp);
-      copyPlugin(tmp, join(this.d.dir, plugin.id));
-      return this.record(plugin.id, `git:${u}`);
+    } catch (e) { rmSync(tmp, { recursive: true, force: true }); throw e; }
+    return tmp;
+  }
+
+  /**
+   * git 주소에서 설치한다. 저장소 하나가 플러그인 하나이거나 (맨 위에 plugin.json),
+   * 여러 플러그인의 모음이면 "주소#폴더" 로 그 안의 하나를 고른다.
+   */
+  async installFromGit(url: string): Promise<Plugin> {
+    const [u = '', sub = ''] = String(url ?? '').trim().split('#');
+    if (sub && !/^[\w][\w./-]{0,80}$/.test(sub) || sub.includes('..')) throw new Error('폴더 이름이 올바르지 않습니다.');
+    const tmp = await this.clone(u);
+    try {
+      const from = sub ? join(tmp, sub) : tmp;
+      const { plugin } = readPlugin(from);
+      copyPlugin(from, join(this.d.dir, plugin.id));
+      return this.record(plugin.id, `git:${u}${sub ? `#${sub}` : ''}`);
+    } finally { rmSync(tmp, { recursive: true, force: true }); }
+  }
+
+  /** 플러그인 모음(저장소)에 무엇이 들어 있는지 본다: 맨 위와 한 단계 아래 폴더의 plugin.json. */
+  async catalog(url: string): Promise<CatalogEntry[]> {
+    const u = String(url ?? '').trim();
+    const tmp = await this.clone(u);
+    try {
+      const installed = new Set((this.d.db.prepare('SELECT id FROM plugins').all() as { id: string }[]).map((r) => r.id));
+      const out: CatalogEntry[] = [];
+      const dirs = ['', ...readdirSync(tmp).filter((n) => !n.startsWith('.') && n !== 'node_modules' && lstatSync(join(tmp, n)).isDirectory()).sort()];
+      for (const dir of dirs.slice(0, 60)) {
+        if (!existsSync(join(tmp, dir, 'plugin.json'))) continue;
+        try {
+          const { plugin: p } = readPlugin(join(tmp, dir));
+          const summary = [p.panels.length ? `소식판 ${p.panels.length}` : '', p.instructions ? `지시문 ${p.instructions.length.toLocaleString('ko-KR')}자` : '', p.schedules.length ? `예약 본보기 ${p.schedules.length}` : '', p.mcpServers.length ? `MCP 서버 ${p.mcpServers.length}` : '', p.memory.length ? `기억 ${p.memory.length}` : ''].filter(Boolean).join(' · ');
+          out.push({ dir, id: p.id, name: p.name, version: p.version, description: p.description, installed: installed.has(p.id), summary });
+        } catch { /* 읽지 못하는 것은 목록에 넣지 않는다 */ }
+      }
+      return out;
     } finally { rmSync(tmp, { recursive: true, force: true }); }
   }
 
@@ -254,6 +292,11 @@ export class PluginService extends EventEmitter {
       out[key] = s.url ? { type: 'http', url: s.url } : { command: s.command, args: s.args ?? [], env: s.env ?? {} };
     }
     return out;
+  }
+
+  /** 소식 화면에 보일 판들: 승인한 플러그인의 것 (소식판은 프로젝트와 상관없이 보인다). */
+  panels(): { plugin: string; title: string; feeds: { name: string; url: string }[] }[] {
+    return this.list().filter((p) => p.approved).flatMap((p) => p.panels.map((pn) => ({ plugin: p.name, title: pn.title, feeds: pn.feeds })));
   }
 
   /** 예약 본보기 (켠 플러그인의 것) */

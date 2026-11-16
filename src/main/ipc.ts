@@ -65,6 +65,20 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'plugins.enabled': (projectId: string) => core.plugins.enabledIds(String(projectId)),
     'plugins.setEnabled': (projectId: string, id: string, on: boolean) => core.plugins.setEnabled(String(projectId), String(id), on === true),
     'plugins.scheduleTemplates': (projectId: string) => core.plugins.scheduleTemplates(String(projectId)),
+    'plugins.news': (force: boolean) => core.news(force === true),
+    'plugins.openLink': async (url: string) => {
+      // 소식 화면에 보인 적이 있는 https/http 링크만 바깥 브라우저로 연다 (화면이 아무 주소나 열게 하지 않는다).
+      const u = String(url);
+      if (!/^https?:\/\//i.test(u) || !core.knownNewsLink(u)) throw new Error('열 수 없는 주소입니다.');
+      await shell.openExternal(u);
+    },
+    'plugins.catalog': () => { const url = core.settings.get().pluginCatalog; if (!url) throw new Error('설정에 플러그인 모음의 주소가 없습니다.'); return core.plugins.catalog(url); },
+    'plugins.installCatalog': (dir: string) => {
+      const url = core.settings.get().pluginCatalog;
+      const d = String(dir ?? '');
+      if (!url) throw new Error('설정에 플러그인 모음의 주소가 없습니다.');
+      return core.plugins.installFromGit(d ? `${url}#${d}` : url);
+    },
     'away.list': () => core.awayChoices(),
     'away.clear': (id: string | null) => core.clearAwayChoices(id ? String(id) : undefined),
     'memory.list': (projectId: string) => core.memory.list(String(projectId)),

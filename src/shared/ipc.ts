@@ -9,11 +9,11 @@ import type {
   UpdateStatus,
   SlackAccess, SlackRequest, SlackStatus,
   ChatImage,
-  AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, DailyDigest, Schedule, ScheduleInput, Capture, MemoryItem, MemoryKind, AwayChoice, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
+  AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, DailyDigest, Schedule, ScheduleInput, Capture, MemoryItem, MemoryKind, AwayChoice, Plugin, PluginScheduleTemplate, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
-export type ChangeTopic = 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
+export type ChangeTopic = 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -295,6 +295,21 @@ export interface DureApi {
   /** 사용량: 프로젝트의 에이전트들이 쓴 토큰. days 가 있으면 최근 그 날수만 */
   usage: { summary(projectId: string, days?: number): Promise<UsageSummary> };
   /** 확인할 것: 에이전트나 다른 사람이 나를 기다리는 것 */
+  plugins: {
+    list(): Promise<Plugin[]>;
+    /** 폴더를 골라 설치한다 (고르지 않았으면 null) */
+    installFolder(): Promise<Plugin | null>;
+    installGit(url: string): Promise<Plugin>;
+    /** 받은 곳에서 다시 받는다. 내용이 바뀌면 다시 승인해야 한다 */
+    update(id: string): Promise<Plugin>;
+    /** 화면에서 본 내용(hash)을 승인한다. 그사이 바뀌었으면 거절된다 */
+    approve(id: string, hash: string): Promise<void>;
+    remove(id: string): Promise<void>;
+    /** 이 프로젝트에서 켠 플러그인의 id */
+    enabled(projectId: string): Promise<string[]>;
+    setEnabled(projectId: string, id: string, on: boolean): Promise<void>;
+    scheduleTemplates(projectId: string): Promise<(PluginScheduleTemplate & { plugin: string })[]>;
+  };
   away: {
     /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
     list(): Promise<AwayChoice[]>;
@@ -427,7 +442,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',

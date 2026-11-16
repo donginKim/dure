@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Schedule, ScheduleInput, Workspace } from '@shared/types';
+import type { PluginScheduleTemplate, Schedule, ScheduleInput, Workspace } from '@shared/types';
 import { Empty } from './Empty';
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -15,8 +15,9 @@ export function SchedulesSection({ projectId, workspaces, readOnly }: { projectI
   const [list, setList] = useState<Schedule[]>([]);
   const [form, setForm] = useState<(ScheduleInput & { inMinutes: string }) | null>(null);
   const [error, setError] = useState('');
-  const load = useCallback(() => { window.dure.schedules.list(projectId).then(setList).catch(() => undefined); }, [projectId]);
-  useEffect(() => { load(); const off = window.dure.onChanged((topic) => { if (topic === 'schedules') load(); }); const t = setInterval(load, 60_000); return () => { off(); clearInterval(t); }; }, [load]);
+  const [templates, setTemplates] = useState<(PluginScheduleTemplate & { plugin: string })[]>([]);
+  const load = useCallback(() => { window.dure.schedules.list(projectId).then(setList).catch(() => undefined); window.dure.plugins.scheduleTemplates(projectId).then(setTemplates).catch(() => undefined); }, [projectId]);
+  useEffect(() => { load(); const off = window.dure.onChanged((topic) => { if (topic === 'schedules' || topic === 'plugins') load(); }); const t = setInterval(load, 60_000); return () => { off(); clearInterval(t); }; }, [load]);
   const name = (id: string): string => { const w = workspaces.find((x) => x.id === id); return !w ? '지운 워크스페이스' : w.role === 'coordinator' ? '조율 에이전트' : w.name; };
   const run = (p: Promise<unknown>): void => { setError(''); p.catch((e: Error) => setError(e.message)); };
   const save = (): void => {
@@ -65,6 +66,12 @@ export function SchedulesSection({ projectId, workspaces, readOnly }: { projectI
               {form.kind === 'weekly' && <select value={form.weekday ?? 5} onChange={(e) => setForm({ ...form, weekday: Number(e.target.value) })}>{DAYS.map((d, i) => <option key={i} value={i}>{d}요일</option>)}</select>}
               {form.kind !== 'once' && <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />}
               {form.kind === 'once' && <><input type="text" inputMode="numeric" className="sched-min" value={form.inMinutes} onChange={(e) => setForm({ ...form, inMinutes: e.target.value })} /> 분 뒤</>}
+              {templates.length > 0 && (
+                <select value="" title="켠 플러그인의 예약 본보기로 채웁니다" onChange={(e) => { const t = templates[Number(e.target.value)]; if (t) setForm({ ...form, title: t.title, prompt: t.prompt, kind: t.kind, time: t.time, weekday: t.weekday ?? 5, workspaceId: t.target === 'coordinator' ? (workspaces.find((w) => w.role === 'coordinator')?.id ?? form.workspaceId) : form.workspaceId }); }}>
+                  <option value="">본보기에서 채우기…</option>
+                  {templates.map((t, i) => <option key={i} value={i}>{t.plugin}: {t.title}</option>)}
+                </select>
+              )}
               <span className="grow" />
               <button className="btn ghost" onClick={() => { setForm(null); setError(''); }}>취소</button>
               <button className="btn primary" disabled={!form.title.trim() || !form.prompt.trim()} onClick={save}>저장</button>

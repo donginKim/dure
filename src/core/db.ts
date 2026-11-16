@@ -504,6 +504,11 @@ const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS token_usage_at ON token_usage (at);
   CREATE INDEX IF NOT EXISTS todos_done_at ON todos (status, updated_at);
   `,
+  // 설치형 플러그인: 설치 기록(승인한 내용의 해시)과 프로젝트마다 켠 것
+  `
+  CREATE TABLE plugins (id TEXT PRIMARY KEY, source TEXT NOT NULL, approved_hash TEXT, installed_at INTEGER NOT NULL);
+  CREATE TABLE project_plugins (project_id TEXT NOT NULL, plugin_id TEXT NOT NULL, PRIMARY KEY (project_id, plugin_id));
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

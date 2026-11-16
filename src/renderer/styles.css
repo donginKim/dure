@@ -1267,3 +1267,19 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .ub-away:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .inbox.away { border-left-color: var(--warn); }
 .inbox.away .inbox-head { flex-wrap: wrap; }
+
+/* 플러그인 */
+.plug { border-bottom: 1px solid var(--line); }
+.plug:last-child { border-bottom: 0; }
+.plug > .row { border-bottom: 0; }
+.plug-desc { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plug-contents { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.plug-label { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.plug-label.warn { color: var(--warn); }
+.plug-label .muted { font-weight: 400; }
+.plug-pre { margin: 0; max-height: 240px; overflow: auto; background: var(--sunken); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; font: 12px/1.5 ui-monospace, SFMono-Regular, monospace; white-space: pre-wrap; word-break: break-word; }
+.plug-line { font-size: 12.5px; padding: 1px 0; overflow-wrap: anywhere; }
+.plug-install { display: flex; gap: 8px; margin-top: 8px; }
+.plug-install input { flex: 1; min-width: 0; }
+.plug-toggle { cursor: pointer; }
+.plug-toggle input { accent-color: var(--accent); }

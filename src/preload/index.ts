@@ -197,6 +197,17 @@ const api: DureApi = {
     restore: (id) => call('checkpoints.restore', id),
   },
   usage: { summary: (projectId, days) => call('usage.summary', projectId, days) },
+  plugins: {
+    list: () => call('plugins.list'),
+    installFolder: () => call('plugins.installFolder'),
+    installGit: (url) => call('plugins.installGit', url),
+    update: (id) => call('plugins.update', id),
+    approve: (id, hash) => call('plugins.approve', id, hash),
+    remove: (id) => call('plugins.remove', id),
+    enabled: (projectId) => call('plugins.enabled', projectId),
+    setEnabled: (projectId, id, on) => call('plugins.setEnabled', projectId, id, on),
+    scheduleTemplates: (projectId) => call('plugins.scheduleTemplates', projectId),
+  },
   away: {
     list: () => call('away.list'),
     clear: (id) => call('away.clear', id ?? null),

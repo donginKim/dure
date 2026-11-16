@@ -132,6 +132,8 @@ export class WorkspaceService extends EventEmitter {
   /** 프로젝트 기억의 간추림을 주는 함수 (새 대화를 시작할 때 건넨다) */
   private memoryDigest: ((projectId: string) => string) | undefined;
   attachMemory(fn: (projectId: string) => string): void { this.memoryDigest = fn; }
+  private plugins: { instructions(projectId: string): string; mcp(projectId: string): Record<string, unknown> } | undefined;
+  attachPlugins(p: { instructions(projectId: string): string; mcp(projectId: string): Record<string, unknown> }): void { this.plugins = p; }
 
   /** 채팅 방식의 에이전트를 돌리는 엔진을 이어 준다. */
   attachEngine(engine: ChatEngine): void {
@@ -831,7 +833,9 @@ export class WorkspaceService extends EventEmitter {
       basePath: this.d.baseEnv.PATH ?? '',
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),
-      instructions: coordinator ? coordinatorInstructions(project) : baseInstructions(ws, project),
+      // 이 프로젝트에서 켠 플러그인의 지시문을 덧붙이고, 플러그인의 MCP 서버를 붙인다 (사용자가 승인한 것만).
+      instructions: (coordinator ? coordinatorInstructions(project) : baseInstructions(ws, project)) + (this.plugins?.instructions(project.id) ?? ''),
+      extraMcpServers: this.plugins?.mcp(project.id),
       // 조율 에이전트는 코드를 고치지 않는다: 파일을 고치는 도구를 빼고, 등록된 저장소는 읽을 수 있게 한다.
       disallowedTools: coordinator ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : undefined,
       addDirs: coordinator ? repoPaths : undefined,

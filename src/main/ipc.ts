@@ -53,6 +53,18 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'projects.dashboard': () => core.dashboard(),
     'projects.paddy': (projectId: string | null) => core.paddy.days(typeof projectId === 'string' && projectId ? projectId : null),
     'projects.usageBar': () => core.usageBar(),
+    'plugins.list': () => core.plugins.list(),
+    'plugins.installFolder': async () => {
+      const r = await dialog.showOpenDialog({ properties: ['openDirectory'], title: '플러그인 폴더 고르기 (plugin.json 이 있는 폴더)' });
+      return r.canceled || !r.filePaths[0] ? null : core.plugins.installFromFolder(r.filePaths[0]);
+    },
+    'plugins.installGit': (url: string) => core.plugins.installFromGit(String(url)),
+    'plugins.update': (id: string) => core.plugins.update(String(id)),
+    'plugins.approve': (id: string, hash: string) => core.plugins.approve(String(id), String(hash)),
+    'plugins.remove': (id: string) => core.plugins.remove(String(id)),
+    'plugins.enabled': (projectId: string) => core.plugins.enabledIds(String(projectId)),
+    'plugins.setEnabled': (projectId: string, id: string, on: boolean) => core.plugins.setEnabled(String(projectId), String(id), on === true),
+    'plugins.scheduleTemplates': (projectId: string) => core.plugins.scheduleTemplates(String(projectId)),
     'away.list': () => core.awayChoices(),
     'away.clear': (id: string | null) => core.clearAwayChoices(id ? String(id) : undefined),
     'memory.list': (projectId: string) => core.memory.list(String(projectId)),
@@ -439,6 +451,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.captures.on('changed', onCapturesChanged);
   const onMemoryChanged = (): void => changed('memory');
   core.memory.on('changed', onMemoryChanged);
+  const onPluginsChanged = (): void => changed('plugins');
+  core.plugins.on('changed', onPluginsChanged);
   core.attention.on('added', onAttentionAdded);
   core.browser.on('changed', onBrowserChanged);
   core.peers.on('changed', onPeersChanged);
@@ -475,6 +489,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.schedules.off('changed', onSchedulesChanged);
     core.captures.off('changed', onCapturesChanged);
     core.memory.off('changed', onMemoryChanged);
+    core.plugins.off('changed', onPluginsChanged);
     clearTimeout(noteTimer);
     core.browser.off('changed', onBrowserChanged);
     core.peers.off('changed', onPeersChanged);

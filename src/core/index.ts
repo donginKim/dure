@@ -28,6 +28,7 @@ import { PaddyService, dayOf } from './paddy';
 import { DigestService } from './digest';
 import { ScheduleService } from './schedule';
 import { CaptureStore } from './captures';
+import { PluginService } from './plugins';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
@@ -125,6 +126,8 @@ export interface Core {
   captures: CaptureStore;
   /** 프로젝트 기억 */
   memory: MemoryStore;
+  /** 설치형 플러그인 */
+  plugins: PluginService;
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
@@ -354,6 +357,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   await peers.apply();
   service.attachDelivery(delivery);
   service.attachMemory((projectId) => memory.digest(projectId));
+  const plugins = new PluginService({ db, dir: join(o.dataDir, 'plugins'), git: (args) => git.raw(args), addMemory: (projectId, kind, text, author) => { memory.add(projectId, { kind, text, author }); } });
+  service.attachPlugins({ instructions: (projectId) => { try { return plugins.instructionsFor(projectId); } catch { return ''; } }, mcp: (projectId) => { try { return plugins.mcpFor(projectId); } catch { return {}; } } });
   service.attachChat(chat);
   // 채팅 방식의 에이전트: 터미널 화면 없이 구조화된 입출력으로 돈다.
   const engine = new ChatEngine({
@@ -532,7 +537,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   let barCache: { mark: string; value: UsageBar } | null = null;
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     awayChoices() {
       return (db.prepare('SELECT * FROM away_log ORDER BY at DESC LIMIT 100').all() as { id: string; project_id: string; workspace_id: string; workspace_name: string; question: string; answer: string; at: number }[])
         .map((r) => ({ id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, workspaceName: r.workspace_name, question: r.question, answer: r.answer, at: r.at }));

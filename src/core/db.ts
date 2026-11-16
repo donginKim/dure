@@ -470,6 +470,10 @@ const MIGRATIONS: string[] = [
   `
   CREATE TABLE coord_briefed (project_id TEXT NOT NULL, share_id TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (project_id, share_id, kind));
   `,
+  // 참여자가 스스로 맡은 일을 리더에게 알릴 것 (닿을 때까지 다시 보낸다)
+  `
+  CREATE TABLE self_out (aid TEXT PRIMARY KEY, project_id TEXT NOT NULL, peer_id TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

@@ -294,6 +294,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         return s ? { mine: s.mine, myId: s.members.find((m) => m.me)?.peerId ?? '', leaderName: s.members.find((m) => m.owner)?.name ?? '프로젝트를 연 사람', auto: s.suggestMode === 'auto' } : null;
       },
       suggest: (projectId, plan) => assignments.suggest(projectId, plan),
+      reportSelf: (projectId, body, ids) => assignments.reportSelf(projectId, body, ids),
       result: (projectId, peerId, sid, state, reason) => assignments.result(projectId, peerId, sid, state, reason),
       send: (projectId, peerId, a, o) => assignments.send(projectId, peerId, a, o), cancel: (id) => assignments.cancel(id), link: (ids, parents) => assignments.link(ids, parents), brief: (projectId, summary, skip) => assignments.sendBrief(projectId, summary, skip) },
   });

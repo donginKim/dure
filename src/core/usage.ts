@@ -23,6 +23,12 @@ export class UsageStore {
       .run(u.messageId, ws.id, ws.projectId, ws.name, u.model, u.input, u.output, u.cacheWrite, u.cacheRead, u.at);
   }
 
+  /** 워크스페이스에 딸리지 않은 일(만들기)이 쓴 것: 프로젝트에 그 이름으로 적는다. */
+  recordProject(projectId: string, label: string, u: UsageLine): void {
+    this.db.prepare(`INSERT INTO token_usage (message_id, workspace_id, project_id, workspace_name, model, input, output, cache_write, cache_read, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(message_id) DO NOTHING`).run(u.messageId, `project:${projectId}`, projectId, label, u.model, u.input, u.output, u.cacheWrite, u.cacheRead, u.at);
+  }
+
   /** 프로젝트의 사용량. sinceMs 가 있으면 그 시각 이후의 것만. */
   summary(projectId: string, sinceMs = 0): UsageSummary {
     const args = [projectId, sinceMs];
@@ -33,7 +39,7 @@ export class UsageStore {
     const first = (this.db.prepare(`SELECT min(at) AS at FROM token_usage ${where}`).get(...args) as { at: number | null }).at;
     return {
       total,
-      workspaces: rows.map((r) => { const ws = this.workspaces.get(r.workspace_id); return { workspaceId: r.workspace_id, name: ws ? (ws.role === 'coordinator' ? '조율 에이전트' : ws.name) : r.name, gone: !ws, ...toCount(r) }; }),
+      workspaces: rows.map((r) => { const ws = this.workspaces.get(r.workspace_id); return { workspaceId: r.workspace_id, name: ws ? (ws.role === 'coordinator' ? '조율 에이전트' : ws.name) : r.name, gone: !ws && !r.workspace_id.startsWith('project:'), ...toCount(r) }; }),
       models: models.map((r) => ({ model: r.model || '(알 수 없음)', ...toCount(r) })),
       since: first,
     };

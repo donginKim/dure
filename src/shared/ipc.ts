@@ -1,4 +1,5 @@
 import type {
+  Make, MakeKind,
   WorkDay, WorkSession, WorkStatus,
   Brief,
   PrInfo,
@@ -13,7 +14,7 @@ import type {
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 
-export type ChangeTopic = 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
+export type ChangeTopic = 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -324,6 +325,21 @@ export interface DureApi {
     /** 기록을 지운다 (id 를 비우면 전부) */
     clear(id?: string | null): Promise<void>;
   };
+  /** 만들기: 프로젝트의 자료로 보고서·발표 자료·눌러 보는 그림을 만든다 (누를 때 한 번만 모델을 부른다) */
+  makes: {
+    kinds(projectId: string): Promise<MakeKind[]>;
+    list(projectId: string): Promise<Make[]>;
+    /** 만들기를 시작한다 (만드는 중인 것을 돌려준다. 끝나면 'makes' 로 알린다) */
+    create(projectId: string, kind: string, direction: string, extra: string): Promise<Make>;
+    remove(id: string): Promise<void>;
+    /** 따로 창에 띄운다 */
+    open(id: string): Promise<void>;
+    /**
+     * 파일로 저장한다 (저장한 경로. 그만두면 null). 기본은 안전한 판: 스크립트가 꺼져 있어 어디서 열어도 바깥으로 나가는 것이 없다.
+     * raw 면 움직이는 원본 그대로.
+     */
+    save(id: string, raw?: boolean): Promise<string | null>;
+  },
   memory: {
     list(projectId: string): Promise<MemoryItem[]>;
     add(projectId: string, kind: MemoryKind, text: string): Promise<MemoryItem>;
@@ -450,7 +466,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.catalog', 'plugins.installCatalog', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'makes.kinds', 'makes.list', 'makes.create', 'makes.remove', 'makes.open', 'makes.save', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.catalog', 'plugins.installCatalog', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',

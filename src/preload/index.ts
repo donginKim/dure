@@ -216,6 +216,14 @@ const api: DureApi = {
     list: () => call('away.list'),
     clear: (id) => call('away.clear', id ?? null),
   },
+  makes: {
+    kinds: (projectId) => call('makes.kinds', projectId),
+    list: (projectId) => call('makes.list', projectId),
+    create: (projectId, kind, direction, extra) => call('makes.create', projectId, kind, direction, extra),
+    remove: (id) => call('makes.remove', id),
+    open: (id) => call('makes.open', id),
+    save: (id, raw) => call('makes.save', id, raw),
+  },
   memory: {
     list: (projectId) => call('memory.list', projectId),
     add: (projectId, kind, text) => call('memory.add', projectId, kind, text),

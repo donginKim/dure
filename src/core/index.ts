@@ -487,7 +487,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       const models = (db.prepare(`SELECT model, ${COUNTED} AS n FROM token_usage WHERE at >= ? AND model NOT LIKE '<%' GROUP BY model ORDER BY n DESC`).all(t0) as { model: string; n: number }[])
         .map((r) => ({ model: r.model || '(알 수 없음)', counted: r.n }));
       const working = projects.list().flatMap((p) => workspaces.listAll(p.id)).filter((w) => w.status === 'working').length;
-      return { today, week, projects: projectsToday, models, limit: service.accountLimit(), working };
+      return { today, week, projects: projectsToday, models, limit: service.accountLimit(), windows: service.limitWindows(), working };
     },
     dashboard() {
       const att = new Map<string, number>();

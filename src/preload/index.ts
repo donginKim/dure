@@ -89,6 +89,8 @@ const api: DureApi = {
     setPermissionMode: (id, mode) => call('workspaces.setPermissionMode', id, mode),
     dismissStuck: (id) => call('workspaces.dismissStuck', id),
     rename: (id, name) => call('workspaces.rename', id, name),
+    agentConfig: (id) => call('workspaces.agentConfig', id),
+    trustAgentConfig: (id, hash) => call('workspaces.trustAgentConfig', id, hash),
     setAutoName: (id, on) => call('workspaces.setAutoName', id, on),
   },
   terminals: {

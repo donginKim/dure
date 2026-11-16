@@ -94,6 +94,10 @@ export interface PluginScheduleTemplate { title: string; prompt: string; kind: '
  * 설치형 플러그인. 글과 설정만 담는다 (두레 안에서 플러그인의 코드를 돌리지 않는다).
  * approved: 지금의 내용을 사용자가 승인했다. changed: 승인한 뒤 내용이 바뀌었다 (다시 승인해야 쓴다)
  */
+/** 작업 폴더에 든 에이전트 설정 파일 하나 (.claude/settings.json, .mcp.json 등) */
+export interface AgentConfigFile { path: string; text: string; /** 길어서 잘랐다 */ cut: boolean }
+/** 작업 폴더의 에이전트 설정 파일들과, 사용자가 이 내용을 허용했는가. 파일이 없으면 hash 가 빈 글이고 trusted 다 */
+export interface AgentConfig { files: AgentConfigFile[]; hash: string; trusted: boolean }
 /** 만들기의 틀 */
 export type MakeFormat = 'report' | 'slides' | 'visual';
 export interface PluginMaker { name: string; prompt: string; format: MakeFormat }
@@ -825,6 +829,8 @@ export type DbAccess = 'ask' | 'auto' | 'off';
 export interface DbConnection {
   id: string; projectId: string; name: string; kind: DbKind;
   host: string; port: number; database: string; user: string; ssl: boolean;
+  /** SSL 로 접속할 때 서버의 인증서를 확인하는가 */
+  sslVerify: boolean;
   agentAccess: DbAccess; hasPassword: boolean; createdAt: number;
   /**
    * 이 계정이 조회 말고 할 수 있는 것 (접속해 확인한 뒤에만 있다). 비어 있지 않으면 읽기 전용 계정이 아니다:
@@ -837,6 +843,8 @@ export interface DbConnectionInput {
   id?: string;
   projectId: string; name: string; kind: DbKind;
   host: string; port: number; database: string; user: string; ssl: boolean; agentAccess: DbAccess;
+  /** SSL 로 접속할 때 서버의 인증서를 확인한다 (기본: 확인한다) */
+  sslVerify?: boolean;
   /** 고칠 때 비우면(undefined) 저장된 비밀번호를 그대로 둔다 */
   password?: string;
 }

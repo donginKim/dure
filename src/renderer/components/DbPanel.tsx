@@ -50,7 +50,8 @@ function ConnectionDialog({ projectId, editing, onClose }: { projectId: string; 
             <div className="hint">{canStore ? 'macOS 키체인의 열쇠로 암호화해 저장합니다. 화면에도 에이전트에게도 다시 보이지 않습니다. (에이전트가 조회로 알아낼 수 있는 것, 예를 들어 접속한 사용자 이름은 막지 못합니다.)' : '이 환경에서는 비밀번호를 안전하게 저장할 수 없습니다. 비밀번호 없는 연결만 등록할 수 있습니다.'}</div>
             {editing?.hasPassword && <label className="check"><input type="checkbox" checked={clearPassword} onChange={(e) => setClearPassword(e.target.checked)} /> 저장된 비밀번호 지우기</label>}
           </div>
-          <label className="check db-wide"><input type="checkbox" checked={f.ssl} onChange={(e) => set({ ssl: e.target.checked })} /> SSL 로 접속 <span className="muted">(서버 인증서는 확인하지 않습니다)</span></label>
+          <label className="check db-wide"><input type="checkbox" checked={f.ssl} onChange={(e) => set({ ssl: e.target.checked, sslVerify: e.target.checked })} /> SSL 로 접속</label>
+          {f.ssl && <label className="check db-wide"><input type="checkbox" checked={f.sslVerify !== false} onChange={(e) => set({ sslVerify: e.target.checked })} /> 서버 인증서 확인 <span className="muted">(끄면 같은 네트워크에서 접속을 가로채도 알아채지 못합니다. 사내 인증서라 확인이 안 될 때만 끄세요)</span></label>}
             </>
           )}
           <div className="field db-wide"><label>에이전트가 이 연결을 쓰는 방식</label>
@@ -220,7 +221,7 @@ export function DbPanel({ projectId, workspaces, readOnly }: { projectId: string
             <div key={c.id} className={`row db-conn${active?.id === c.id ? ' on' : ''}`} onClick={() => setActiveId(c.id)}>
               <div className="grow">
                 <div>{c.name} <span className="tag">{KIND_LABEL[c.kind]}</span> <span className={`tag${c.agentAccess === 'auto' ? ' warn' : ''}`} title={ACCESS_HELP[c.agentAccess]}>에이전트: {ACCESS_LABEL[c.agentAccess]}</span></div>
-                <div className="path">{c.user ? `${c.user}@` : ''}{c.host}{c.kind === 'mongo' && c.port === 27017 ? '' : `:${c.port}`}{c.database && `/${c.database}`}{c.ssl && ' · SSL'}{!c.hasPassword && c.kind !== 'mongo' && ' · 비밀번호 없음'}</div>
+                <div className="path">{c.user ? `${c.user}@` : ''}{c.host}{c.kind === 'mongo' && c.port === 27017 ? '' : `:${c.port}`}{c.database && `/${c.database}`}{c.ssl && (c.sslVerify ? ' · SSL' : ' · SSL (인증서 확인 안 함)')}{!c.hasPassword && c.kind !== 'mongo' && ' · 비밀번호 없음'}</div>
                 {tested[c.id] && <div className={`db-tested${tested[c.id]!.startsWith('접속 실패') ? ' bad' : ''}`}>{tested[c.id]}</div>}
                 {c.warnings && c.warnings.length > 0 && (
                   <div className="db-warn">읽기 전용 계정이 아닙니다: {c.warnings.join(' · ')}. 두레는 조회만 실행하지만, 이런 계정은 조회 문장으로도 할 수 있는 일이 있습니다. 에이전트의 조회는 "바로 조회" 로 두어도 매번 승인을 받습니다. 읽기 전용 계정으로 바꾸는 것을 권합니다.</div>

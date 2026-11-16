@@ -7,7 +7,7 @@ import type { DbCell, DbColumn, DbKind, DbResult, DbTable } from '@shared/types'
 import { mongoColumns, mongoRisks, mongoTables, runMongo } from './mongo';
 
 /** MongoDB 는 password 에 연결 문자열 전체가 들어 있다 (host, port, user 는 화면에 보이는 용도다). */
-export interface DbTarget { kind: DbKind; host: string; port: number; database: string; user: string; password: string; ssl: boolean }
+export interface DbTarget { kind: DbKind; host: string; port: number; database: string; user: string; password: string; ssl: boolean; /** 서버의 인증서를 확인한다 (끄면 같은 네트워크에서 가로채는 것을 알아채지 못한다) */ sslVerify?: boolean }
 const mongoOf = (t: DbTarget): { uri: string; database: string } => ({ uri: t.password, database: t.database });
 export interface DbLimits {
   maxRows: number; timeoutMs: number;
@@ -47,7 +47,7 @@ const fail = (e: unknown): Error => new Error(String((e as { message?: string })
 async function runPostgres(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): Promise<DbResult> {
   const client = new pg.Client({
     host: t.host, port: t.port, database: t.database, user: t.user, password: t.password,
-    ssl: t.ssl ? { rejectUnauthorized: false } : false,
+    ssl: t.ssl ? { rejectUnauthorized: t.sslVerify === true } : false,
     connectionTimeoutMillis: CONNECT_MS, application_name: 'dure (read-only)',
   });
   // 연결이 끊길 때 나는 오류가 처리되지 않은 예외가 되지 않게 한다.
@@ -110,7 +110,7 @@ async function runPostgres(t: DbTarget, sql: string, params: unknown[], lim: DbL
 function killMysqlQuery(t: DbTarget, threadId: number | undefined): void {
   if (!threadId || !Number.isInteger(threadId)) return;
   try {
-    const c = mysql.createConnection({ host: t.host, port: t.port, user: t.user, password: t.password, ssl: t.ssl ? { rejectUnauthorized: false } : undefined, connectTimeout: 4000 });
+    const c = mysql.createConnection({ host: t.host, port: t.port, user: t.user, password: t.password, ssl: t.ssl ? { rejectUnauthorized: t.sslVerify === true } : undefined, connectTimeout: 4000 });
     c.on('error', () => undefined);
     c.query(`KILL QUERY ${threadId}`, () => { try { c.destroy(); } catch { /* 이미 끊김 */ } });
     setTimeout(() => { try { c.destroy(); } catch { /* 이미 끊김 */ } }, 5000).unref();
@@ -130,7 +130,7 @@ function runMysql(t: DbTarget, sql: string, params: unknown[], lim: DbLimits): P
     const started = Date.now();
     const conn = mysql.createConnection({
       host: t.host, port: t.port, database: t.database || undefined, user: t.user, password: t.password,
-      ssl: t.ssl ? { rejectUnauthorized: false } : undefined,
+      ssl: t.ssl ? { rejectUnauthorized: t.sslVerify === true } : undefined,
       connectTimeout: CONNECT_MS, multipleStatements: false, dateStrings: true, supportBigNumbers: true, bigNumberStrings: true,
     });
     let done = false;

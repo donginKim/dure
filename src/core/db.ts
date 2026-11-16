@@ -514,6 +514,14 @@ const MIGRATIONS: string[] = [
   CREATE TABLE makes (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, kind_name TEXT NOT NULL, title TEXT NOT NULL, direction TEXT NOT NULL, state TEXT NOT NULL, error TEXT NOT NULL, html TEXT NOT NULL, size INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL, created_at INTEGER NOT NULL);
   CREATE INDEX makes_project ON makes (project_id, created_at);
   `,
+  // 두레가 만든 커밋 (커밋 창과 자동 반영). 자동 반영이 기준 브랜치로 옮기기 전에, 브랜치에 검사를 거치지 않은 커밋이 끼어 있지 않은지 본다.
+  `
+  CREATE TABLE dure_commits (hash TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, at INTEGER NOT NULL);
+  `,
+  // 저장소의 에이전트 설정 파일(.claude/settings.json, .mcp.json) 가운데 사용자가 내용을 보고 허용한 것
+  `
+  CREATE TABLE agent_config_trust (repo_id TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (repo_id, hash));
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

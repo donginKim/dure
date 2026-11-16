@@ -45,7 +45,7 @@ const ACCESS: DbAccess[] = ['ask', 'auto', 'off'];
 const oneLine = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, max);
 const toConnection = (r: Row): DbConnection => ({
   id: r.id, projectId: r.project_id, name: r.name, kind: kindOf(r.kind), host: r.host, port: r.port,
-  database: r.database, user: r.user, ssl: r.ssl === 1, agentAccess: ACCESS.includes(r.agent_access as DbAccess) ? r.agent_access as DbAccess : 'ask',
+  database: r.database, user: r.user, ssl: r.ssl >= 1, sslVerify: r.ssl === 2, agentAccess: ACCESS.includes(r.agent_access as DbAccess) ? r.agent_access as DbAccess : 'ask',
   hasPassword: r.secret !== '', createdAt: r.created_at,
 });
 
@@ -79,6 +79,8 @@ export class DbService extends EventEmitter {
   constructor(private readonly d: {
     db: Database.Database; projects: ProjectStore; workspaces: WorkspaceStore; messages: MessageService; secrets: SecretBox;
     isProjectClosed(projectId: string): boolean;
+    /** 이 워크스페이스가 다른 사람(다른 PC 의 두레)에게 공개돼 있는가 */
+    exposed?: (workspaceId: string) => boolean;
     /** 시험에서 가짜 DB 로 바꾼다 */
     runner?: Runner;
     waitMs?: number;
@@ -119,7 +121,7 @@ export class DbService extends EventEmitter {
   }
 
   private target(r: Row): DbTarget {
-    return { kind: kindOf(r.kind), host: r.host, port: r.port, database: r.database, user: r.user, ssl: r.ssl === 1, password: r.secret ? this.d.secrets.decrypt(r.secret) : '' };
+    return { kind: kindOf(r.kind), host: r.host, port: r.port, database: r.database, user: r.user, ssl: r.ssl >= 1, sslVerify: r.ssl === 2, password: r.secret ? this.d.secrets.decrypt(r.secret) : '' };
   }
 
   private clean(i: DbConnectionInput, existing?: Row): Omit<DbConnectionInput, 'id' | 'password' | 'projectId'> {
@@ -135,7 +137,7 @@ export class DbService extends EventEmitter {
       const database = oneLine(i.database, 128) || oneLine(parts.database, 128);
       if (!database) throw new Error('데이터베이스 이름을 적으세요 (연결 문자열에 없으면 따로 적습니다).');
       if (/[\s/\\."$\0]/.test(database)) throw new Error('데이터베이스 이름이 올바르지 않습니다.');
-      return { name, kind: 'mongo', host: oneLine(parts.host, 255), port: parts.port, database, user: oneLine(parts.user, 128), ssl: false, agentAccess: i.agentAccess };
+      return { name, kind: 'mongo', host: oneLine(parts.host, 255), port: parts.port, database, user: oneLine(parts.user, 128), ssl: false, sslVerify: false, agentAccess: i.agentAccess };
     }
     const host = oneLine(i.host, 255);
     if (!host || /\s/.test(host)) throw new Error('호스트를 적으세요.');
@@ -147,7 +149,7 @@ export class DbService extends EventEmitter {
     if (i.kind === 'postgres' && !database) throw new Error('데이터베이스 이름을 적으세요.');
     if (i.kind === 'oracle' && !database) throw new Error('서비스 이름을 적으세요 (예: ORCLPDB1).');
     if (!ACCESS.includes(i.agentAccess)) throw new Error('에이전트 사용 방식이 올바르지 않습니다.');
-    return { name, kind: i.kind, host, port, database, user, ssl: i.ssl === true, agentAccess: i.agentAccess };
+    return { name, kind: i.kind, host, port, database, user, ssl: i.ssl === true, sslVerify: i.ssl === true && i.sslVerify !== false, agentAccess: i.agentAccess };
   }
 
   /** 연결을 등록하거나 고친다. 고칠 때 비밀번호를 주지 않으면 저장된 것을 그대로 둔다. */
@@ -168,10 +170,10 @@ export class DbService extends EventEmitter {
     const id = existing?.id ?? crypto.randomUUID();
     if (existing) {
       this.d.db.prepare('UPDATE db_connections SET name = ?, kind = ?, host = ?, port = ?, database = ?, user = ?, ssl = ?, agent_access = ?, secret = ? WHERE id = ?')
-        .run(c.name, c.kind, c.host, c.port, c.database, c.user, c.ssl ? 1 : 0, c.agentAccess, secret, id);
+        .run(c.name, c.kind, c.host, c.port, c.database, c.user, c.ssl ? (c.sslVerify ? 2 : 1) : 0, c.agentAccess, secret, id);
     } else {
       this.d.db.prepare('INSERT INTO db_connections (id, project_id, name, kind, host, port, database, user, ssl, agent_access, secret, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, projectId, c.name, c.kind, c.host, c.port, c.database, c.user, c.ssl ? 1 : 0, c.agentAccess, secret, Date.now());
+        .run(id, projectId, c.name, c.kind, c.host, c.port, c.database, c.user, c.ssl ? (c.sslVerify ? 2 : 1) : 0, c.agentAccess, secret, Date.now());
     }
     this.emit('changed', projectId);
     return this.get(id)!;
@@ -270,6 +272,8 @@ export class DbService extends EventEmitter {
     const checked = checkReadOnly(sql, kind);
     // 읽기 전용 계정이 아니면 "바로 조회" 여도 승인을 받는다: 읽기 전용 트랜잭션으로 막히지 않는 길이 있다.
     const warnings = await this.risk(r).catch(() => ['계정의 권한을 확인하지 못했습니다']);
+    // 다른 사람에게 공개된 워크스페이스는 "바로 조회" 여도 승인을 받는다: 그 사람이 보낸 글에 휘둘린 에이전트가 조회 결과를 그대로 내보낼 수 있다.
+    if (this.d.exposed?.(workspaceId)) warnings.push('이 워크스페이스는 다른 사람에게 공개돼 있습니다 (조회한 내용이 그 사람에게 전해질 수 있습니다)');
     if (r.agent_access === 'auto' && warnings.length === 0) return { kind: 'result', ...this.trim(await this.runAgent(r, checked)) };
     const mine = [...this.requests.values()].filter((q) => q.workspaceId === workspaceId && q.status === 'pending');
     if (mine.length >= 3) throw new Error('승인을 기다리는 조회가 이미 3개다. 사용자의 결정을 기다려라.');

@@ -83,6 +83,8 @@ export class AutoShipService extends EventEmitter {
     isProjectClosed(projectId: string): boolean;
     /** 기록을 적어 둔다 (없으면 메모리에만) */
     db?: Database.Database;
+    /** 두레가 만든 커밋인가 (커밋 창이나 자동 반영). 없으면 가리지 않는다 */
+    knownCommit?: (hash: string) => boolean;
   }) {
     super();
     // 적어 둔 기록을 읽는다 (두레를 다시 켜도 남게).
@@ -211,6 +213,14 @@ export class AutoShipService extends EventEmitter {
     if (committed !== tree) { fail('commit', `커밋은 했지만 검사한 모양과 달라 ${ws.baseBranch} 로는 옮기지 않습니다 (${hash.slice(0, 7)}). 합치기에서 보고 직접 옮기세요.`); return; }
     this.note(p, workspaceId, 'commit', true, `${ws.branch} 에 커밋했습니다 (${hash.slice(0, 7)}).`);
     if (this.mode(p) !== 'main') return;
+    // 기준 브랜치로 가는 것은 브랜치에 쌓인 커밋 전부다. 위의 검사는 이번 변경만 봤으므로,
+    // 두레가 만들지 않은 커밋(에이전트가 직접 한 커밋: 리뷰도 비밀 값 검사도 거치지 않았다)이 끼어 있으면 사람에게 넘긴다.
+    if (this.d.knownCommit) {
+      const list = await this.d.git.raw(['-C', ws.worktreePath, 'rev-list', '--max-count=500', `refs/heads/${ws.baseBranch}..refs/heads/${ws.branch}`]).then((t) => t.split('\n').map((x) => x.trim()).filter(Boolean), () => null);
+      if (list === null) { fail('merge', `브랜치의 커밋을 읽지 못해 ${ws.baseBranch} 로 옮기지 않았습니다.`); return; }
+      const strange = list.filter((h) => !this.d.knownCommit!(h));
+      if (strange.length) { fail('merge', `두레가 만들지 않은 커밋이 ${strange.length}개 있어 ${ws.baseBranch} 로 옮기지 않았습니다 (${strange.slice(0, 3).map((h) => h.slice(0, 7)).join(', ')}). 검사를 거치지 않은 커밋입니다. 합치기에서 보고 직접 옮기세요.`); return; }
+    }
     // 기준 브랜치로: 이 워크스페이스의 브랜치만 합친다 (검사를 거치지 않은 다른 워크스페이스의 커밋은 넣지 않는다).
     const only = [workspaceId];
     const plan = await this.d.merges.plan(p, repo.id, ws.baseBranch, only).catch((e: unknown) => { fail('merge', `합쳐 보지 못했습니다: ${e instanceof Error ? e.message : String(e)}`); return null; });

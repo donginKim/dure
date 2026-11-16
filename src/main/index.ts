@@ -3,7 +3,8 @@ import { createBonjourDiscovery } from '@core/peers/bonjour';
 import { createHttpTransport } from '@core/peers/httpTransport';
 import { createBrowserHost } from './browserDriver';
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, safeStorage, globalShortcut, screen } from 'electron';
+import { app, BrowserWindow, dialog, safeStorage, globalShortcut, screen, shell } from 'electron';
+import { isAppUrl } from './appUrl';
 import { createCore, type Core } from '@core/index';
 import { resolveShellEnv } from '@core/shellEnv';
 import { registerIpc } from './ipc';
@@ -15,6 +16,22 @@ if (process.env.DURE_DATA_DIR) app.setPath('userData', process.env.DURE_DATA_DIR
 let core: Core | undefined;
 let unregisterIpc: (() => void) | undefined;
 let quitting = false;
+
+/**
+ * 두레의 화면이 든 창은 두레의 화면에만 머문다: 다른 주소로 넘어가지 않고, 새 창을 열지 않는다.
+ * (에이전트나 다른 사람이 보낸 글이 화면에 그려지다가 창을 바깥 페이지로 보내면, 그 페이지가 두레의 기능을 쥐게 된다.)
+ * 도움말의 고정된 바깥 링크만 보통 브라우저로 연다.
+ */
+function lockDown(win: BrowserWindow): void {
+  const stay = (event: Electron.Event, url: string): void => { if (!isAppUrl(url)) event.preventDefault(); };
+  win.webContents.on('will-navigate', stay);
+  win.webContents.on('will-redirect', stay);
+  win.webContents.on('will-frame-navigate', (event) => { if (!isAppUrl(event.url)) event.preventDefault(); });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\/(www\.|docs\.)?claude\.com\//.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -28,6 +45,7 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       // 워크스페이스의 "브라우저" 보기 (개발 서버를 앱 안에서 본다)
       webviewTag: true,
       // 창이 가려져 있어도 화면을 늦추지 않는다: 사용자가 다른 앱을 쓰는 동안에도 에이전트가 브라우저 페이지를 쓰고 화면을 찍는다.
@@ -46,6 +64,7 @@ function createWindow(): void {
     delete (params as Record<string, unknown>).allowpopups;
     if (!/^https?:\/\//i.test(params.src ?? '')) event.preventDefault();
   });
+  lockDown(win);
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
@@ -154,18 +173,26 @@ function openCapture(): void {
   const win = new BrowserWindow({
     width, height, x: Math.round(area.x + (area.width - width) / 2), y: Math.round(area.y + area.height * 0.18),
     frame: false, resizable: false, alwaysOnTop: true, skipTaskbar: true, show: false, backgroundColor: '#1c1f26', title: '빠른 메모',
-    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { preload: join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   captureWin = win;
   win.on('closed', () => { if (captureWin === win) captureWin = null; });
   win.on('blur', () => { if (!win.isDestroyed()) win.close(); });
   win.once('ready-to-show', () => { win.show(); win.focus(); });
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  lockDown(win);
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}#capture`);
   else void win.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'capture' });
 }
 
-void start();
+// 같은 데이터 폴더로 두 번 켜지 않는다 (같은 DB 와 작업 폴더를 둘이 함께 쓰면 엉킨다). 이미 켜져 있으면 그 창을 앞으로 가져온다.
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.on('second-instance', () => {
+    const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && isAppUrl(x.webContents.getURL()) && !x.webContents.getURL().includes('#capture'));
+    if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); }
+  });
+  void start();
+}
 
 app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => { try { globalShortcut.unregisterAll(); } catch { /* 끝나는 중 */ } });

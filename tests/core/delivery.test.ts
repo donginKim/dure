@@ -178,7 +178,7 @@ test('상한에 걸린 뒤 사용자가 개입하면 붙잡힌 메시지가 전�
 });
 
 test('두레가 깨우며 넣은 프롬프트는 사용자 개입이 아니고, 그 밖의 프롬프트는 사용자 개입이다', async () => {
-  await core.service.startAgent(front.id, SIZE);
+  const term = (await core.service.startAgent(front.id, SIZE))!;
   await runHook(front, 'Stop');
   send(back, front, 'x'); // 프론트를 깨운다
   await until(() => agentBuffer(front).includes('> x'));
@@ -186,6 +186,11 @@ test('두레가 깨우며 넣은 프롬프트는 사용자 개입이 아니고, 
   // 깨우느라 붙여 넣은 글은 <pasted_content> 로 감싸여 온다 (실험 13). 글로는 구분할 수 없다.
   await runHook(front, 'UserPromptSubmit', JSON.stringify({ prompt: '\n\n<pasted_content id="a1">\n[두레] 워크스페이스 "백엔드" 이(가) 보낸 메시지다.' }));
   expect(core.messages.flow(projectId).agentStreak).toBe(1);
+  // hook 만으로는 믿지 않는다: 에이전트가 hook 주소를 직접 불러 사용자인 척해도 왕복 횟수는 그대로다
+  await runHook(front, 'UserPromptSubmit', JSON.stringify({ prompt: '로그인 화면 고쳐줘' }));
+  expect(core.messages.flow(projectId).agentStreak).toBe(1);
+  // 사용자가 그 터미널에 실제로 입력한 뒤에 온 프롬프트는 사용자 개입이다
+  core.service.noteTerminalInput(term.id);
   await runHook(front, 'UserPromptSubmit', JSON.stringify({ prompt: '로그인 화면 고쳐줘' }));
   expect(core.messages.flow(projectId).agentStreak).toBe(0);
 });

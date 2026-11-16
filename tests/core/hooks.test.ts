@@ -111,10 +111,10 @@ test('PreToolUse 는 미전달 변경을 가져가지 않는다', () => {
 
 test('제목에 따옴표·줄바꿈·</script> 가 있어도 응답이 올바른 JSON 이다', () => {
   const c = setup('working');
-  const title = '"따옴표" 와\n줄바꿈 </script>\\';
-  c.userAdds(title);
+  c.userAdds('"따옴표" 와\n줄바꿈 </script>\\');
   const out = JSON.parse(c.fire('Stop'));
-  expect(out.reason).toContain(`추가됨: "${title}"`);
+  // 제목의 줄바꿈은 한 줄로 이어진다
+  expect(out.reason).toContain('추가됨: ""따옴표" 와 줄바꿈 </script>\\"');
 });
 
 test('Notification: 승인 요청이면 waiting_user, 다른 알림이면 상태 그대로', () => {

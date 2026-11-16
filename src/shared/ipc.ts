@@ -1,5 +1,5 @@
 import type {
-  Make, MakeKind,
+  Make, MakeKind, AgentConfig,
   WorkDay, WorkSession, WorkStatus,
   Brief,
   PrInfo,
@@ -134,6 +134,10 @@ export interface DureApi {
     dismissStuck(id: string): Promise<void>;
     /** 표시 이름을 바꾼다 (브랜치와 작업 폴더는 그대로). 직접 지은 이름은 에이전트가 바꾸지 못한다 */
     rename(id: string, name: string): Promise<Workspace>;
+    /** 작업 폴더에 든 에이전트 설정 파일(.claude/settings.json, .mcp.json)과 사용자가 허용했는지 */
+    agentConfig(id: string): Promise<AgentConfig>;
+    /** 화면에서 본 내용(hash)을 허용한다: 그 뒤로 에이전트를 켤 수 있다 */
+    trustAgentConfig(id: string, hash: string): Promise<void>;
     /** 에이전트가 작업에 맞게 이름을 바꿔도 되는가 */
     setAutoName(id: string, on: boolean): Promise<Workspace>;
   };
@@ -480,7 +484,7 @@ export const IPC_CHANNELS = [
   'cleanup.list', 'cleanup.restore', 'cleanup.export', 'cleanup.plan', 'cleanup.complete',
   'repos.list', 'repos.pickFolder', 'repos.add', 'repos.branches', 'repos.status', 'repos.remove', 'repos.setVerify', 'verify.statuses', 'verify.run',
   'workspaces.list', 'workspaces.doing', 'workspaces.create', 'workspaces.remove', 'workspaces.uncommitted', 'workspaces.interrupt',
-  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.setPermissionMode', 'workspaces.dismissStuck', 'workspaces.rename', 'workspaces.setAutoName',
+  'workspaces.stopAgent', 'workspaces.setEngine', 'workspaces.setModel', 'workspaces.setPermissionMode', 'workspaces.dismissStuck', 'workspaces.rename', 'workspaces.agentConfig', 'workspaces.trustAgentConfig', 'workspaces.setAutoName',
   'terminals.list', 'terminals.startAgent', 'terminals.openShell', 'terminals.write', 'terminals.resize',
   'terminals.kill', 'terminals.buffer',
   'todos.list', 'todos.add', 'todos.update', 'todos.remove', 'todos.move', 'todos.setParent', 'todos.setAfter', 'todos.pending', 'todos.nudge',

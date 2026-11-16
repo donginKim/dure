@@ -4,11 +4,11 @@ import { SettingsService } from '@core/settings';
 import { ceilHalf, dayOf, WorkTimeService, type NetworkProbe } from '@core/worktime';
 import { tempDir } from '../helpers/repo';
 
-const OFFICE: NetworkProbe = { ssid: '11st-OA', hidden: false, gateway: 'aa:bb:cc:00:00:01' };
+const OFFICE: NetworkProbe = { ssid: 'Office-WiFi', hidden: false, gateway: 'aa:bb:cc:00:00:01' };
 const HOME: NetworkProbe = { ssid: 'home', hidden: false, gateway: 'aa:bb:cc:00:00:02' };
 const HIDDEN: NetworkProbe = { ssid: null, hidden: true, gateway: 'aa:bb:cc:00:00:01' };
 
-function setup(wifi = '11st-oa') {
+function setup(wifi = 'office-wifi') {
   const db = openDatabase(join(tempDir(), 'dure.db'));
   const settings = new SettingsService(db);
   // 아래 시험들은 '붙어 있던 시간 그대로' 방식이다. 출퇴근 기록 방식은 맨 아래에서 따로 본다.
@@ -27,7 +27,7 @@ test('그 이름의 와이파이에 붙어 있는 동안을 센다. 이름은 �
   await t.svc.tick();
   const started = t.time();
   await t.pass(90);
-  expect(t.svc.status()).toMatchObject({ atWork: true, ssid: '11st-OA', todayMs: 90 * 60_000, since: started });
+  expect(t.svc.status()).toMatchObject({ atWork: true, ssid: 'Office-WiFi', todayMs: 90 * 60_000, since: started });
   // 집에 가면 멈춘다
   t.at(HOME);
   await t.pass(30);
@@ -91,7 +91,7 @@ test('꺼 두면 세지 않는다. 이름을 비워 두면 어떤 와이파이�
   t.at({ ssid: '', hidden: false, gateway: 'x' }); await t.pass(3);
   t.at(OFFICE); await t.pass(3);
   expect(t.svc.status()).toMatchObject({ atWork: false, todayMs: 0 });
-  t.settings.update({ workWifi: '11st-OA' });
+  t.settings.update({ workWifi: 'Office-WiFi' });
   await t.pass(3);
   expect(t.svc.status().atWork).toBe(true);
   t.settings.update({ workTimeEnabled: false });

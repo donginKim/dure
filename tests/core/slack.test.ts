@@ -18,7 +18,7 @@ const fakeFetch = async (url: string, init: { headers: Record<string, string>; b
   return { status: 200, headers: { get: () => null }, text: async () => JSON.stringify(body) };
 };
 const defaults = (): typeof replies => ({
-  'auth.test': () => ({ ok: true, team: '십일번가', user: 'dongin' }),
+  'auth.test': () => ({ ok: true, team: 'example-team', user: 'tester' }),
   'users.info': (p) => ({ ok: true, user: { id: p.user, real_name: p.user === 'U00000001' ? '김개발' : '이기획', profile: { display_name: '' } } }),
   'conversations.list': () => ({ ok: true, channels: [
     { id: 'C00000001', name: 'dev-backend' }, { id: 'G00000002', name: 'secret-plan', is_private: true }, { id: 'D00000003', is_im: true, user: 'U00000001' },
@@ -59,7 +59,7 @@ test('토큰은 확인한 뒤 암호화해 저장하고, 화면에도 에이전�
   await expect(core.slack.connect(TOKEN)).rejects.toThrow('올바르지 않습니다');
   expect(core.slack.status().connected).toBe(false);
   replies = defaults();
-  expect(await core.slack.connect(TOKEN)).toEqual({ connected: true, team: '십일번가', user: 'dongin', access: 'ask' });
+  expect(await core.slack.connect(TOKEN)).toEqual({ connected: true, team: 'example-team', user: 'tester', access: 'ask' });
   const stored = JSON.stringify(core.slack['d'].db.prepare('SELECT * FROM slack_connection').all());
   expect(stored).toContain('enc(');
   expect(stored).not.toContain(TOKEN);

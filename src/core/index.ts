@@ -2,12 +2,14 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport, UsageBar, AwayChoice, NewsPanel } from '@shared/types';
+import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport, UsageBar, AwayChoice, NewsPanel, AgentConfig } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
 import { ReviewService, type ReviewRunner } from './review';
 import { MakeService, type MakeRunner } from './makes';
+import { readAgentConfig } from './agentConfig';
+import { riskyChoice } from './away';
 import { MergeService } from './merge';
 import { AutoShipService } from './autoship';
 import { BudgetService } from './budget';
@@ -139,6 +141,10 @@ export interface Core {
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
+  /** 작업 폴더의 에이전트 설정 파일과 허용 여부 */
+  agentConfig(workspaceId: string): AgentConfig;
+  /** 화면에서 본 내용(hash)을 허용한다. 그사이 바뀌었으면 거절한다 */
+  trustAgentConfig(workspaceId: string, hash: string): void;
   awayChoices(): AwayChoice[];
   /** 대신 고른 답의 기록을 지운다 (id 를 비우면 전부) */
   clearAwayChoices(id?: string): void;
@@ -287,11 +293,14 @@ export async function createCore(o: CoreOptions): Promise<Core> {
           // 첫 프롬프트로 건넨 메시지는 에이전트가 프롬프트를 받은 지금 전달이 확정된다.
           delivery.confirmStart(w.id);
           // 두레가 넣은 프롬프트가 아니면 사용자가 직접 입력한 것이다: 에이전트끼리의 왕복 횟수를 다시 센다.
-          if (!service.consumeSynthetic(w.id)) messages.userIntervened(w.projectId);
+          // hook 만으로는 믿지 않는다 (에이전트도 hook 주소를 부를 수 있다): 사용자가 방금 그 터미널에 입력했을 때만 센다.
+          // 채팅 방식의 입력은 보낼 때 따로 센다 (sendUserInput).
+          if (!service.consumeSynthetic(w.id) && service.userTypedRecently(w.id)) messages.userIntervened(w.projectId);
         },
       }, workspace, event, payload);
       // 승인 요청이 아닌 알림(입력을 기다린다는 알림 등)은 에이전트가 일을 시작했다는 뜻이 아니다.
       // 그런 알림 때문에 '쉬는 중 확인' 을 지우면 쉬는 에이전트에게 메시지를 전달하지 못한다.
+      if (event === 'Notification' && isPermissionPrompt(payload) && workspace.engine !== 'chat') service.notePermissionPrompt(workspace.id);
       if (event !== 'Notification' || isPermissionPrompt(payload)) noteHook(workspace.id, event, out !== '');
       // 채팅 보기는 터미널 보기 위에 얹힌 화면이다. 여기서 문제가 나도 hook 응답은 나가야 한다.
       try { chat.noteHook(workspace.id, event, payload, event === 'Stop' && out !== ''); } catch { /* 채팅 보기만 영향받는다 */ }
@@ -306,6 +315,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools, memoryTools]);
   const service = new WorkspaceService({
+    agentConfigTrusted: (repoId, hash) => db.prepare('SELECT 1 FROM agent_config_trust WHERE repo_id = ? AND hash = ?').get(repoId, hash) !== undefined,
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
 
@@ -339,10 +349,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // Oracle 에 접속하는 방식 (설정의 Oracle Instant Client 폴더). 이미 접속한 뒤에 바꾸면 다시 켜야 듣는다.
   setOracleClient(settings.get().oracleClientDir);
   settings.on('changed', () => setOracleClient(settings.get().oracleClientDir));
-  const dbs: DbService = new DbService({ db, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  // 다른 사람에게 공개된 워크스페이스인가 (공개 범위가 정해져 있다)
+  const exposed = (workspaceId: string): boolean => db.prepare('SELECT 1 FROM workspace_sharing WHERE workspace_id = ?').get(workspaceId) !== undefined;
+  const dbs: DbService = new DbService({ db, exposed, projects, workspaces, messages, secrets: o.secrets ?? noSecrets, runner: o.dbRunner, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   // 워크스페이스가 지워지면 그 에이전트가 기다리던 조회 요청도 끝낸다.
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
-  const slack: SlackService = new SlackService({ db, workspaces, messages, secrets: o.secrets ?? noSecrets, fetch: o.slackFetch, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
+  const slack: SlackService = new SlackService({ db, exposed, workspaces, messages, secrets: o.secrets ?? noSecrets, fetch: o.slackFetch, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   service.on('changed', (id: string) => { if (!workspaces.get(id)) slack.dropWorkspace(id); });
   const updates = new UpdateService({ git, dataDir: o.dataDir, infoPath: join(o.dataDir, 'install.json'), runningApp: o.runningApp ?? null, env: o.baseEnv, reopen: o.updateReopen });
   updates.start();
@@ -361,6 +373,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     db, peers, projects, repos, workspaces, todos, messages, service, coordinator: () => coordinator,
     reportOn: () => settings.get().shareWorkReport,
     report: (id) => workReport(id),
+    askByDefault: () => settings.get().defaultPermissionMode === 'ask',
   });
   // 워크스페이스의 이름이 바뀌거나 지워지면 공개한 목록을 다시 보낸다. 설정이 바뀌면 듣기를 켜거나 끈다.
   service.on('changed', () => peers.publishSoon());
@@ -470,7 +483,12 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   attention.poke();
 
   const paddy = new PaddyService(db);
-  const commit = new CommitService({ onCommitted: (projectId, workspaceId) => paddy.note('commit', projectId, workspaceId), workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
+  const commit = new CommitService({
+    onCommitted: (projectId, workspaceId, hash) => {
+      // 두레가 만든 커밋을 적어 둔다 (자동 반영이 "검사를 거친 커밋" 과 에이전트가 직접 한 커밋을 가린다).
+      if (/^[0-9a-f]{7,40}$/.test(hash)) db.prepare('INSERT OR IGNORE INTO dure_commits (hash, workspace_id, at) VALUES (?, ?, ?)').run(hash, workspaceId, Date.now());
+      paddy.note('commit', projectId, workspaceId);
+    }, workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
   // 리뷰 에이전트: 커밋 초안이 올라오면 다른 에이전트가 변경을 읽고 문제를 찾는다.
   const review = new ReviewService({
     db, workspaces, git, env: o.baseEnv, runner: o.reviewRunner,
@@ -503,7 +521,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     }
   });
   // 자동 반영: 확인 명령, 리뷰, 비밀 값을 거쳐 커밋하고, 설정이면 기준 브랜치까지 옮긴다.
-  const autoShip = new AutoShipService({ db, projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
+  const autoShip = new AutoShipService({ db, knownCommit: (hash) => db.prepare("SELECT 1 FROM dure_commits WHERE ? LIKE hash || '%'").get(hash) !== undefined, projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
   autoShip.on('changed', () => attention.poke());
   const activity = new ActivityService({ workspaces, messages, todos, git, chat, verify, review, autoShip, figures });
   budget.on('changed', () => attention.poke());
@@ -573,8 +591,13 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     if (!ws || !q || !settings.get().awayMode) return;
     const answers: Record<string, string> = {};
     for (const one of q.questions) {
-      answers[one.question] = one.options[0]?.label
-        ?? '사용자가 자리를 비웠다. 가장 안전하다고 보는 쪽으로 스스로 정해 진행하라. 되돌리기 어려운 일이면 하지 말고 다음 일로 넘어가라.';
+      const first = one.options[0]?.label;
+      // 되돌리기 어려운 일로 보이면 대신 고르지 않는다: 사용자가 본 적 없는 동의가 생기지 않게 (질문의 글은 에이전트가 쓴다).
+      answers[one.question] = first && !riskyChoice(`${one.question} ${one.options.map((x) => `${x.label} ${x.description ?? ''}`).join(' ')}`)
+        ? first
+        : first
+          ? '사용자가 자리를 비웠다. 지우기, 덮어쓰기, 배포, 내보내기처럼 되돌리기 어려운 일은 대신 고르지 않는다. 이 일은 하지 말고 남겨 두어라. 이것 없이 할 수 있는 다른 일이 있으면 그것을 하라.'
+          : '사용자가 자리를 비웠다. 가장 안전하다고 보는 쪽으로 스스로 정해 진행하라. 되돌리기 어려운 일이면 하지 말고 다음 일로 넘어가라.';
     }
     service.answerQuestion(workspaceId, q.requestId, answers);
     const add = db.prepare('INSERT INTO away_log (id, project_id, workspace_id, workspace_name, question, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -602,6 +625,20 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       return out;
     },
     knownNewsLink(url) { return newsLinks.has(String(url)); },
+    agentConfig(workspaceId) {
+      const ws = workspaces.get(workspaceId);
+      if (!ws || ws.role === 'coordinator' || !existsSync(ws.worktreePath)) return { files: [], hash: '', trusted: true };
+      const cfg = readAgentConfig(ws.worktreePath);
+      return { ...cfg, trusted: !cfg.hash || db.prepare('SELECT 1 FROM agent_config_trust WHERE repo_id = ? AND hash = ?').get(ws.repoId, cfg.hash) !== undefined };
+    },
+    trustAgentConfig(workspaceId, hash) {
+      const ws = workspaces.get(workspaceId);
+      if (!ws) throw new Error('워크스페이스가 없습니다.');
+      const cfg = readAgentConfig(ws.worktreePath);
+      if (!cfg.hash || cfg.hash !== String(hash)) throw new Error('보는 사이에 내용이 바뀌었습니다. 다시 확인하세요.');
+      db.prepare('INSERT OR IGNORE INTO agent_config_trust (repo_id, hash, at) VALUES (?, ?, ?)').run(ws.repoId, cfg.hash, Date.now());
+      service.emit('changed', ws.projectId);
+    },
     awayChoices() {
       return (db.prepare('SELECT * FROM away_log ORDER BY at DESC LIMIT 100').all() as { id: string; project_id: string; workspace_id: string; workspace_name: string; question: string; answer: string; at: number }[])
         .map((r) => ({ id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, workspaceName: r.workspace_name, question: r.question, answer: r.answer, at: r.at }));

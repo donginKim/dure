@@ -17,6 +17,7 @@ import type { PtyManager } from './pty';
 import { slugify, uniqueSlug } from './slug';
 import type { ProjectStore, RepoStore, WorkspaceStore } from './stores';
 import type { TodoService } from './todos';
+import { readAgentConfig } from './agentConfig';
 
 export type { CreateWorkspaceInput };
 
@@ -29,6 +30,14 @@ export class AgentNotInstalledError extends Error {
   }
 }
 
+/** 작업 폴더에 사용자가 아직 허용하지 않은 에이전트 설정 파일이 있다 */
+export class AgentConfigUntrustedError extends Error {
+  constructor(readonly files: string[]) {
+    super(`이 작업 폴더에 에이전트 설정 파일이 있습니다 (${files.join(', ')}). 에이전트를 켜면 이 파일의 hook·권한·MCP 서버가 이 PC 에서 쓰입니다. 워크스페이스 화면 위의 띠에서 내용을 보고 허용한 뒤 다시 시작하세요.`);
+    this.name = 'AgentConfigUntrustedError';
+  }
+}
+
 export class WorktreeMissingError extends Error {
   constructor(readonly worktreePath: string) {
     super(`작업 폴더가 없습니다: ${worktreePath}`);
@@ -37,6 +46,8 @@ export class WorktreeMissingError extends Error {
 }
 
 export interface WorkspaceServiceDeps {
+  /** 이 저장소에서 이 내용의 에이전트 설정 파일을 사용자가 허용했는가. 없으면 가리지 않는다 */
+  agentConfigTrusted?: (repoId: string, hash: string) => boolean;
   projects: ProjectStore;
   repos: RepoStore;
   workspaces: WorkspaceStore;
@@ -104,6 +115,10 @@ export class WorkspaceService extends EventEmitter {
    * 에이전트를 막 띄웠을 때의 'idle' 은 여기에 들지 않는다: 폴더 신뢰 창 같은 선택 창이 떠 있을 수 있다.
    */
   private readonly confirmedIdle = new Set<string>();
+  /** 사용자가 터미널에 마지막으로 입력한 때 (hook 만으로는 "사용자가 입력했다" 를 믿지 않는다: 에이전트도 hook 주소를 부를 수 있다) */
+  private readonly typedAt = new Map<string, number>();
+  /** 승인 창이 떠 있는 터미널: 사용자가 답할 때까지 두레가 글을 써 넣지 않는다 (써 넣은 Enter 가 승인으로 눌리지 않게) */
+  private readonly permissionPrompt = new Set<string>();
   private delivery?: DeliveryService;
   /** 지우는 중인 워크스페이스. 이때는 에이전트를 띄우거나 깨우지 않는다 */
   private readonly removing = new Set<string>();
@@ -578,6 +593,17 @@ export class WorkspaceService extends EventEmitter {
    * 방금 온 UserPromptSubmit 이 두레가 넣은 프롬프트 때문인가. 한 번 물으면 표시가 지워진다.
    * 프롬프트 글로는 가릴 수 없다: 붙여 넣은 글은 <pasted_content> 로 감싸여 온다 (실험 13).
    */
+  /** 사용자가 방금(30초 안에) 이 워크스페이스의 터미널에 입력했는가. */
+  userTypedRecently(id: string): boolean {
+    return Date.now() - (this.typedAt.get(id) ?? 0) < 30_000;
+  }
+
+  /** 터미널에 승인 창이 떴다. 사용자가 그 터미널에 입력할 때까지 두레는 글을 써 넣지 않는다. */
+  notePermissionPrompt(id: string): void {
+    this.permissionPrompt.add(id);
+    this.confirmedIdle.delete(id);
+  }
+
   consumeSynthetic(id: string): boolean {
     return this.synthetic.delete(id);
   }
@@ -590,6 +616,8 @@ export class WorkspaceService extends EventEmitter {
     const workspaceId = this.agentTerminals.get(terminalId);
     if (!workspaceId) return;
     this.confirmedIdle.delete(workspaceId);
+    this.typedAt.set(workspaceId, Date.now());
+    this.permissionPrompt.delete(workspaceId);
     this.trustWatchers.get(workspaceId)?.(); // 사용자가 직접 답하고 있다
     this.chat?.noteTerminalInput(workspaceId);
   }
@@ -606,6 +634,8 @@ export class WorkspaceService extends EventEmitter {
     this.trustWatchers.get(workspaceId)?.();
     this.confirmedIdle.delete(workspaceId);
     this.synthetic.delete(workspaceId);
+    this.typedAt.delete(workspaceId);
+    this.permissionPrompt.delete(workspaceId);
     this.lastActivity.delete(workspaceId);
     // 첫 프롬프트를 받기 전에 끝났다면 건넨 메시지를 되돌린다.
     this.delivery?.agentExited(workspaceId);
@@ -709,7 +739,12 @@ export class WorkspaceService extends EventEmitter {
     // 작업 폴더 위치: 설정에 있으면 그곳, 없으면 기본 위치. 이미 만든 워크스페이스는 옮기지 않는다.
     const projectDir = join(settings.worktreeRoot ? expandHome(settings.worktreeRoot) : this.d.worktreeRoot, slugify(project.name));
     const branches = new Set(await this.d.git.listBranches(repo.path));
-    const slug = uniqueSlug(slugify(name), (c) => branches.has(`dure/${c}`) || existsSync(join(projectDir, c)));
+    // 대소문자와 한글 조합 꼴만 다른 이름도 같은 것으로 본다: macOS 의 파일 시스템은 이 둘을 가리지 않아,
+    // 'dure/foo' 가 있는데 'dure/Foo' 를 만들면 git 이 실패하고 되돌리다가 있던 브랜치를 지우게 된다.
+    const fold = (x: string): string => x.normalize('NFC').toLowerCase();
+    const taken = new Set([...branches].map(fold));
+    const slug = uniqueSlug(slugify(name), (c) => taken.has(fold(`dure/${c}`)) || existsSync(join(projectDir, c)));
+    if (String(i.baseBranch ?? '').startsWith('-')) throw new Error('기준 브랜치의 이름이 올바르지 않습니다.');
     const branch = `dure/${slug}`;
     const worktreePath = join(projectDir, slug);
 
@@ -718,7 +753,8 @@ export class WorkspaceService extends EventEmitter {
     // git 은 브랜치를 만든 뒤 체크아웃하므로, 도중에 실패하면 브랜치가 남는다. 그것도 치운다.
     const undo = async (): Promise<void> => {
       await this.d.git.removeWorktree({ repoPath: repo.path, worktreePath }).catch(() => undefined);
-      if (await this.d.git.branchExists(repo.path, branch)) await this.d.git.deleteBranch(repo.path, branch).catch(() => undefined);
+      // 이번에 만든 브랜치만 치운다: 시작하기 전부터 있던 브랜치(남의 일이 든 것)는 건드리지 않는다.
+      if (!taken.has(fold(branch)) && await this.d.git.branchExists(repo.path, branch)) await this.d.git.deleteBranch(repo.path, branch).catch(() => undefined);
     };
     try {
       await this.d.git.addWorktree({ repoPath: repo.path, worktreePath, branch, baseBranch: i.baseBranch });
@@ -803,6 +839,11 @@ export class WorkspaceService extends EventEmitter {
     // 조율 에이전트의 폴더는 두레가 관리한다. 없으면 만든다.
     if (coordinator) mkdirSync(ws.worktreePath, { recursive: true });
     if (!existsSync(ws.worktreePath)) throw new WorktreeMissingError(ws.worktreePath);
+    // 저장소가 에이전트에게 물리는 설정 파일은 사용자가 내용을 보고 허용한 것만 쓴다 (받은 저장소의 hook, 에이전트가 스스로 넓힌 권한).
+    if (!coordinator && this.d.agentConfigTrusted) {
+      const cfg = readAgentConfig(ws.worktreePath);
+      if (cfg.hash && !this.d.agentConfigTrusted(ws.repoId, cfg.hash)) throw new AgentConfigUntrustedError(cfg.files.map((f) => f.path));
+    }
 
     const project = this.d.projects.get(ws.projectId)!;
     if (this.isProjectClosed(project.id)) throw new Error(DONE_PROJECT);
@@ -945,7 +986,8 @@ export class WorkspaceService extends EventEmitter {
   /** hook 이 올 때마다 부른다. 응답을 그냥 끝낸 Stop 만 쉬는 중의 근거가 된다. */
   noteHook(id: string, event: string, blocked: boolean): void {
     this.lastActivity.set(id, Date.now());
-    if (event === 'Stop' && !blocked) this.confirmedIdle.add(id);
+    // 승인 창이 떠 있는 동안 온 Stop 은 믿지 않는다 (에이전트가 hook 주소를 직접 불러 쉬는 척할 수 있다).
+    if (event === 'Stop' && !blocked && !this.permissionPrompt.has(id)) this.confirmedIdle.add(id);
     else this.confirmedIdle.delete(id);
   }
 
@@ -1062,6 +1104,8 @@ export class WorkspaceService extends EventEmitter {
     { const w = this.d.workspaces.get(id); if (w) this.checkBudget(w.projectId); }
     // 사용자가 말을 걸었다: 막혔다는 표시는 거둔다 (새 지시를 받았다).
     this.clearStuck(id);
+    // 화면에서 사용자가 보낸 글이다 (이어서 오는 UserPromptSubmit 을 사용자 개입으로 센다).
+    this.typedAt.set(id, Date.now());
     // eslint-disable-next-line no-control-regex
     const message = String(text ?? '').replace(/\r\n?/g, '\n').replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').trim();
     const images = cleanImages(rawImages);

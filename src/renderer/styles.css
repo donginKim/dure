@@ -1380,3 +1380,9 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .market-add-row { display: flex; gap: 8px; }
 .market-add-row input { flex: 1; min-width: 0; }
 .market-add-row .btn { flex: none; white-space: nowrap; }
+
+/* 에이전트 설정 파일 허용 띠 */
+.agent-config { border-left-color: var(--warn); align-items: flex-start; }
+.agent-config .btn { flex: none; white-space: nowrap; }
+.agent-config-file { margin-top: 8px; }
+.agent-config-file .plug-pre { max-height: 260px; overflow: auto; }

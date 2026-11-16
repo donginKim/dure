@@ -41,6 +41,8 @@ export interface AgentLaunchInput {
   resumeSessionId?: string;
   /** 설정에서 고른 모델 (Claude Code). 없으면 Claude Code 의 기본 */
   model?: string;
+  /** 플러그인이 붙이는 MCP 서버 (Claude Code). 이름 → 설정. 두레의 서버(dure)는 덮지 못한다 */
+  extraMcpServers?: Record<string, unknown>;
   /** 대화를 저절로 줄이는 크기 (Claude Code, 토큰). 없으면 Claude Code 의 기본 */
   autoCompact?: number;
   /** 설정에서 고른 effort (Claude Code). 없으면 Claude Code 의 기본 */
@@ -127,7 +129,7 @@ function buildBase(i: AgentLaunchInput): AgentLaunch {
         {
           path: mcpConfig,
           content: JSON.stringify({
-            mcpServers: { dure: { type: 'http', url: i.mcpUrl, headers: { Authorization: `Bearer ${i.token}` } } },
+            mcpServers: { ...Object.fromEntries(Object.entries(i.extraMcpServers ?? {}).filter(([name]) => name !== 'dure')), dure: { type: 'http', url: i.mcpUrl, headers: { Authorization: `Bearer ${i.token}` } } },
           }),
         },
         { path: settings, content: JSON.stringify({ hooks }) },

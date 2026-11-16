@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { PluginsSection } from './PluginsSection';
 import { Help } from './Help';
 import type { ClaudeEffort, ModelChoice, Settings } from '@shared/types';
 import { BYPASS_WARNING } from './dialogs';
@@ -191,6 +192,8 @@ export function SettingsView() {
           </Row>
         </div>
       </div>
+
+      <PluginsSection />
 
       <div className="section">
         <div className="section-head"><h2>Claude Code</h2></div>

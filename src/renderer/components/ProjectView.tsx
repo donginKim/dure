@@ -19,6 +19,7 @@ import { AgreementsSection } from './AgreementsSection';
 import { AutoShipSection } from './AutoShipSection';
 import { SchedulesSection } from './SchedulesSection';
 import { MemorySection } from './MemorySection';
+import { ProjectPlugins } from './PluginsSection';
 import { remoteGroups } from '../boardView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
@@ -223,6 +224,7 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
       <AutoShipSection project={project} readOnly={done} hasVerify={repos.some((r) => r.verifyCommand)} />
       <SchedulesSection projectId={project.id} workspaces={everyone} readOnly={done} />
       <MemorySection projectId={project.id} readOnly={done} />
+      <ProjectPlugins projectId={project.id} readOnly={done} onOpenSettings={() => onSelect({ type: 'settings' })} />
 
       <MergeSection projectId={project.id} readOnly={done} />
 

@@ -57,6 +57,26 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 플러그인이 붙이는 MCP 서버: 주소(http) 이거나, 이 PC 에서 실행할 명령 */
+export interface PluginMcpServer { name: string; url?: string; command?: string; args?: string[]; env?: Record<string, string> }
+export interface PluginScheduleTemplate { title: string; prompt: string; kind: 'daily' | 'weekly'; time: string; weekday: number | null; target: 'coordinator' | 'workspace' }
+/**
+ * 설치형 플러그인. 글과 설정만 담는다 (두레 안에서 플러그인의 코드를 돌리지 않는다).
+ * approved: 지금의 내용을 사용자가 승인했다. changed: 승인한 뒤 내용이 바뀌었다 (다시 승인해야 쓴다)
+ */
+export interface Plugin {
+  id: string; name: string; version: string; description: string;
+  /** 에이전트 지시문에 덧붙는 글 */
+  instructions: string;
+  schedules: PluginScheduleTemplate[];
+  /** 켤 때 프로젝트 기억에 넣는 것 */
+  memory: { kind: 'decision' | 'lesson' | 'command'; text: string }[];
+  mcpServers: PluginMcpServer[];
+  /** 지금 내용의 지문. 승인할 때 화면이 본 것을 그대로 넘긴다 */
+  hash: string;
+  /** 어디서 받았나: "folder:경로" 또는 "git:주소" */
+  source: string; installedAt: number; approved: boolean; changed: boolean;
+}
 /** 자리 비움 동안 두레가 대신 고른 답 하나 */
 export interface AwayChoice { id: string; projectId: string; workspaceId: string; workspaceName: string; question: string; answer: string; at: number }
 /** 프로젝트 기억의 종류: 정한 것, 배운 것, 자주 쓰는 명령 */

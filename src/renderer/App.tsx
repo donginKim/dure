@@ -195,7 +195,7 @@ export function App() {
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
-      <UsageBar />
+      <UsageBar onOpenAttention={() => setSelection({ type: 'attention' })} />
       {palette && (
         <CommandPalette tree={tree} onSelect={setSelection} onClose={() => setPalette(false)}
           onNewProject={() => setNewProjectTick((n) => n + 1)} onToggleNotes={() => setNotesOpen((v) => !v)} />

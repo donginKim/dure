@@ -25,7 +25,7 @@ export function BudgetBox({ projectId, readOnly }: { projectId: string; readOnly
   const [daily, setDaily] = useState('');
   const [total, setTotal] = useState('');
   const [error, setError] = useState('');
-  const load = useCallback(() => { window.dure.projects.budget(projectId).then((b) => { setS(b); setDaily(toMan(b.dailyLimit)); setTotal(toMan(b.totalLimit)); }).catch(() => undefined); }, [projectId]);
+  const load = useCallback(() => { window.dure.projects.budget(projectId).then((b) => { setS(b); setDaily(b.dailyFromDefault ? '' : toMan(b.dailyLimit)); setTotal(toMan(b.totalLimit)); }).catch(() => undefined); }, [projectId]);
   useEffect(() => {
     load();
     const t = setInterval(load, 15_000);
@@ -50,7 +50,7 @@ export function BudgetBox({ projectId, readOnly }: { projectId: string; readOnly
       <Bar label="전체" used={s.total} limit={s.totalLimit} />
       {!readOnly && (
         <div className="budget-edit">
-          <label>하루 <input type="text" inputMode="numeric" value={daily} placeholder="없음" onChange={(e) => setDaily(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} /> 만 토큰</label>
+          <label>하루 <input type="text" inputMode="numeric" value={daily} placeholder={s.dailyFromDefault ? `기본 ${toMan(s.dailyLimit)}` : '없음'} onChange={(e) => setDaily(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} /> 만 토큰</label>
           <label>전체 <input type="text" inputMode="numeric" value={total} placeholder="없음" onChange={(e) => setTotal(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} /> 만 토큰</label>
           <span className="muted">입력 + 출력으로 셉니다 (캐시에서 읽은 것은 빼고). 넘으면 에이전트를 멈추고 새로 일을 시키지 않습니다. 리뷰 에이전트의 사용량도 셉니다.</span>
         </div>

@@ -1126,3 +1126,4 @@ kbd { display: inline-block; min-width: 16px; padding: 0 4px; margin: 0 2px; bor
 .member-nowork .grow { flex: 1 1 22em; min-width: 0; }
 .member-nowork .muted { margin-top: 3px; font-size: 12px; }
 .member-nowork .btn { flex: none; white-space: nowrap; }
+.usage-num.heavy { color: var(--warn); }

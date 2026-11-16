@@ -40,7 +40,7 @@ export interface Project {
  * 프로젝트의 예산. 토큰은 입력 + 출력 (캐시에서 읽은 것은 빼고 센다: 값이 훨씬 싸다).
  * state: ok, warning (80% 넘음), over (넘어서 멈췄다). overrideUntil: 사용자가 "오늘만 더 쓰기" 를 누른 때까지는 멈추지 않는다
  */
-export interface BudgetStatus { projectId: string; today: number; total: number; dailyLimit: number; totalLimit: number; state: 'ok' | 'warning' | 'over'; overrideUntil: number }
+export interface BudgetStatus { projectId: string; today: number; total: number; dailyLimit: number; totalLimit: number; state: 'ok' | 'warning' | 'over'; overrideUntil: number; /** 하루 상한이 프로젝트에 정한 것이 아니라 설정의 기본값이다 */ dailyFromDefault?: boolean }
 /** 여러 프로젝트 대시보드: 프로젝트 하나의 한눈 요약 */
 export interface ProjectDashboard {
   projectId: string;
@@ -418,6 +418,12 @@ export interface Settings {
   defaultEngine: AgentEngine;
   /** 화면 모양: 어둡게, 밝게, macOS 를 따라 */
   theme: 'dark' | 'light' | 'system';
+  /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */
+  coordinatorModel: string;
+  /** 대화가 이 크기(토큰)를 넘으면 Claude Code 가 저절로 줄인다. 0 이면 Claude Code 의 기본 */
+  autoCompactTokens: number;
+  /** 프로젝트에 하루 상한을 정하지 않았을 때 쓰는 하루 토큰 상한 (캐시에서 읽은 것은 빼고 센다). 0 이면 없음 */
+  defaultBudgetDaily: number;
   /** 새 워크스페이스의 기본 권한 모드 */
   defaultPermissionMode: PermissionMode;
   /** 작업 폴더(worktree)를 만드는 상위 폴더. 빈 값이면 기본 위치 */

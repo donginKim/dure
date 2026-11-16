@@ -6,6 +6,9 @@ import { BudgetBox } from './BudgetBox';
 const RANGES: { label: string; days: number }[] = [{ label: '오늘', days: 1 }, { label: '7일', days: 7 }, { label: '전체', days: 0 }];
 
 /** 프로젝트의 에이전트들이 쓴 토큰. 어느 워크스페이스가 많이 쓰는지 보인다. */
+/** 요청 한 번에 읽은 평균 (입력 + 캐시 쓰기 + 캐시 읽기) */
+const perReq = (c: { input: number; cacheWrite: number; cacheRead: number; requests: number }): number => (c.requests ? Math.round((c.input + c.cacheWrite + c.cacheRead) / c.requests) : 0);
+
 export function UsagePanel({ projectId }: { projectId: string }) {
   const [days, setDays] = useState(7);
   const [data, setData] = useState<UsageSummary | null>(null);
@@ -26,19 +29,19 @@ export function UsagePanel({ projectId }: { projectId: string }) {
       <BudgetBox projectId={projectId} />
       {data.total.requests === 0 ? <div className="rows"><div className="rows-empty">이 기간에 쓴 것이 없습니다.</div></div> : (
         <div className="rows usage">
-          <div className="row usage-head"><div className="grow">워크스페이스</div><div className="usage-num">입력</div><div className="usage-num">그중 캐시</div><div className="usage-num">출력</div><div className="usage-num">요청</div></div>
+          <div className="row usage-head"><div className="grow">워크스페이스</div><div className="usage-num">입력</div><div className="usage-num">그중 캐시</div><div className="usage-num">출력</div><div className="usage-num">요청</div><div className="usage-num" title="요청 한 번에 다시 읽은 대화의 평균 크기. 클수록 대화가 길다는 뜻입니다 (새 대화나 압축으로 줄어듭니다)">요청당</div></div>
           {data.workspaces.map((w) => (
             <div key={w.workspaceId} className="row">
               <div className="grow">
                 <div>{w.name}{w.gone && <span className="tag">지워짐</span>}</div>
                 <div className="usage-bar"><span style={{ width: `${share(w, data.total)}%` }} /></div>
               </div>
-              <div className="usage-num">{tokens(inputAll(w))}</div><div className="usage-num muted">{tokens(w.cacheRead)}</div><div className="usage-num">{tokens(w.output)}</div><div className="usage-num muted">{w.requests.toLocaleString('en-US')}</div>
+              <div className="usage-num">{tokens(inputAll(w))}</div><div className="usage-num muted">{tokens(w.cacheRead)}</div><div className="usage-num">{tokens(w.output)}</div><div className="usage-num muted">{w.requests.toLocaleString('en-US')}</div><div className={`usage-num${perReq(w) >= 150_000 ? ' heavy' : ''}`} title={perReq(w) >= 150_000 ? '대화가 길어 요청마다 많이 읽습니다. 새 대화로 시작하거나 /compact 로 줄이세요' : undefined}>{tokens(perReq(w))}</div>
             </div>
           ))}
           <div className="row usage-total">
             <div className="grow">합계{data.models.length > 0 && <span className="muted"> · {data.models.map((m) => m.model).join(', ')}</span>}</div>
-            <div className="usage-num">{tokens(inputAll(data.total))}</div><div className="usage-num muted">{tokens(data.total.cacheRead)}</div><div className="usage-num">{tokens(data.total.output)}</div><div className="usage-num muted">{data.total.requests.toLocaleString('en-US')}</div>
+            <div className="usage-num">{tokens(inputAll(data.total))}</div><div className="usage-num muted">{tokens(data.total.cacheRead)}</div><div className="usage-num">{tokens(data.total.output)}</div><div className="usage-num muted">{data.total.requests.toLocaleString('en-US')}</div><div className="usage-num muted">{tokens(perReq(data.total))}</div>
           </div>
         </div>
       )}

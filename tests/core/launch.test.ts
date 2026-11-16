@@ -201,3 +201,9 @@ test('자동 판단: Claude Code 는 auto 권한 모드, Codex 는 작업 폴더
   const m = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'auto', manualEdits: true });
   expect(m.args[m.args.indexOf('--permission-mode') + 1]).toBe('default');
 });
+
+test('자동 압축: Claude Code 에 --autocompact 를 넘긴다 (Codex 에는 없다)', () => {
+  const c = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'auto', autoCompact: 120_000 });
+  expect(c.args.slice(c.args.indexOf('--autocompact'), c.args.indexOf('--autocompact') + 2)).toEqual(['--autocompact', '120000']);
+  expect(buildAgentLaunch({ ...common, kind: 'codex', permissionMode: 'auto', autoCompact: 120_000 }).args).not.toContain('--autocompact');
+});

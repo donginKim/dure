@@ -41,6 +41,8 @@ export interface AgentLaunchInput {
   resumeSessionId?: string;
   /** 설정에서 고른 모델 (Claude Code). 없으면 Claude Code 의 기본 */
   model?: string;
+  /** 대화를 저절로 줄이는 크기 (Claude Code, 토큰). 없으면 Claude Code 의 기본 */
+  autoCompact?: number;
   /** 설정에서 고른 effort (Claude Code). 없으면 Claude Code 의 기본 */
   effort?: string;
   /** 쓰지 못하게 할 도구 (Claude Code). 조율 에이전트는 파일을 고치는 도구를 쓰지 못한다 */
@@ -78,6 +80,8 @@ export function buildAgentLaunch(i: AgentLaunchInput): AgentLaunch {
   const launch = buildBase(i);
   if (i.kind === 'claude' && i.model) launch.args.push('--model', i.model);
   if (i.kind === 'claude' && i.effort) launch.args.push('--effort', i.effort);
+  // 대화가 길어지면 요청마다 다시 읽는 양이 커진다: 정한 크기를 넘으면 Claude Code 가 앞부분을 요약해 줄인다.
+  if (i.kind === 'claude' && i.autoCompact) launch.args.push('--autocompact', String(i.autoCompact));
   if (i.kind === 'claude' && i.disallowedTools?.length) launch.args.push('--disallowedTools', i.disallowedTools.join(','));
   if (i.kind === 'claude') for (const dir of i.addDirs ?? []) launch.args.push('--add-dir', dir);
   if (i.extraArgs?.length) launch.args.push(...i.extraArgs);

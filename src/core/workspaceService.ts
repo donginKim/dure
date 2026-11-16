@@ -754,8 +754,10 @@ export class WorkspaceService extends EventEmitter {
       initialPrompt: firstPrompt,
       headless,
       resumeSessionId,
-      model: ws.model || settings.claudeModel || undefined,
+      // 조율 에이전트는 계획과 판단을 하므로 따로 정한 모델(기본 Opus), 일하는 에이전트는 설정의 모델(기본 Sonnet).
+      model: ws.model || (coordinator ? settings.coordinatorModel : '') || settings.claudeModel || undefined,
       effort: settings.claudeEffort || undefined,
+      autoCompact: settings.autoCompactTokens || undefined,
       extraArgs,
     });
 

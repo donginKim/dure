@@ -228,16 +228,25 @@ export function SettingsView() {
             <button className="btn ghost" disabled={modelsLoading} onClick={() => loadModels(true)} title="Claude Code 에게 목록을 다시 묻습니다">{modelsLoading ? '받는 중…' : '새로 고침'}</button>
           </Row>
           <Row
-            label="effort (생각하는 정도)" {...row('claudeEffort')}
+            label="effort (일하는 에이전트)" {...row('claudeEffort')}
             help={effortUnsupported
               ? <span className="set-warn">고른 모델은 이 단계를 받지 않습니다. 다른 단계를 고르세요.</span>
-              : '높을수록 더 깊이 생각하고 더 오래 걸립니다. 다음에 시작하는 에이전트부터 적용됩니다.'}
+              : '높을수록 더 깊이 생각하고 더 오래 걸리며 출력 토큰을 더 씁니다. 코드 작업은 보통으로도 충분한 경우가 많습니다. 다음에 시작하는 에이전트부터 적용됩니다.'}
           >
             <select className="set-select" value={s.claudeEffort} onChange={(e) => save('claudeEffort', e.target.value as ClaudeEffort)}>
               <option value="">Claude Code 의 기본</option>
               {efforts.map((e) => <option key={e} value={e}>{EFFORT_LABEL[e] ?? e}</option>)}
               {effortUnsupported && <option value={s.claudeEffort}>{EFFORT_LABEL[s.claudeEffort] ?? s.claudeEffort} (이 모델은 받지 않음)</option>}
             </select>
+          </Row>
+          <Row label="effort (조율 에이전트)" help="계획을 세우는 조율 에이전트의 생각하는 정도입니다. 비우면 Claude Code 의 기본을 씁니다." {...row('coordinatorEffort')}>
+            <select className="set-select" value={s.coordinatorEffort} onChange={(e) => save('coordinatorEffort', e.target.value)}>
+              <option value="">Claude Code 의 기본</option>
+              {ALL_EFFORTS.map((e) => <option key={e} value={e}>{EFFORT_LABEL[e] ?? e}</option>)}
+            </select>
+          </Row>
+          <Row label="TODO 마다 새 대화" help="일하는 에이전트가 TODO 를 끝내고 쉬면, 다음 TODO 는 새 대화로 시작합니다. 끝낸 TODO, 커밋, 고친 파일, 남은 TODO 만 건네고 앞 대화는 다시 읽지 않아 토큰을 크게 아낍니다. 대화 화면은 새 대화로 바뀝니다 (끝낸 TODO, 커밋, 메시지는 기록 탭에 남습니다). 채팅 방식에서만 됩니다." {...row('freshPerTodo')}>
+            <Toggle on={s.freshPerTodo} onChange={(v) => save('freshPerTodo', v)} label="TODO 마다 새 대화" />
           </Row>
           <Row label="추가 인자" help="에이전트를 띄울 때 더 줄 인자입니다. 예: --add-dir /다른/폴더. 두레가 직접 정하는 것(권한 모드, 연결 설정, 입출력 방식, 모델, effort)은 넣을 수 없습니다." {...row('claudeArgs')}>
             <TextInput wide value={s.claudeArgs} placeholder="--add-dir /다른/폴더" onCommit={(v) => save('claudeArgs', v)} />

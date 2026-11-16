@@ -729,3 +729,31 @@ test('막힘: 오래 쉬다가 다시 일을 시작한 것은 조용하다고 �
   core.service.checkQuiet(1000);
   expect(core.service.stuckOf(ws.id)).toBeNull();
 });
+
+test('TODO 마다 새 대화: 이 대화에서 TODO 를 끝내고 쉬는데 남은 것이 있으면, 새 대화로 다시 띄우고 한 일과 남은 일을 건넨다', async () => {
+  const ws = await started('fresh');
+  const first = core.workspaces.getSessionId(ws.id);
+  const a = core.todos.add({ projectId, workspaceId: ws.id, title: '로그인 폼' }, 'user');
+  core.todos.add({ projectId, workspaceId: ws.id, title: '비밀번호 찾기' }, 'user');
+  core.todos.update(a.id, { status: 'done' }, { actor: 'agent', rev: a.rev });
+  const before = argvLog(ws.id).length;
+  // 첫 Stop 은 TODO 변경을 건네며 이어 가게 한다. 건넬 것이 없을 때 쉰다.
+  for (let i = 0; i < 3 && (await runHookFor(ws.id, 'Stop', {})) !== ''; i++) { /* 다시 */ }
+  await until(() => argvLog(ws.id).length > before, 8000);
+  expect(argvLog(ws.id).at(-1)).not.toContain('--resume');
+  await until(() => said(ws.id).some((t) => t.includes('대화를 새로 시작했다')), 8000);
+  const prompt = said(ws.id).find((t) => t.includes('대화를 새로 시작했다'))!;
+  expect(prompt).toContain('"로그인 폼"');
+  expect(prompt).toContain('남은 TODO (1개): "비밀번호 찾기"');
+  expect(first).toBeTruthy();
+  // 끄면 하지 않는다
+  core.settings.update({ freshPerTodo: false });
+  const b = core.todos.listWorkspace(ws.id).find((t) => t.title === '비밀번호 찾기')!;
+  core.todos.add({ projectId, workspaceId: ws.id, title: '셋째' }, 'user');
+  core.todos.update(b.id, { status: 'done' }, { actor: 'agent', rev: b.rev });
+  await until(() => status(ws.id) === 'idle');
+  const n = argvLog(ws.id).length;
+  for (let i = 0; i < 3 && (await runHookFor(ws.id, 'Stop', {})) !== ''; i++) { /* 다시 */ }
+  await new Promise((r) => setTimeout(r, 2500));
+  expect(argvLog(ws.id).length).toBe(n);
+}, 30_000);

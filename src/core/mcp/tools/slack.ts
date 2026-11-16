@@ -15,6 +15,8 @@ const answer = (a: SlackAnswer) => (a.kind === 'pending'
  * 토큰은 에이전트에게 넘어가지 않는다.
  */
 export const slackTools: ToolBundle = (server, ctx, deps) => {
+  // 슬랙이 이어져 있지 않으면 도구를 싣지 않는다 (요청마다 토큰을 아낀다).
+  try { if (!deps.slack.status().connected) return; } catch { return; }
   const read = async (op: Parameters<typeof deps.slack.agentRead>[1]) => {
     try { return answer(await deps.slack.agentRead(ctx.workspace.id, op)); } catch (e) { return fail(e); }
   };

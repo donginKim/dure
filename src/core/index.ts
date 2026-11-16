@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, sep, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport, UsageBar, AwayChoice } from '@shared/types';
+import type { Repo, RepoStatus, Todo, Agreement, ProjectDashboard, WorkReport, UsageBar, AwayChoice, NewsPanel } from '@shared/types';
 import { ChatService } from './chat/chatService';
 import { CleanupService } from './cleanup';
 import { AssignmentService } from './assignments';
@@ -29,6 +29,7 @@ import { DigestService } from './digest';
 import { ScheduleService } from './schedule';
 import { CaptureStore } from './captures';
 import { PluginService } from './plugins';
+import { FeedReader } from './feeds';
 import { UsageStore } from './usage';
 import { CheckpointService } from './checkpoints';
 import { PrService } from './pr';
@@ -128,6 +129,10 @@ export interface Core {
   memory: MemoryStore;
   /** 설치형 플러그인 */
   plugins: PluginService;
+  /** 소식 화면: 승인한 플러그인의 소식판을 읽어 온다 (force 면 받아 둔 것을 쓰지 않는다) */
+  news(force?: boolean): Promise<NewsPanel[]>;
+  /** 소식 화면에 보인 적이 있는 링크인가 (그런 것만 바깥 브라우저로 연다) */
+  knownNewsLink(url: string): boolean;
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
@@ -165,6 +170,8 @@ export interface CoreOptions {
   runningApp?: string | null;
   /** 지금 붙어 있는 네트워크를 알아보는 쪽 (근무시간). 주지 않으면 macOS 의 명령으로 알아본다. null 이면 저절로 재지 않는다 (시험) */
   networkProbe?: (() => Promise<NetworkProbe>) | null;
+  /** 소식 피드를 읽는 것 (시험에서 바꿔 끼운다) */
+  feedReader?: FeedReader;
   /** false 면 업데이트 뒤 앱을 다시 켜지 않는다 (검증용) */
   updateReopen?: boolean;
   /** 시험에서 가짜 슬랙으로 바꾼다 */
@@ -535,9 +542,24 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   }
 
   let barCache: { mark: string; value: UsageBar } | null = null;
+  const feeds_ = o.feedReader ?? new FeedReader();
+  const newsLinks = new Set<string>();
   let disposed = false;
   return {
     projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    async news(force = false) {
+      const panels = plugins.panels();
+      const out: NewsPanel[] = [];
+      for (const pn of panels) {
+        const feeds = await Promise.all(pn.feeds.map(async (f) => { const r = await feeds_.read(f.url, force); return { name: f.name, url: f.url, items: r.items.slice(0, 12), error: r.error, at: r.at }; }));
+        for (const f of feeds) for (const it of f.items) if (it.link) newsLinks.add(it.link);
+        out.push({ plugin: pn.plugin, title: pn.title, feeds });
+      }
+      // 끝없이 쌓이지 않게
+      if (newsLinks.size > 5000) { const keep = [...newsLinks].slice(-2500); newsLinks.clear(); for (const k of keep) newsLinks.add(k); }
+      return out;
+    },
+    knownNewsLink(url) { return newsLinks.has(String(url)); },
     awayChoices() {
       return (db.prepare('SELECT * FROM away_log ORDER BY at DESC LIMIT 100').all() as { id: string; project_id: string; workspace_id: string; workspace_name: string; question: string; answer: string; at: number }[])
         .map((r) => ({ id: r.id, projectId: r.project_id, workspaceId: r.workspace_id, workspaceName: r.workspace_name, question: r.question, answer: r.answer, at: r.at }));

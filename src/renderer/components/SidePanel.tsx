@@ -5,6 +5,7 @@ import { deliveryNote, threadsFor } from '../conversationView';
 import { progress } from '../todoView';
 import { ConversationList, type ConversationData } from './ConversationPanel';
 import { TodoBody, type PendingInfo } from './TodoPanel';
+import { PanelResizer } from './PanelResizer';
 
 type Tab = 'todo' | 'talk' | 'figure';
 
@@ -54,6 +55,7 @@ export function SidePanel({ workspace, workspaces, todos, projectTodos, pending,
 
   return (
     <aside className="todo-panel">
+      <PanelResizer />
       <div className="side-tabs" role="tablist">
         <button role="tab" aria-selected={state.tab === 'todo'} className={`side-tab${state.tab === 'todo' ? ' on' : ''}`} onClick={() => setState({ ...state, tab: 'todo' })}>
           TODO{todoLabel && <span className="n">{todoLabel}</span>}

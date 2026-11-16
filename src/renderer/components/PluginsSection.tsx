@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Plugin } from '@shared/types';
+import type { CatalogEntry, Plugin } from '@shared/types';
 import { Empty } from './Empty';
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -23,6 +23,12 @@ function Contents({ p }: { p: Plugin }) {
           ))}
         </div>
       )}
+      {p.panels.length > 0 && (
+        <div>
+          <div className="plug-label">소식판 <span className="muted">(두레가 아래 주소에서 소식을 읽어 "소식" 화면에 보여 줍니다. 에이전트나 토큰은 쓰지 않습니다)</span></div>
+          {p.panels.map((pn) => <div key={pn.title} className="plug-line"><b>{pn.title}</b> <span className="muted">· {pn.feeds.map((f) => `${f.name} (${new URL(f.url).hostname})`).join(', ')}</span></div>)}
+        </div>
+      )}
       {p.schedules.length > 0 && (
         <div>
           <div className="plug-label">예약 본보기 <span className="muted">(저절로 돌지 않습니다. 프로젝트의 예약에서 골라 추가합니다)</span></div>
@@ -35,7 +41,7 @@ function Contents({ p }: { p: Plugin }) {
           {p.memory.map((m, i) => <div key={i} className="plug-line">{m.text}</div>)}
         </div>
       )}
-      {!p.instructions && p.mcpServers.length === 0 && p.schedules.length === 0 && p.memory.length === 0 && <div className="muted">담긴 것이 없습니다.</div>}
+      {!p.instructions && p.mcpServers.length === 0 && p.schedules.length === 0 && p.memory.length === 0 && p.panels.length === 0 && <div className="muted">담긴 것이 없습니다.</div>}
     </div>
   );
 }
@@ -50,6 +56,7 @@ export function PluginsSection() {
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const load = useCallback(() => { window.dure.plugins.list().then(setList).catch(() => undefined); }, []);
   useEffect(() => { load(); return window.dure.onChanged((topic) => { if (topic === 'plugins') load(); }); }, [load]);
   const run = (p: Promise<unknown>, after?: (v: unknown) => void): void => {
@@ -76,6 +83,20 @@ export function PluginsSection() {
               <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.plugins.remove(p.id))}>지우기</button>
             </div>
             {open[p.id] && <Contents p={p} />}
+          </div>
+        ))}
+      </div>
+      <div className="plug-catalog">
+        <div className="plug-catalog-head">
+          <b>기본 플러그인</b> <span className="muted">두레의 플러그인 모음에서 골라 설치합니다 (모음의 주소는 아래 "플러그인 모음" 설정)</span>
+          <span className="grow" />
+          <button className="btn ghost" disabled={busy} onClick={() => run(window.dure.plugins.catalog(), (v) => setCatalog(v as CatalogEntry[]))}>{busy ? '받는 중…' : catalog ? '목록 다시 받기' : '목록 보기'}</button>
+        </div>
+        {catalog && catalog.length === 0 && <div className="muted">모음에 플러그인이 없습니다.</div>}
+        {(catalog ?? []).map((c) => (
+          <div key={c.dir || c.id} className="row">
+            <div className="grow"><div><b>{c.name}</b> <span className="muted">{c.version}</span></div><div className="muted plug-desc">{c.description}{c.summary ? ` · ${c.summary}` : ''}</div></div>
+            <button className="btn" disabled={busy} onClick={() => run(window.dure.plugins.installCatalog(c.dir), (v) => { installed(v); setCatalog((l) => (l ?? []).map((x) => (x.id === c.id ? { ...x, installed: true } : x))); })}>{c.installed ? '다시 설치' : '설치'}</button>
           </div>
         ))}
       </div>

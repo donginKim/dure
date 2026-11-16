@@ -57,6 +57,14 @@ export interface ProjectDashboard {
   /** 함께하는 프로젝트면: 내가 리더인지, 함께하는 사람 수와 지금 닿는 수 */
   share: { mine: boolean; observer: boolean; people: number; online: number } | null;
 }
+/** 소식 한 줄 (피드에서 읽은 것) */
+export interface FeedItem { title: string; link: string; at: number }
+/** 플러그인의 소식판: 피드(RSS·Atom) 묶음. 두레가 직접 읽어 보여 준다 (LLM 을 쓰지 않는다) */
+export interface PluginPanel { title: string; feeds: { name: string; url: string }[] }
+/** 소식 화면에 보이는 판 하나 */
+export interface NewsPanel { plugin: string; title: string; feeds: { name: string; url: string; items: FeedItem[]; error: string; at: number }[] }
+/** 플러그인 모음(저장소)에 든 플러그인 하나 */
+export interface CatalogEntry { dir: string; id: string; name: string; version: string; description: string; installed: boolean; summary: string }
 /** 플러그인이 붙이는 MCP 서버: 주소(http) 이거나, 이 PC 에서 실행할 명령 */
 export interface PluginMcpServer { name: string; url?: string; command?: string; args?: string[]; env?: Record<string, string> }
 export interface PluginScheduleTemplate { title: string; prompt: string; kind: 'daily' | 'weekly'; time: string; weekday: number | null; target: 'coordinator' | 'workspace' }
@@ -72,6 +80,8 @@ export interface Plugin {
   /** 켤 때 프로젝트 기억에 넣는 것 */
   memory: { kind: 'decision' | 'lesson' | 'command'; text: string }[];
   mcpServers: PluginMcpServer[];
+  /** 소식판 (피드 묶음) */
+  panels: PluginPanel[];
   /** 지금 내용의 지문. 승인할 때 화면이 본 것을 그대로 넘긴다 */
   hash: string;
   /** 어디서 받았나: "folder:경로" 또는 "git:주소" */
@@ -496,6 +506,8 @@ export interface Settings {
   companion: boolean;
   /** 자리 비움: 에이전트의 선택지 질문에 두레가 추천(첫째) 답을 대신 골라 멈추지 않게 한다. 고른 것은 적어 두었다가 돌아와서 본다 */
   awayMode: boolean;
+  /** 플러그인 모음의 git 주소 (설정의 "기본 플러그인" 목록을 여기서 받는다) */
+  pluginCatalog: string;
   /** 빠른 메모를 여는 전역 단축키 (Electron 의 단축키 글. 비우면 끈다) */
   captureShortcut: string;
   /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */

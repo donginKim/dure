@@ -34,6 +34,15 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
     const off = window.dure.onChanged((topic) => { if (topic === 'workspaces') load(); });
     return () => { alive = false; off(); load.cancel(); };
   }, []);
+  // 소식은 소식판이 든 플러그인을 승인했을 때만 보인다.
+  const [hasNews, setHasNews] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = (): void => { window.dure.plugins.list().then((l) => { if (alive) setHasNews(l.some((x) => x.approved && x.panels.length > 0)); }).catch(() => undefined); };
+    load();
+    const off = window.dure.onChanged((topic) => { if (topic === 'plugins') load(); });
+    return () => { alive = false; off(); };
+  }, []);
   // 팀 현황은 다른 사람이 리더인 함께하는 프로젝트가 있을 때만 보인다.
   const [hasTeam, setHasTeam] = useState(false);
   useEffect(() => {
@@ -167,6 +176,11 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
         <button className={`side-tool${notesOpen ? ' selected' : ''}`} title="메모장을 열거나 닫습니다 (⌘⇧M). 프로젝트와 상관없이 어디서든 씁니다" onClick={onToggleNotes}>
           <span className="side-tool-icon" aria-hidden>✎</span><span>메모</span>
         </button>
+        {hasNews && (
+          <button className={`side-tool${selection?.type === 'news' ? ' selected' : ''}`} title="플러그인의 소식판을 한 화면에 모아 봅니다 (뉴스, 트렌드)" onClick={() => onSelect({ type: 'news' })}>
+            <span className="side-tool-icon" aria-hidden>▤</span><span>소식</span>
+          </button>
+        )}
         {hasTeam && (
           <button className={`side-tool${selection?.type === 'team' ? ' selected' : ''}`} title="함께하는 프로젝트들의 현황을 한 화면에 모아 봅니다 (다른 사람이 리더인 것, 보기만 하는 것)" onClick={() => onSelect({ type: 'team' })}>
             <span className="side-tool-icon" aria-hidden>▦</span><span>팀 현황</span>

@@ -10,6 +10,7 @@ import { ProjectsHome } from './components/ProjectsHome';
 import { CommandPalette } from './components/CommandPalette';
 import { UsageBar } from './components/UsageBar';
 import { TeamView } from './components/TeamView';
+import { NewsView } from './components/NewsView';
 import { ProjectView } from './components/ProjectView';
 import { SettingsView } from './components/SettingsView';
 import { AttentionView } from './components/AttentionView';
@@ -20,6 +21,8 @@ import { NotesPanel } from './components/NotesPanel';
 import { Sidebar } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
 import { buildTree, reconcileSelection, type Selection } from './tree';
+import { layout, SIDE } from './layout';
+import { Resizer } from './components/Resizer';
 
 const EMPTY_FLOW: ProjectFlow = { paused: false, capped: false, agentStreak: 0 };
 const EMPTY_TALK: ConversationData = {
@@ -134,12 +137,16 @@ export function App() {
   // 메모장: 어느 화면에서든 오른쪽에 열어 쓴다 (⌘⇧M).
   const [notesOpen, setNotesOpen] = useState(false);
   const [palette, setPalette] = useState(false);
+  // 왼쪽 목록: 너비를 끌어 바꾸고, 접는다 (⌘B).
+  const [sideOff, setSideOff] = useState(layout.sideOff());
+  useEffect(() => { layout.init(); return layout.subscribe(() => setSideOff(layout.sideOff())); }, []);
   const [newProjectTick, setNewProjectTick] = useState(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey && e.code === 'KeyM') { e.preventDefault(); setNotesOpen((v) => !v); }
       // ⌘K: 명령 창. ⌘, : 설정
       if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.code === 'KeyK') { e.preventDefault(); setPalette((v) => !v); }
+      if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.code === 'KeyB') { e.preventDefault(); layout.toggleSide(); }
       if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key === ',') { e.preventDefault(); setSelection({ type: 'settings' }); }
     };
     window.addEventListener('keydown', onKey);
@@ -157,6 +164,14 @@ export function App() {
 
   return (
     <div className="app">
+      <button className="side-toggle" title={sideOff ? '목록 펼치기 (⌘B)' : '목록 접기 (⌘B)'} aria-label={sideOff ? '목록 펼치기' : '목록 접기'} aria-pressed={!sideOff} onClick={() => layout.toggleSide()}><span aria-hidden="true" /></button>
+      {!sideOff && (
+        <Resizer className="resizer resizer-side" label="목록 너비"
+          onDrag={(x) => layout.setSide(x, false)}
+          onDone={(x) => { if (x < SIDE.min - 80) layout.toggleSide(); else layout.setSide(x, true); }}
+          onReset={() => layout.resetSide()}
+          onNudge={(d, el) => layout.setSide(el.getBoundingClientRect().left + 3 + d * 16, true)} />
+      )}
       <Sidebar tree={tree} repos={repos} todos={todos} talk={talk} dbWaiting={dbWaiting} browserWaiting={browserWaiting} peerWaiting={peerWaiting} peopleAlert={peopleAlert} selection={current} onSelect={setSelection} onCreateProject={createProject} newProjectTick={newProjectTick} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} attention={attention} />
       <BrowserHost workspaces={workspaces} loaded={loaded} />
       <main className="main">
@@ -190,15 +205,16 @@ export function App() {
         )}
         {current?.type === 'settings' && <SettingsView />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
+        {current?.type === 'news' && <NewsView onSelect={setSelection} />}
         {current?.type === 'team' && <TeamView tree={tree.filter((n) => n.project.status !== 'done')} onSelect={setSelection} />}
         {current?.type === 'worktime' && <WorkTimeView onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && current?.type !== 'news' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
       <UsageBar onOpenAttention={() => setSelection({ type: 'attention' })} />
       {palette && (
         <CommandPalette tree={tree} onSelect={setSelection} onClose={() => setPalette(false)}
-          onNewProject={() => setNewProjectTick((n) => n + 1)} onToggleNotes={() => setNotesOpen((v) => !v)} />
+          onNewProject={() => setNewProjectTick((n) => n + 1)} onToggleNotes={() => setNotesOpen((v) => !v)} onToggleSide={() => layout.toggleSide()} />
       )}
       {notesOpen && <NotesPanel onClose={() => setNotesOpen(false)} />}
       {!notesOpen && current?.type !== 'worktime' && <WorkBadge onOpen={() => setSelection({ type: 'worktime' })} />}

@@ -12,6 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
   companion: false,
   captureShortcut: 'Alt+Shift+Space',
   awayMode: false,
+  pluginCatalog: 'https://github.com/donginKim/dure-plugin.git',
   defaultPermissionMode: 'auto',
   worktreeRoot: '',
   repoRoot: '',
@@ -145,6 +146,11 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   theme: oneOf('화면 모양', 'dark', 'light', 'system'),
   companion: bool('도트 일꾼'),
   awayMode: bool('자리 비움'),
+  pluginCatalog: (v: unknown): string => {
+    const t = String(v ?? '').trim();
+    if (t && (t.length > 300 || !/^(https:\/\/|git@|ssh:\/\/)[\w.@:/~+-]+$/.test(t))) throw new Error('플러그인 모음: git 주소가 올바르지 않습니다.');
+    return t;
+  },
   captureShortcut: (v: unknown): string => {
     const t = String(v ?? '').trim();
     if (t.length > 40 || (t && !/^[A-Za-z0-9+]+$/.test(t))) throw new Error('단축키: "Alt+Shift+Space" 처럼 적으세요.');

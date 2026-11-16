@@ -4,21 +4,12 @@ import { Companion } from './Companion';
 
 export const tokens = (n: number): string => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
 const hhmm = (sec: number): string => { const d = new Date(sec * 1000); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const KIND_SHORT: Record<string, string> = { five_hour: '5시간', seven_day: '주간', seven_day_opus: '주간 Opus', seven_day_sonnet: '주간 Sonnet' };
 const KIND: Record<string, string> = { five_hour: '5시간', seven_day: '7일', seven_day_opus: '7일 (Opus)', seven_day_sonnet: '7일 (Sonnet)' };
 const whenText = (sec: number): string => { const d = new Date(sec * 1000); const today = new Date(); return d.toDateString() === today.toDateString() ? hhmm(sec) : `${d.getMonth() + 1}/${d.getDate()} ${hhmm(sec)}`; };
 /** 남은 시간을 사람 말로 */
 const left = (ms: number): string => { const m = Math.max(0, Math.round(ms / 60_000)); return m < 1 ? '곧' : m < 60 ? `${m}분` : m < 1440 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ''}` : `${Math.floor(m / 1440)}일 ${Math.floor((m % 1440) / 60)}시간`; };
 const short = (m: string): string => m.replace(/^claude-/, '').replace(/-(\d+)-(\d+)/, ' $1.$2').replace(/\[.*\]$/, '');
-
-/** 최근 7일 막대 (오늘이 오른쪽 끝) */
-function Spark({ week }: { week: number[] }) {
-  const max = Math.max(1, ...week);
-  return (
-    <svg className="ub-spark" viewBox="0 0 42 14" width="42" height="14" aria-hidden>
-      {week.map((v, i) => { const h = Math.max(1, Math.round((v / max) * 13)); return <rect key={i} x={i * 6} y={14 - h} width="4" height={h} rx="1" className={i === week.length - 1 ? 'today' : ''} />; })}
-    </svg>
-  );
-}
 
 /**
  * 하단바: 이 PC 의 두레 에이전트들이 오늘 쓴 토큰과 계정의 사용 한도를 한 줄로 본다. 누르면 프로젝트·모델별로 펼친다.
@@ -63,15 +54,18 @@ export function UsageBar({ onOpenAttention }: { onOpenAttention: () => void }) {
     <div className="statusbar" ref={box}>
       <button className="ub-main" onClick={() => setOpen((v) => !v)} title="이 PC 의 두레 에이전트가 오늘 쓴 토큰입니다 (입력 + 캐시 쓰기 + 출력. 캐시에서 읽은 것은 따로). 누르면 프로젝트·모델별로 봅니다">
         <span className={`dot ${b.working ? 'working' : 'idle'}`} />
-        <span>{b.working ? <>일하는 에이전트 <b>{b.working}</b></> : '쉬는 중'}</span>
+        <span>{b.working ? <>일하는 중 <b>{b.working}</b></> : '쉬는 중'}</span>
         <span className="ub-sep" />
-        <span>오늘 <b>{tokens(b.today.counted)}</b> 토큰</span>
-        <Spark week={b.week} />
+        <span title="이 PC 의 두레 에이전트가 쓴 토큰 (입력 + 캐시 쓰기 + 출력)">오늘 <b>{tokens(b.periods.today)}</b> · 주 <b>{tokens(b.periods.week)}</b> · 월 <b>{tokens(b.periods.month)}</b></span>
         <span className="ub-sep" />
-        {w0
-          ? <span className={`ub-limit ${w0.utilization >= 1 ? 'rejected' : w0.utilization >= 0.8 || (w0.eta && w0.eta - Date.now() < 2 * 3_600_000) ? 'warning' : 'allowed'}`} title={`${windowText(w0)}. 누르면 자세히 봅니다`}>
-              {KIND[w0.kind] ?? w0.kind} 한도 <b>{leftPct(w0)}% 남음</b>{etaText(w0) ? ` · ${etaText(w0)}` : ''}
+        {b.windows.length > 0
+          ? b.windows.filter((w) => w.kind === 'five_hour' || w.kind === 'seven_day' || b.windows.length <= 2).slice(0, 2).map((w) => (
+            <span key={w.kind} className={`ub-win ${w.utilization >= 1 ? 'rejected' : w.utilization >= 0.8 || (w.eta && w.eta - Date.now() < 2 * 3_600_000) ? 'warning' : 'allowed'}`} title={`${windowText(w)}${etaText(w) ? ` · ${etaText(w)}` : ''}`}>
+              {KIND_SHORT[w.kind] ?? KIND[w.kind] ?? w.kind}
+              <span className="ub-mini"><span style={{ width: `${Math.min(100, Math.round(w.utilization * 100))}%` }} /></span>
+              <b>{leftPct(w)}%</b>
             </span>
+          ))
           : lim ? <span className={`ub-limit ${lim.status}`}>{limText}</span>
             : <span className="muted" title="채팅 방식의 에이전트가 한 번 일하면 Claude 계정의 한도를 받아 옵니다">한도 —</span>}
       </button>
@@ -93,7 +87,11 @@ export function UsageBar({ onOpenAttention }: { onOpenAttention: () => void }) {
               <div style={{ height: 6 }} />
             </>
           )}
-          <div className="ub-pop-head">오늘 쓴 토큰 <span className="muted">(입력 + 캐시 쓰기 + 출력)</span></div>
+          <div className="ub-pop-head">두레 에이전트가 쓴 토큰 <span className="muted">(입력 + 캐시 쓰기 + 출력)</span></div>
+          <div className="ub-row"><span className="grow">오늘</span><b>{tokens(b.periods.today)}</b></div>
+          <div className="ub-row"><span className="grow">이번 주 (월요일부터)</span><b>{tokens(b.periods.week)}</b></div>
+          <div className="ub-row"><span className="grow">이번 달</span><b>{tokens(b.periods.month)}</b></div>
+          <div className="ub-pop-head" style={{ marginTop: 8 }}>오늘, 프로젝트별</div>
           {b.projects.length === 0 && <div className="muted">오늘은 아직 쓴 것이 없습니다.</div>}
           {b.projects.map((p) => (
             <div key={p.projectId} className="ub-row"><span className="grow">{p.name}</span><span className="ub-barwrap"><span style={{ width: `${Math.round((p.counted / Math.max(1, b.today.counted)) * 100)}%` }} /></span><b>{tokens(p.counted)}</b></div>

@@ -103,6 +103,9 @@ test('하단바: 오늘 쓴 토큰(캐시 읽기는 따로), 최근 7일, 프로
   expect(b.week.at(-1)).toBe(4_000);
   expect(b.week.at(-3)).toBe(1_000);
   expect(b.projects).toEqual([{ projectId, name: '쇼핑몰', counted: 4_000 }]);
+  expect(b.periods.today).toBe(4_000);
+  expect(b.periods.month).toBeGreaterThanOrEqual(4_000);
+  expect(b.periods.week).toBeGreaterThanOrEqual(4_000);
   expect(b.limit).toBeNull();
   core.service.noteLimit(ws.id, { status: 'warning', kind: 'five_hour', resetsAt: 1_900_000_000, utilization: 0.8 });
   expect(core.usageBar().limit).toMatchObject({ status: 'warning', kind: 'five_hour', utilization: 0.8 });

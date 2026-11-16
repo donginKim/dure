@@ -17,6 +17,11 @@ asarUnpack:
   # Oracle Client 로 접속할 때 쓰는 네이티브 모듈
   - node_modules/oracledb/build/**
 npmRebuild: true
+# 묶은 앱을 node 처럼 부리는 길을 막는다: 다른 프로그램이 두레의 이름(서명)으로 코드를 돌려 두레의 권한(열쇠고리의 비밀 값 등)을 쓰지 못하게.
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
 mac:
   category: public.app-category.developer-tools
   target:

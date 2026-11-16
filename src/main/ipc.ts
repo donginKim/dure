@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from '@core/settings';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openMake } from './makeViewer';
+import { isAppUrl } from './appUrl';
 import { safeHtml } from '@core/makes';
 import type { ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem } from '@shared/types';
 
@@ -23,6 +24,12 @@ function tagged(e: unknown): Error {
 }
 
 /** 코어를 IPC 로 화면에 내보낸다. 돌려주는 함수는 등록을 해제한다. */
+/** 두레 자신의 화면(맨 위 틀)에서 온 요청인가. 창이 다른 페이지를 띄우고 있거나 안쪽 틀에서 온 것이면 받지 않는다. */
+function fromApp(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  const f = e.senderFrame;
+  return !!f && f === e.sender.mainFrame && isAppUrl(f.url);
+}
+
 /** 마켓의 모음들: 설정의 기본 모음과 사용자가 더한 것 */
 function sourcesOf(s: Settings): { url: string; base: boolean }[] {
   const out: { url: string; base: boolean }[] = [];
@@ -386,9 +393,10 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   for (const channel of IPC_CHANNELS) {
     const handler = handlers[channel];
     if (IPC_ONE_WAY.includes(channel)) {
-      ipcMain.on(ipcName(channel), (_e, ...args) => { handler(...args); });
+      ipcMain.on(ipcName(channel), (e, ...args) => { if (fromApp(e)) handler(...args); });
     } else {
-      ipcMain.handle(ipcName(channel), async (_e, ...args) => {
+      ipcMain.handle(ipcName(channel), async (e, ...args) => {
+        if (!fromApp(e)) throw new Error('두레의 화면에서 온 요청이 아닙니다.');
         try {
           return await handler(...args);
         } catch (e) {

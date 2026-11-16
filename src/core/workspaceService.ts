@@ -125,6 +125,10 @@ export class WorkspaceService extends EventEmitter {
   private detached = false;
   /** 채팅 방식으로 띄운 에이전트: 언제 띄웠고 지난 대화를 이어 띄웠는가 (이어가기에 실패하면 새 대화로 다시 띄운다) */
   private readonly chatStarts = new Map<string, { at: number; resumed: boolean; size: { cols: number; rows: number } }>();
+  private readonly lastSize = new Map<string, { cols: number; rows: number }>();
+  /** 지금 대화를 시작할 때 끝나 있던 TODO 의 수 (채팅 방식). 이어 가는 대화면 모른다 */
+  private readonly doneAtStart = new Map<string, number>();
+  private readonly freshening = new Set<string>();
 
   /** 채팅 방식의 에이전트를 돌리는 엔진을 이어 준다. */
   attachEngine(engine: ChatEngine): void {
@@ -178,6 +182,50 @@ export class WorkspaceService extends EventEmitter {
     if (ws.status === next) return;
     this.d.workspaces.update(id, { status: next });
     this.emit('changed', id);
+  }
+
+  /**
+   * TODO 마다 새 대화: 일하는 에이전트가 이 대화에서 TODO 를 하나 이상 끝내고 쉬는데 남은 TODO 가 있으면,
+   * 대화를 새로 시작하고 지금까지 한 일(끝낸 TODO, 커밋, 고친 파일)과 남은 TODO 만 건넨다. 앞 대화 전체를 매번 다시 읽지 않게 해 토큰을 아낀다.
+   * 채팅 방식의 Claude Code 일 때만. 사용자의 입력이나 메시지가 기다리고 있으면 하지 않는다.
+   */
+  maybeFresh(id: string): void {
+    const ws = this.d.workspaces.get(id);
+    if (!ws || ws.role === 'coordinator' || ws.agentKind !== 'claude' || !this.engine?.has(id) || !this.settings().freshPerTodo) return;
+    if (this.freshening.has(id) || this.removing.has(id) || this.isProjectClosed(ws.projectId)) return;
+    const todos = this.d.todos.listWorkspace(id);
+    const done = todos.filter((t) => t.status === 'done').length;
+    const open = todos.filter((t) => t.status === 'todo' || t.status === 'doing');
+    const start = this.doneAtStart.get(id);
+    if (start === undefined || done <= start || open.length === 0) return;
+    this.freshening.add(id);
+    // Stop 이 끝나고 쉬는 중이 된 뒤에 한다. 그사이 사용자가 말을 걸었거나 일을 시작했으면 그만둔다.
+    setTimeout(() => {
+      void (async () => {
+        try {
+          const now = this.d.workspaces.get(id);
+          if (!now || now.status !== 'idle' || !this.engine?.has(id) || this.engine.hasPending(id) || this.d.messages.undelivered(id).length > 0) return;
+          const prompt = await this.freshPrompt(now, todos.filter((t) => t.status === 'done').slice(-8).map((t) => t.title), open.map((t) => t.title));
+          this.stopAgent(id);
+          this.d.workspaces.setSessionId(id, null);
+          await this.startAgent(id, this.lastSize.get(id) ?? { cols: 120, rows: 40 }, prompt);
+        } catch { /* 다시 띄우지 못하면 꺼진 채로 둔다: 사용자가 다시 시작하면 이어진다 */ } finally { this.freshening.delete(id); }
+      })();
+    }, 1500).unref?.();
+  }
+
+  private async freshPrompt(ws: Workspace, done: string[], open: string[]): Promise<string> {
+    const git = async (args: string[]): Promise<string> => { try { return (await this.d.git.raw(['-C', ws.worktreePath, ...args])).trim(); } catch { return ''; } };
+    const commits = await git(['log', '--no-merges', '--max-count=8', '--format=- %h %s', `${ws.baseBranch}..HEAD`]);
+    const changed = (await git(['status', '--short'])).split('\n').filter(Boolean).slice(0, 20).join('\n');
+    return [
+      '[두레] 앞 TODO 를 끝내서 대화를 새로 시작했다 (토큰을 아끼려고 앞 대화는 이어 가지 않는다). 앞 대화의 세부는 없으니, 필요한 것은 파일과 git 기록을 다시 읽어라.',
+      `끝낸 TODO: ${done.map((t) => `"${t}"`).join(', ') || '(없음)'}`,
+      commits ? `이 브랜치의 최근 커밋:\n${commits}` : '아직 커밋이 없다.',
+      changed ? `커밋하지 않은 변경:\n${changed}` : '',
+      `남은 TODO (${open.length}개): ${open.map((t) => `"${t}"`).join(', ')}`,
+      '`todo_list` 로 남은 TODO 를 확인하고 다음 것부터 이어서 하라.',
+    ].filter(Boolean).join('\n\n');
   }
 
   /** 채팅 방식의 에이전트 프로세스가 끝났다. */
@@ -756,7 +804,7 @@ export class WorkspaceService extends EventEmitter {
       resumeSessionId,
       // 조율 에이전트는 계획과 판단을 하므로 따로 정한 모델(기본 Opus), 일하는 에이전트는 설정의 모델(기본 Sonnet).
       model: ws.model || (coordinator ? settings.coordinatorModel : '') || settings.claudeModel || undefined,
-      effort: settings.claudeEffort || undefined,
+      effort: (coordinator ? settings.coordinatorEffort : settings.claudeEffort) || undefined,
       autoCompact: settings.autoCompactTokens || undefined,
       extraArgs,
     });
@@ -772,6 +820,9 @@ export class WorkspaceService extends EventEmitter {
       if (headless) {
         // 채팅 방식: 터미널 화면 없이 띄운다. 폴더 신뢰 창이 없고(실험 17), 프롬프트는 표준 입력으로 보낸다.
         this.chatStarts.set(id, { at: Date.now(), resumed: Boolean(resumeSessionId), size });
+        this.lastSize.set(id, size);
+        // 이 대화를 시작할 때 끝나 있던 TODO 의 수: 이 대화에서 TODO 를 끝냈는지 보는 데 쓴다.
+        if (!resumeSessionId) this.doneAtStart.set(id, this.d.todos.listWorkspace(id).filter((t) => t.status === 'done').length);
         this.lastExit.delete(id);
         this.engine!.start(id, { command: executable, args: launch.args, cwd: ws.worktreePath, env: { ...this.d.baseEnv, ...launch.env } });
         if (firstPrompt) this.engine!.say(id, firstPrompt);

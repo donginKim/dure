@@ -420,6 +420,10 @@ export interface Settings {
   theme: 'dark' | 'light' | 'system';
   /** 조율 에이전트의 모델 (Claude Code). 비우면 일하는 에이전트와 같은 모델 */
   coordinatorModel: string;
+  /** 조율 에이전트의 effort. 비우면 Claude Code 의 기본 (일하는 에이전트의 effort 는 claudeEffort) */
+  coordinatorEffort: string;
+  /** 일하는 에이전트가 TODO 를 끝내고 쉬면, 다음 TODO 는 새 대화로 시작한다 (앞 대화를 다시 읽지 않아 토큰을 아낀다) */
+  freshPerTodo: boolean;
   /** 대화가 이 크기(토큰)를 넘으면 Claude Code 가 저절로 줄인다. 0 이면 Claude Code 의 기본 */
   autoCompactTokens: number;
   /** 프로젝트에 하루 상한을 정하지 않았을 때 쓰는 하루 토큰 상한 (캐시에서 읽은 것은 빼고 센다). 0 이면 없음 */

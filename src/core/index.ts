@@ -262,6 +262,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       service.reconcileWaiting(workspace.id);
       // 막 띄운 채팅 방식 에이전트가 쉬는 중이 됐다. 그동안 기다리던 메시지를 전달한다.
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
+      // TODO 를 끝내고 쉬는 에이전트는 다음 TODO 를 새 대화로 시작한다 (설정에서 끌 수 있다).
+      if (event === 'Stop' && out === '') service.maybeFresh(workspace.id);
       return out;
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools]);

@@ -14,6 +14,8 @@ const answer = (a: AgentAnswer) => (a.kind === 'pending'
  * 에이전트에게는 연결의 이름과 종류만 보인다. 호스트, 사용자, 비밀번호는 넘어가지 않는다.
  */
 export const dbTools: ToolBundle = (server, ctx, deps) => {
+  // 에이전트가 쓸 수 있는 DB 연결이 없으면 도구를 싣지 않는다 (도구 설명도 요청마다 토큰을 쓴다). 연결을 등록하면 다음에 시작할 때부터 보인다.
+  try { if (!deps.dbs.list(ctx.project.id).some((c) => c.agentAccess !== 'off')) return; } catch { return; }
   server.registerTool(
     'db_list',
     { description: '이 프로젝트에 사용자가 등록한 DB 연결의 목록을 돌려준다 (이름, 종류, 조회할 때 사용자의 승인이 필요한지). 비밀번호를 비롯한 접속 정보는 주지 않는다.', inputSchema: {} },

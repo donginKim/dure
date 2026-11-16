@@ -15,6 +15,8 @@ const WRITE_OFF = '사용자가 에이전트에게 메모 쓰기를 열어 두�
 const MAX_WRITE = 20_000;
 
 export const noteTools: ToolBundle = (server, ctx, deps) => {
+  // 사용자가 에이전트에게 메모를 열어 두지 않았으면 도구를 싣지 않는다.
+  if (!deps.notesForAgents() && !deps.notesWriteForAgents()) return;
   // 누가 언제 적었는지 메모 안에 남긴다: 사용자가 나중에 봐도 자기가 적은 것과 가릴 수 있다.
   const stamp = (): string => {
     const d = new Date();

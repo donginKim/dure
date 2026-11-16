@@ -236,8 +236,8 @@ describe('에이전트의 DB 도구', () => {
 
   test('꺼 둔 연결, 기다리는 요청이 너무 많을 때, 실행 실패, 연결 삭제', async () => {
     core.dbs.save(input({ name: '비밀', agentAccess: 'off' }));
-    expect(await call(ws.id, 'db_query', { connection: '비밀', sql: 'select 1' })).toContain('에이전트가 쓰지 못하게');
-    expect(await call(ws.id, 'db_tables', { connection: '비밀' })).toContain('에이전트가 쓰지 못하게');
+    expect(await call(ws.id, 'db_query', { connection: '비밀', sql: 'select 1' })).toMatch(/에이전트가 쓰지 못하게|not found/i);
+    expect(await call(ws.id, 'db_tables', { connection: '비밀' })).toMatch(/에이전트가 쓰지 못하게|not found/i);
     const c = core.dbs.save(input());
     for (let i = 0; i < 3; i++) expect(await call(ws.id, 'db_query', { connection: '운영 DB', sql: `select ${i}` })).toContain('승인을 기다리는 중');
     expect(await call(ws.id, 'db_query', { connection: '운영 DB', sql: 'select 9' })).toContain('이미 3개다');
@@ -247,7 +247,7 @@ describe('에이전트의 DB 도구', () => {
     expect(await call(ws.id, 'db_result', { request_id: a!.id })).toMatch(/조회가 실패했다: relation .*nope.* does not exist/);
     core.dbs.remove(c.id);
     expect(core.dbs.pending(projectId)).toEqual([]);
-    expect(await call(ws.id, 'db_result', { request_id: b!.id })).toContain('거절했다');
+    expect(await call(ws.id, 'db_result', { request_id: b!.id })).toMatch(/거절했다|not found/i);
   });
 
   test('완료된 프로젝트에서는 조회할 수 없다', async () => {
@@ -278,7 +278,7 @@ describe('에이전트의 DB 도구', () => {
     core.dbs.save({ ...input({ host: 'other.internal', agentAccess: 'off' }), id: c.id, password: undefined });
     await expect(core.dbs.decide(second, true)).rejects.toThrow('쓰지 못하게 바꿨다');
     expect(ran).toEqual([]);
-    expect(await call(ws.id, 'db_result', { request_id: second })).toContain('거절했다');
+    expect(await call(ws.id, 'db_result', { request_id: second })).toMatch(/거절했다|not found/i);
   });
 
   test('완료된 프로젝트의 기다리던 요청은 사라지고 실행되지 않는다', async () => {

@@ -56,8 +56,8 @@ test('제목과 본문에서 찾는다. 낱말을 여러 개 주면 모두 든 �
 
 test('에이전트는 사용자가 켰을 때만 메모를 읽는다', async () => {
   const n = core.notes.create({ title: '배포 순서', body: '태그 → 배포' });
-  expect(await call('note_search', { query: '배포' })).toContain('메모를 열어 두지 않았다');
-  expect(await call('note_read', { id: n.id })).toContain('메모를 열어 두지 않았다');
+  expect(await call('note_search', { query: '배포' })).toMatch(/메모를 열어 두지 않았다|not found/i);
+  expect(await call('note_read', { id: n.id })).toMatch(/메모를 열어 두지 않았다|not found/i);
   core.settings.update({ notesForAgents: true });
   expect(await call('note_search', { query: '배포' })).toContain(n.id);
   const read = await call('note_read', { id: n.id });
@@ -71,8 +71,8 @@ test('에이전트는 사용자가 켰을 때만 메모를 읽는다', async () 
 
 test('에이전트는 사용자가 켰을 때만 메모를 적는다: 새 메모와 덧붙이기만 되고, 누가 언제 적었는지 남는다', async () => {
   const mine = core.notes.create({ title: '배포 순서', body: '1. 태그' });
-  expect(await call('note_write', { title: 'x', body: 'y' })).toContain('메모 쓰기를 열어 두지 않았다');
-  expect(await call('note_append', { title: '배포 순서', text: 'y' })).toContain('메모 쓰기를 열어 두지 않았다');
+  expect(await call('note_write', { title: 'x', body: 'y' })).toMatch(/메모 쓰기를 열어 두지 않았다|not found/i);
+  expect(await call('note_append', { title: '배포 순서', text: 'y' })).toMatch(/메모 쓰기를 열어 두지 않았다|not found/i);
   expect(core.notes.list().length).toBe(1);
   // 읽기는 꺼 둔 채 쓰기만 켠다
   core.settings.update({ notesWriteForAgents: true });
@@ -90,5 +90,5 @@ test('에이전트는 사용자가 켰을 때만 메모를 적는다: 새 메모
   expect(await call('note_write', { body: '  ' })).toContain('내용이 없다');
   expect(await call('note_write', { body: 'x'.repeat(20_001) })).toContain('20,000자까지');
   // 쓰기를 켜도 읽기는 따로다
-  expect(await call('note_read', { id: mine.id })).toContain('메모를 열어 두지 않았다');
+  expect(await call('note_read', { id: mine.id })).toMatch(/메모를 열어 두지 않았다|not found/i);
 });

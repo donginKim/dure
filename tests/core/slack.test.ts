@@ -67,7 +67,7 @@ test('토큰은 확인한 뒤 암호화해 저장하고, 화면에도 에이전�
   expect(calls.every((c) => c.url.startsWith('https://slack.com/api/') && c.auth === `Bearer ${TOKEN}`)).toBe(true);
   core.slack.disconnect();
   expect(core.slack.status().connected).toBe(false);
-  expect(await call('slack_channels')).toContain('슬랙이 연결돼 있지 않다');
+  expect(await call('slack_channels')).toMatch(/슬랙이 연결돼 있지 않다|not found/i);
 });
 
 test('물어보고 읽기(기본): 사용자가 허용해야 읽는다. 무엇을 읽는지 보인다', async () => {

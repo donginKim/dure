@@ -13,6 +13,7 @@ import type {
   AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, DailyDigest, Schedule, ScheduleInput, Capture, MemoryItem, MemoryKind, AwayChoice, Plugin, PluginScheduleTemplate, NewsPanel, MarketSource, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
+import type { ProjectViewPref, RoleId } from './roles';
 
 export type ChangeTopic = 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
@@ -39,6 +40,9 @@ export interface DureApi {
     setAutoShip(id: string, mode: AutoShipMode): Promise<Project>;
     /** 예산: 상태, 상한 정하기, 오늘만 더 쓰기 */
     budget(id: string): Promise<BudgetStatus>;
+    /** 프로젝트의 보기 설정: 내 역할과, 역할마다 고친 현황 탭의 칸 구성 */
+    view(id: string): Promise<ProjectViewPref>;
+    setView(id: string, role: RoleId | '', custom: ProjectViewPref['custom']): Promise<ProjectViewPref>;
     /** 여러 프로젝트 대시보드 (완료되지 않은 프로젝트마다 한눈 요약) */
     dashboard(): Promise<ProjectDashboard[]>;
     /** 두레 논: 최근 1년, 날마다 한 일. projectId 를 비우면 모든 프로젝트 */
@@ -470,7 +474,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'makes.kinds', 'makes.list', 'makes.create', 'makes.remove', 'makes.open', 'makes.save', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.market', 'plugins.installFrom', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.view', 'projects.setView', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'makes.kinds', 'makes.list', 'makes.create', 'makes.remove', 'makes.open', 'makes.save', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.market', 'plugins.installFrom', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',

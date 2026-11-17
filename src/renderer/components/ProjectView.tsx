@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { Help } from './Help';
 import { Empty } from './Empty';
 import type { AssignmentOut, Project, Repo, RepoStatus, Todo, Workspace } from '@shared/types';
@@ -22,6 +22,8 @@ import { MemorySection } from './MemorySection';
 import { MakeSection } from './MakeSection';
 import { ProjectPlugins } from './PluginsSection';
 import { remoteGroups } from '../boardView';
+import { ROLE_IDS, type ProjectViewPref, type RoleId, type SectionId } from '@shared/roles';
+import { layoutFor, moveSection, ROLE_HINT, ROLE_LABEL, ROLE_SECTIONS, roleStats, SECTION_LABEL, toggleSection } from '../roleView';
 
 const AGENT_LABEL = { claude: 'Claude Code', codex: 'Codex' } as const;
 
@@ -96,45 +98,28 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
     }
   };
 
-  return (
-    <div className="project-view">
-      <div className="project-head">
-        <div>
-          <h1>{project.name}{done && <span className="done-badge">완료</span>}</h1>
-          <div className="sub">프로젝트 · 저장소 {repos.length}개 · 워크스페이스 {workspaces.length}개</div>
-        </div>
-        <div className="view-switch" role="tablist" aria-label="프로젝트 화면">
-          <button role="tab" aria-selected={tab === 'coord'} className={tab === 'coord' ? 'on' : ''} onClick={() => switchTab('coord')} title="조율 에이전트와 대화합니다. 프로젝트 전체에 일을 시킵니다">조율</button>
-          <button role="tab" aria-selected={tab === 'status'} className={tab === 'status' ? 'on' : ''} onClick={() => switchTab('status')} title="저장소, 워크스페이스, TODO, 정리 대기">현황</button>
-          <button role="tab" aria-selected={tab === 'db'} className={tab === 'db' ? 'on' : ''} onClick={() => switchTab('db')} title="DB 연결을 등록하고 표와 데이터를 조회합니다. 조회 전용입니다">DB</button>
-          <button role="tab" aria-selected={tab === 'share'} className={tab === 'share' ? 'on' : ''} onClick={() => switchTab('share')} title="이 프로젝트를 다른 사람과 함께 열고, 워크스페이스마다 누구에게 보일지 정합니다">함께</button>
-        </div>
-      </div>
-      {tab === 'coord' && <CoordinatorPane project={project} repos={repos} everyone={everyone} conversation={conversation} readOnly={done} onOpenWorkspace={(id) => { const w = everyone.find((x) => x.id === id); if (w) onSelect({ type: 'workspace', id: w.id, projectId: w.projectId }); }} />}
-      {tab === 'share' && <SharePanel project={project} workspaces={workspaces} everyone={everyone} readOnly={done} onOpenPeople={() => onSelect({ type: 'people' })} />}
-      {tab === 'db' && <DbPanel projectId={project.id} workspaces={everyone} readOnly={done} />}
-      {tab === 'status' && (
-    <div className="page">
-      <BoardSection projectId={project.id} />
-      {done && (
-        <div className="done-banner">
-          <div>
-            <b>완료 처리한 프로젝트입니다.</b> 기록만 볼 수 있습니다.
-            {project.completedAt && ` (${new Date(project.completedAt).toLocaleDateString('ko-KR')} 완료)`}
-            <div className="muted">다시 열면 워크스페이스를 만들고 에이전트를 시작할 수 있습니다. 완료 처리 때 지운 작업 폴더는 돌아오지 않습니다.</div>
-          </div>
-          <button className="btn primary" onClick={() => { setError(''); window.dure.projects.reopen(project.id).catch((e: Error) => setError(e.message)); }}>다시 열기</button>
-        </div>
-      )}
-      {error && <div className="error">{error}</div>}
-      {justAdded && (
-        <div className="notice ok">
-          <span className="grow">저장소 <b>{justAdded.name}</b> 을(를) 추가했습니다. 이 저장소로 워크스페이스를 만들까요?</span>
-          <button className="btn primary" onClick={() => { setCreatingFor(justAdded.id); setJustAdded(null); }}>만들기</button>
-          <button className="btn ghost" onClick={() => setJustAdded(null)}>나중에</button>
-        </div>
-      )}
+  // 내 역할 (프로젝트마다): 현황 탭에 어느 칸을 어떤 순서로 보일지. 읽어 오기 전에는 칸을 그리지 않는다 (구성이 깜빡이지 않게).
+  const [pref, setPref] = useState<ProjectViewPref | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [showFolded, setShowFolded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setPref(null); setEditing(false); setShowFolded(false);
+    window.dure.projects.view(project.id).then((v) => { if (alive) setPref(v); }).catch(() => { if (alive) setPref({ role: '', custom: {} }); });
+    return () => { alive = false; };
+  }, [project.id]);
+  const savePref = (next: ProjectViewPref): void => {
+    setPref(next);
+    window.dure.projects.setView(project.id, next.role, next.custom).then(setPref).catch((e: Error) => setError(e.message));
+  };
+  const layout = layoutFor(pref ?? { role: '', custom: {} }, { repos: repos.length, workspaces: workspaces.length });
 
+  // 현황 탭의 칸들. 역할에 따라 고른 것만, 정한 순서로 보인다 (보이지 않는 칸은 그리지 않아 읽어 오지도 않는다).
+  const sections: Record<SectionId, ReactNode> = {
+    board: (
+      <BoardSection projectId={project.id} />
+    ),
+    repos: (
       <div className="section">
         <div className="section-head">
           <h2>저장소</h2>
@@ -166,7 +151,8 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
         </div>
         <Help>저장소를 등록하는 것만으로는 에이전트가 일하지 않습니다. 저장소마다 워크스페이스를 만들면 그 저장소의 작업 폴더에서 에이전트가 일합니다. 등록한 저장소는 신뢰하는 것으로 보고, 에이전트가 처음 묻는 “이 폴더를 신뢰하는가” 에 두레가 대신 “신뢰함” 으로 답합니다. 내용을 모르는 저장소는 등록하기 전에 살펴보세요.</Help>
       </div>
-
+    ),
+    workspaces: (
       <div className="section">
         <div className="section-head">
           <h2>워크스페이스</h2>
@@ -189,7 +175,8 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
           ))}
         </div>
       </div>
-
+    ),
+    talk: (
       <div className="section">
         <div className="section-head">
           <h2>대화</h2>
@@ -219,17 +206,29 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
           />
         </div>
       </div>
-
+    ),
+    agreements: (
       <AgreementsSection projectId={project.id} readOnly={done} />
-
+    ),
+    autoship: (
       <AutoShipSection project={project} readOnly={done} hasVerify={repos.some((r) => r.verifyCommand)} />
+    ),
+    schedules: (
       <SchedulesSection projectId={project.id} workspaces={everyone} readOnly={done} />
+    ),
+    memory: (
       <MemorySection projectId={project.id} readOnly={done} />
+    ),
+    makes: (
       <MakeSection projectId={project.id} readOnly={done} />
+    ),
+    plugins: (
       <ProjectPlugins projectId={project.id} readOnly={done} onOpenSettings={() => onSelect({ type: 'market' })} />
-
+    ),
+    merge: (
       <MergeSection projectId={project.id} readOnly={done} />
-
+    ),
+    todo: (
       <div className="section">
         <div className="section-head"><h2>TODO</h2></div>
         <div className="todo-groups">
@@ -250,9 +249,102 @@ export function ProjectView({ project, repos, workspaces, everyone, todos, conve
         </div>
         <Help>프로젝트 항목은 프로젝트에서 이뤄야 하는 큰 일입니다. 워크스페이스 항목을 그 아래에 달면 (항목에 마우스를 올려 고릅니다), 딸린 일이 다 끝났을 때 프로젝트 항목이 저절로 완료됩니다. 워크스페이스 항목은 그 워크스페이스의 에이전트가 읽고 씁니다.</Help>
       </div>
-
+    ),
+    cleanup: (
       <CleanupList project={project} readOnly={done} />
+    ),
+    usage: (
       <UsagePanel projectId={project.id} />
+    ),
+  };
+
+  return (
+    <div className="project-view">
+      <div className="project-head">
+        <div>
+          <h1>{project.name}{done && <span className="done-badge">완료</span>}</h1>
+          <div className="sub">프로젝트 · 저장소 {repos.length}개 · 워크스페이스 {workspaces.length}개</div>
+        </div>
+        <div className="view-switch" role="tablist" aria-label="프로젝트 화면">
+          <button role="tab" aria-selected={tab === 'coord'} className={tab === 'coord' ? 'on' : ''} onClick={() => switchTab('coord')} title="조율 에이전트와 대화합니다. 프로젝트 전체에 일을 시킵니다">조율</button>
+          <button role="tab" aria-selected={tab === 'status'} className={tab === 'status' ? 'on' : ''} onClick={() => switchTab('status')} title="저장소, 워크스페이스, TODO, 정리 대기">현황</button>
+          <button role="tab" aria-selected={tab === 'db'} className={tab === 'db' ? 'on' : ''} onClick={() => switchTab('db')} title="DB 연결을 등록하고 표와 데이터를 조회합니다. 조회 전용입니다">DB</button>
+          <button role="tab" aria-selected={tab === 'share'} className={tab === 'share' ? 'on' : ''} onClick={() => switchTab('share')} title="이 프로젝트를 다른 사람과 함께 열고, 워크스페이스마다 누구에게 보일지 정합니다">함께</button>
+        </div>
+      </div>
+      {tab === 'coord' && <CoordinatorPane project={project} repos={repos} everyone={everyone} conversation={conversation} readOnly={done} onOpenWorkspace={(id) => { const w = everyone.find((x) => x.id === id); if (w) onSelect({ type: 'workspace', id: w.id, projectId: w.projectId }); }} />}
+      {tab === 'share' && <SharePanel project={project} workspaces={workspaces} everyone={everyone} readOnly={done} onOpenPeople={() => onSelect({ type: 'people' })} />}
+      {tab === 'db' && <DbPanel projectId={project.id} workspaces={everyone} readOnly={done} />}
+      {tab === 'status' && (
+    <div className="page">
+      {done && (
+        <div className="done-banner">
+          <div>
+            <b>완료 처리한 프로젝트입니다.</b> 기록만 볼 수 있습니다.
+            {project.completedAt && ` (${new Date(project.completedAt).toLocaleDateString('ko-KR')} 완료)`}
+            <div className="muted">다시 열면 워크스페이스를 만들고 에이전트를 시작할 수 있습니다. 완료 처리 때 지운 작업 폴더는 돌아오지 않습니다.</div>
+          </div>
+          <button className="btn primary" onClick={() => { setError(''); window.dure.projects.reopen(project.id).catch((e: Error) => setError(e.message)); }}>다시 열기</button>
+        </div>
+      )}
+      {error && <div className="error">{error}</div>}
+      {justAdded && (
+        <div className="notice ok">
+          <span className="grow">저장소 <b>{justAdded.name}</b> 을(를) 추가했습니다. 이 저장소로 워크스페이스를 만들까요?</span>
+          <button className="btn primary" onClick={() => { setCreatingFor(justAdded.id); setJustAdded(null); }}>만들기</button>
+          <button className="btn ghost" onClick={() => setJustAdded(null)}>나중에</button>
+        </div>
+      )}
+
+      <div className="role-bar">
+        <label className="role-pick">내 역할
+          <select value={pref?.role ?? ''} disabled={pref === null} onChange={(e) => { setEditing(false); setShowFolded(false); savePref({ role: e.target.value as RoleId | '', custom: pref?.custom ?? {} }); }} title="이 프로젝트에서의 내 역할입니다. 현황 탭에 어느 칸을 어떤 순서로 보일지만 정합니다 (할 수 있는 일은 그대로입니다)">
+            <option value="">전체 보기 (역할 없음)</option>
+            {ROLE_IDS.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+          </select>
+        </label>
+        {pref?.role && <span className="muted role-hint">{ROLE_HINT[pref.role]}</span>}
+        <span className="grow" />
+        {pref?.role && <button className="btn ghost" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>{editing ? '고치기 닫기' : '칸 고치기'}</button>}
+      </div>
+      {pref?.role && editing && (
+        <div className="role-edit">
+          <div className="muted">{ROLE_LABEL[pref.role]} 역할로 볼 때 앞에 보일 칸을 고르고 순서를 정합니다. 끈 칸은 아래 "접어 둔 칸" 에서 볼 수 있습니다.</div>
+          {[...layout.shown, ...layout.folded].map((id) => {
+            const on = layout.shown.includes(id); const at = layout.shown.indexOf(id);
+            const base = pref.custom[pref.role as RoleId] ?? ROLE_SECTIONS[pref.role as RoleId];
+            const set = (next: SectionId[]): void => savePref({ role: pref.role, custom: { ...pref.custom, [pref.role as RoleId]: next } });
+            return (
+              <div key={id} className="role-edit-row">
+                <label className="check"><input type="checkbox" checked={on} onChange={() => set(toggleSection(on && !base.includes(id) ? [...base, id] : base, id))} /> {SECTION_LABEL[id]}</label>
+                <span className="grow" />
+                {on && <button className="btn ghost" disabled={at <= 0} aria-label={`${SECTION_LABEL[id]} 위로`} onClick={() => set(moveSection(layout.shown, id, -1))}>위로</button>}
+                {on && <button className="btn ghost" disabled={at === layout.shown.length - 1} aria-label={`${SECTION_LABEL[id]} 아래로`} onClick={() => set(moveSection(layout.shown, id, 1))}>아래로</button>}
+              </div>
+            );
+          })}
+          {pref.custom[pref.role] && <button className="btn ghost" onClick={() => { const { [pref.role as RoleId]: _drop, ...rest } = pref.custom; void _drop; savePref({ role: pref.role, custom: rest }); }}>기본 구성으로 되돌리기</button>}
+        </div>
+      )}
+      {pref?.role && (
+        <div className="role-stats">
+          {roleStats(pref.role, { todos: allTodos, workspaces, repos, assigned: remote.workspaces.length }).map((st) => (
+            <div key={st.label} className={`role-stat${st.tone ? ` ${st.tone}` : ''}`} title={st.hint}>
+              <div className="role-stat-value">{st.value}</div>
+              <div className="role-stat-label">{st.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {pref !== null && layout.shown.map((id) => <Fragment key={id}>{sections[id]}</Fragment>)}
+      {pref !== null && layout.folded.length > 0 && (
+        <div className="role-folded">
+          <button className="btn ghost" aria-expanded={showFolded} onClick={() => setShowFolded((v) => !v)}>
+            {showFolded ? '접어 둔 칸 접기' : `접어 둔 칸 ${layout.folded.length}개 보기`} <span className="muted">· {layout.folded.map((id) => SECTION_LABEL[id]).join(', ')}</span>
+          </button>
+        </div>
+      )}
+      {pref !== null && showFolded && layout.folded.map((id) => <Fragment key={id}>{sections[id]}</Fragment>)}
 
       <div className="section project-end">
         {!done && (

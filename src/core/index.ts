@@ -10,6 +10,7 @@ import { ReviewService, type ReviewRunner } from './review';
 import { MakeService, type MakeRunner } from './makes';
 import { readAgentConfig } from './agentConfig';
 import { riskyChoice } from './away';
+import { cleanViewPref, type ProjectViewPref } from '@shared/roles';
 import { MergeService } from './merge';
 import { AutoShipService } from './autoship';
 import { BudgetService } from './budget';
@@ -141,6 +142,9 @@ export interface Core {
   /** 하단바: 오늘 쓴 토큰과 사용 한도 */
   usageBar(): UsageBar;
   /** 자리 비움 동안 두레가 대신 고른 답 (새것부터) */
+  /** 프로젝트의 보기 설정 (내 역할, 역할별 칸 구성) */
+  projectView(projectId: string): ProjectViewPref;
+  setProjectView(projectId: string, role: unknown, custom: unknown): ProjectViewPref;
   /** 작업 폴더의 에이전트 설정 파일과 허용 여부 */
   agentConfig(workspaceId: string): AgentConfig;
   /** 화면에서 본 내용(hash)을 허용한다. 그사이 바뀌었으면 거절한다 */
@@ -625,6 +629,19 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       return out;
     },
     knownNewsLink(url) { return newsLinks.has(String(url)); },
+    projectView(projectId) {
+      const r = db.prepare('SELECT role, custom FROM project_views WHERE project_id = ?').get(String(projectId)) as { role: string; custom: string } | undefined;
+      if (!r) return { role: '', custom: {} };
+      let custom: unknown = {};
+      try { custom = JSON.parse(r.custom); } catch { /* 깨졌으면 기본 구성 */ }
+      return cleanViewPref(r.role, custom);
+    },
+    setProjectView(projectId, role, custom) {
+      if (!projects.get(String(projectId))) throw new Error('프로젝트가 없습니다.');
+      const pref = cleanViewPref(role, custom);
+      db.prepare('INSERT INTO project_views (project_id, role, custom) VALUES (?, ?, ?) ON CONFLICT(project_id) DO UPDATE SET role = excluded.role, custom = excluded.custom').run(String(projectId), pref.role, JSON.stringify(pref.custom));
+      return pref;
+    },
     agentConfig(workspaceId) {
       const ws = workspaces.get(workspaceId);
       if (!ws || ws.role === 'coordinator' || !existsSync(ws.worktreePath)) return { files: [], hash: '', trusted: true };
@@ -768,6 +785,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       for (const ws of workspaces.listAll(projectId)) await service.remove(ws.id, { deleteWorktree: false, withCoordinator: true });
       cleanup.removeProject(projectId);
       makes.removeProject(projectId);
+      db.prepare('DELETE FROM project_views WHERE project_id = ?').run(projectId);
       // 조율 에이전트의 폴더는 두레의 것이다. 함께 지운다.
       const coordDir = join(o.dataDir, 'coordinators', projectId);
       if (coordDir.startsWith(join(o.dataDir, 'coordinators') + sep)) rmSync(coordDir, { recursive: true, force: true });

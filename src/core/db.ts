@@ -522,6 +522,10 @@ const MIGRATIONS: string[] = [
   `
   CREATE TABLE agent_config_trust (repo_id TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (repo_id, hash));
   `,
+  // 프로젝트의 보기 설정: 내 역할과, 역할마다 고친 현황 탭의 칸 구성
+  `
+  CREATE TABLE project_views (project_id TEXT PRIMARY KEY, role TEXT NOT NULL, custom TEXT NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

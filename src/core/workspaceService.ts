@@ -46,6 +46,8 @@ export class WorktreeMissingError extends Error {
 }
 
 export interface WorkspaceServiceDeps {
+  /** 에이전트를 띄울 때 (누가 띄웠든) 알린다: 감사 기록 */
+  onAgentStart?: (ws: Workspace, info: { agent: string; permissionMode: string; engine: string; model: string }) => void;
   /** 이 저장소에서 이 내용의 에이전트 설정 파일을 사용자가 허용했는가. 없으면 가리지 않는다 */
   agentConfigTrusted?: (repoId: string, hash: string) => boolean;
   projects: ProjectStore;
@@ -848,6 +850,7 @@ export class WorkspaceService extends EventEmitter {
     const project = this.d.projects.get(ws.projectId)!;
     if (this.isProjectClosed(project.id)) throw new Error(DONE_PROJECT);
     const settings = this.settings();
+    try { this.d.onAgentStart?.(ws, { agent: ws.agentKind, permissionMode: ws.permissionMode, engine: ws.engine, model: ws.model || (ws.role === 'coordinator' ? settings.coordinatorModel || settings.claudeModel : settings.claudeModel) || '' }); } catch { /* 기록만 빠진다 */ }
     const executable = this.agentExecutable(ws.agentKind, settings);
     // 저장된 뒤에 규칙이 바뀌었을 수도 있으니 쓰기 직전에 한 번 더 거른다.
     const extraArgs = parseArgs(ws.agentKind === 'claude' ? settings.claudeArgs : settings.codexArgs);

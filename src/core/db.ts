@@ -526,6 +526,17 @@ const MIGRATIONS: string[] = [
   `
   CREATE TABLE project_views (project_id TEXT PRIMARY KEY, role TEXT NOT NULL, custom TEXT NOT NULL);
   `,
+  // 감사 기록: 누가 무엇을 했고 어떻게 됐나. 줄마다 앞 줄의 지문(prev)을 넣어 잇는다 (고치거나 빼면 드러난다).
+  `
+  CREATE TABLE audit_log (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, actor_name TEXT NOT NULL, action TEXT NOT NULL,
+    project_id TEXT NOT NULL, workspace_id TEXT NOT NULL, target TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT NOT NULL, detail TEXT NOT NULL,
+    prev TEXT NOT NULL, hash TEXT NOT NULL
+  );
+  CREATE INDEX audit_log_at ON audit_log (at);
+  CREATE INDEX audit_log_action ON audit_log (action);
+  CREATE TABLE audit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

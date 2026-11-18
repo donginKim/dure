@@ -98,6 +98,27 @@ export interface PluginScheduleTemplate { title: string; prompt: string; kind: '
 export interface AgentConfigFile { path: string; text: string; /** 길어서 잘랐다 */ cut: boolean }
 /** 작업 폴더의 에이전트 설정 파일들과, 사용자가 이 내용을 허용했는가. 파일이 없으면 hash 가 빈 글이고 trusted 다 */
 export interface AgentConfig { files: AgentConfigFile[]; hash: string; trusted: boolean }
+export type AuditActorKind = 'user' | 'agent' | 'peer' | 'system';
+export type AuditOutcome = 'ok' | 'denied' | 'failed';
+/** 감사 기록 한 줄: 누가 무엇을 했고 어떻게 됐나. 본문은 담지 않는다 */
+export interface AuditEntry {
+  seq: number; at: number; actor: AuditActorKind; actorName: string;
+  /** 점으로 나눈 영문 이름 (예: db.query, plugin.approve) */
+  action: string;
+  projectId: string; workspaceId: string; target: string; outcome: AuditOutcome; reason: string;
+  detail: Record<string, string | number | boolean | null>;
+  hash: string;
+}
+export interface AuditFilter {
+  actor?: AuditActorKind; outcome?: AuditOutcome; projectId?: string;
+  /** 이 글로 시작하는 동작만 (예: "db.") */
+  action?: string;
+  since?: number; until?: number;
+  /** 이 번호보다 앞의 것 (이어 읽기) */
+  before?: number; limit?: number;
+}
+/** 기록의 이어짐을 확인한 결과. brokenAt 은 어긋난 첫 줄의 번호 */
+export interface AuditVerify { ok: boolean; count: number; brokenAt: number | null; firstSeq: number; lastSeq: number; /** 보관 기간이 지나 지운 줄 수 */ pruned: number; /** 마지막 줄의 지문 */ head: string }
 /** 만들기의 틀 */
 export type MakeFormat = 'report' | 'slides' | 'visual';
 export interface PluginMaker { name: string; prompt: string; format: MakeFormat }
@@ -551,6 +572,8 @@ export interface Settings {
   /** 자리 비움: 에이전트의 선택지 질문에 두레가 추천(첫째) 답을 대신 골라 멈추지 않게 한다. 고른 것은 적어 두었다가 돌아와서 본다 */
   awayMode: boolean;
   /** 플러그인 모음의 git 주소 (설정의 "기본 플러그인" 목록을 여기서 받는다) */
+  /** 감사 기록을 두는 날 수 (0 이면 지우지 않는다) */
+  auditKeepDays: number;
   pluginCatalog: string;
   /** 마켓에 더한 다른 모음들 (git 주소) */
   pluginSources: string[];

@@ -220,6 +220,12 @@ const api: DureApi = {
     list: () => call('away.list'),
     clear: (id) => call('away.clear', id ?? null),
   },
+  audit: {
+    list: (filter) => call('audit.list', filter),
+    count: (filter) => call('audit.count', filter),
+    verify: () => call('audit.verify'),
+    export: (format, filter) => call('audit.export', format, filter),
+  },
   makes: {
     kinds: (projectId) => call('makes.kinds', projectId),
     list: (projectId) => call('makes.list', projectId),

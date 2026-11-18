@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: Settings = {
   companion: false,
   captureShortcut: 'Alt+Shift+Space',
   awayMode: false,
+  auditKeepDays: 365,
   pluginCatalog: 'https://github.com/donginKim/dure-plugin.git',
   pluginSources: [],
   defaultPermissionMode: 'auto',
@@ -148,6 +149,7 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   theme: oneOf('화면 모양', 'dark', 'light', 'system'),
   companion: bool('도트 일꾼'),
   awayMode: bool('자리 비움'),
+  auditKeepDays: int('감사 기록 보관 기간', 0, 3650),
   pluginSources: (v: unknown): string[] => {
     if (!Array.isArray(v)) throw new Error('플러그인 모음: 목록이어야 합니다.');
     const out = [...new Set(v.map((x) => String(x ?? '').trim()).filter(Boolean))];

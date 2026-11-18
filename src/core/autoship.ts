@@ -83,6 +83,8 @@ export class AutoShipService extends EventEmitter {
     isProjectClosed(projectId: string): boolean;
     /** 기록을 적어 둔다 (없으면 메모리에만) */
     db?: Database.Database;
+    /** 단계마다의 결과를 밖에도 알린다 (감사 기록) */
+    onNote?: (projectId: string, workspaceId: string, stage: ShipEvent['stage'], ok: boolean, message: string) => void;
     /** 두레가 만든 커밋인가 (커밋 창이나 자동 반영). 없으면 가리지 않는다 */
     knownCommit?: (hash: string) => boolean;
   }) {
@@ -113,6 +115,7 @@ export class AutoShipService extends EventEmitter {
   }
 
   private note(projectId: string, workspaceId: string, stage: ShipEvent['stage'], ok: boolean, message: string): void {
+    try { this.d.onNote?.(projectId, workspaceId, stage, ok, message); } catch { /* 기록만 빠진다 */ }
     const list = this.log.get(projectId) ?? [];
     const e: ShipEvent = { id: crypto.randomUUID(), projectId, workspaceId, workspaceName: this.d.workspaces.get(workspaceId)?.name ?? '', at: Date.now(), stage, ok, message };
     list.push(e);

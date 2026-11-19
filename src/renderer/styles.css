@@ -1476,3 +1476,5 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .notes-read-title { font-weight: 600; font-size: 15px; padding: 4px 2px 0; word-break: break-word; }
 .notes-view { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.65; word-break: break-word; user-select: text; }
 .share-note { font-size: 12px; margin-top: 2px; line-height: 1.5; }
+
+.permit-reason { font-size: 12px; color: var(--warn); margin-bottom: 4px; }

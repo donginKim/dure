@@ -241,6 +241,14 @@ describe('계획안', () => {
     expect(() => core.coordinator.requestRevision(p.id, 'x')).toThrow('승인을 기다리는 계획안이 아닙니다');
   });
 
+  test('설정의 기본 권한이 "삭제만 묻기" 면 계획안으로 만든 워크스페이스도 그 단계로 돈다', async () => {
+    core.settings.update({ defaultPermissionMode: 'guard' });
+    core.coordinator.ensure(projectId);
+    const p = await core.coordinator.propose(projectId, { summary: '정리', workspaces: [W('로그인 화면', 'shop-front', { role: '로그인 폼', todos: ['폼'] })] });
+    const res = await core.coordinator.approve(p.id, { items: [item({ name: '로그인', repoId: front.id, baseBranch: 'develop', role: '폼', todos: [todo('폼 만들기')] })], projectTodos: [] });
+    expect(res.created.map((w) => w.permissionMode)).toEqual(['guard']);
+  });
+
   test('승인하면 사용자가 고친 최종 계획대로 워크스페이스와 TODO 를 만들고, 조율 에이전트에게 알린다', async () => {
     core.settings.update({ defaultPermissionMode: 'bypass' });
     const c = core.coordinator.ensure(projectId);

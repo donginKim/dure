@@ -1,6 +1,7 @@
 import type { Workspace, WorkspaceStatus } from '@shared/types';
 import type { WorkspaceStore } from './stores';
 import { todoDigest, type TodoService } from './todos';
+import { guardDecision } from './agents/guard';
 
 export type HookEvent = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PostToolUse' | 'Stop' | 'Notification';
 
@@ -56,9 +57,22 @@ export function handleHook(deps: HookDeps, workspace: Workspace, event: string, 
       const context = [digest, source === 'compact' ? deps.collectMessages(workspace.id) : undefined].filter((x) => x !== undefined).join('\n\n');
       return context ? JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: context } }) : '';
     }
-    case 'PreToolUse':
+    case 'PreToolUse': {
       setStatus('working');
-      return '';
+      // 삭제만 묻기: 지우는 일이면 묻게 하고, 아니면 묻지 않고 허용한다. 답하지 않으면(빈 글) Claude Code 의 평소 승인으로 간다.
+      // 다른 권한 단계에서는 답하지 않는다. 이 워크스페이스의 지금 단계를 매번 읽으므로, 단계를 바꾸면 다음 도구 호출부터 듣는다.
+      if (workspace.permissionMode !== 'guard' || workspace.role === 'coordinator') return '';
+      const call = typeof payload === 'object' && payload !== null ? payload as { tool_name?: unknown; tool_input?: unknown } : {};
+      if (typeof call.tool_name !== 'string' || !call.tool_name) return '';
+      // 계획 모드에서는 답하지 않는다: 계획만 세우는 중에 묻지 않고 실행되면 안 된다.
+      if ((payload as { permission_mode?: unknown }).permission_mode === 'plan') return '';
+      const d = guardDecision(call.tool_name, call.tool_input, workspace.worktreePath);
+      if (d.decision === 'pass') return '';
+      return JSON.stringify({ hookSpecificOutput: {
+        hookEventName: 'PreToolUse', permissionDecision: d.decision,
+        permissionDecisionReason: d.decision === 'ask' ? `삭제만 묻기: ${d.reason}` : '삭제만 묻기: 지우는 일이 아니라 묻지 않습니다',
+      } });
+    }
     case 'UserPromptSubmit':
     case 'PostToolUse': {
       if (event === 'UserPromptSubmit') deps.onUserPrompt(workspace);

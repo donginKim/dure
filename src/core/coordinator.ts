@@ -4,7 +4,7 @@ import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readSync, rmSync
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import type Database from 'better-sqlite3';
 import { folderRepoId, isFolderRepoId, isNewRepoId, newRepoId, newRepoName, validRepoName } from '@shared/plan';
-import type { PlanDecision, PlanFolder, PlanRepo, PlanResult, PlanTodo, Proposal, ProposalItem, Repo, Settings, SpecFile, Workspace } from '@shared/types';
+import type { PermissionMode, PlanDecision, PlanFolder, PlanRepo, PlanResult, PlanTodo, Proposal, ProposalItem, Repo, Settings, SpecFile, Workspace } from '@shared/types';
 import type { Git } from './git';
 import type { MessageService } from './messages';
 import { expandHome } from './settings';
@@ -64,6 +64,15 @@ export { COORDINATOR_NAME };
  * 조율 에이전트는 기획서를 분석해 계획안(정리, 워크스페이스, TODO)을 올릴 뿐이다. 만드는 것은 사용자가 승인한 뒤에 두레가 한다.
  * 이벤트: 'changed' (projectId) — 계획안이 생기거나 결정됨
  */
+/**
+ * 계획안을 승인해 만드는 워크스페이스의 권한 단계. 설정의 기본을 따르되, "승인 생략" 은 물려받지 않는다 (자동 판단으로 낮춘다):
+ * 계획안은 에이전트가 쓴 것이라, 묻지 않고 무엇이든 하는 에이전트를 사용자가 직접 고르지 않고 만들지 않는다.
+ * "삭제만 묻기" 는 지우는 것을 여전히 묻으므로 물려받는다.
+ */
+function planPermission(mode: PermissionMode | undefined): PermissionMode {
+  return mode === 'ask' || mode === 'guard' ? mode : 'auto';
+}
+
 export class CoordinatorService extends EventEmitter {
   /** 승인을 처리하는 중인 계획안. 버튼을 두 번 눌러도 두 벌 만들지 않는다 */
   private readonly deciding = new Set<string>();
@@ -543,7 +552,7 @@ export class CoordinatorService extends EventEmitter {
           if (it.existing) { targets.set(it.name, this.d.workspaces.list(r.project_id).find((w) => w.name === it.name)!); continue; }
           // 계획안을 승인했으니 그 안의 일은 자동 판단으로 돈다 (위험한 것만 묻는다). 설정이 "승인 필요" 면 그대로 따른다.
           // 승인 생략은 계획 승인으로 켜지 않는다: 검토 화면에 보이지 않은 채 모든 명령을 묻지 않고 돌지 않게 한다.
-          const ws = await this.d.service.create({ projectId: r.project_id, repoId: it.repoId, name: it.name, baseBranch: it.baseBranch, agentKind: 'claude', permissionMode: this.d.settings?.().defaultPermissionMode === 'ask' ? 'ask' : 'auto' });
+          const ws = await this.d.service.create({ projectId: r.project_id, repoId: it.repoId, name: it.name, baseBranch: it.baseBranch, agentKind: 'claude', permissionMode: planPermission(this.d.settings?.().defaultPermissionMode) });
           // 다른 사람이 제안한 것이면 요약을 짧게 둔다 (배정을 수락할 때와 같다).
           if (it.role) this.d.workspaces.update(ws.id, { summary: from ? it.role.slice(0, 80) : it.role });
           const fresh = this.d.workspaces.get(ws.id) ?? ws;

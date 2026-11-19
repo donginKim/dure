@@ -167,7 +167,7 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
     if (t.length > 40 || (t && !/^[A-Za-z0-9+]+$/.test(t))) throw new Error('단축키: "Alt+Shift+Space" 처럼 적으세요.');
     return t;
   },
-  defaultPermissionMode: oneOf('기본 권한 모드', 'ask', 'auto', 'bypass'),
+  defaultPermissionMode: oneOf('기본 권한 모드', 'ask', 'auto', 'guard', 'bypass'),
   worktreeRoot: path('작업 폴더 위치'),
   repoRoot: path('새 저장소 위치'),
   oracleClientDir: path('Oracle Instant Client 폴더'),

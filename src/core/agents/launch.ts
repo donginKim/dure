@@ -122,7 +122,9 @@ function buildBase(i: AgentLaunchInput): AgentLaunch {
         '--settings', settings,
         '--append-system-prompt', i.instructions,
         // auto: Claude Code 가 안전한 동작은 스스로 허용하고, 되돌리기 어렵거나 위험한 것만 묻는다.
-        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', i.manualEdits ? 'default' : i.permissionMode === 'auto' ? 'auto' : 'acceptEdits']),
+        // guard(삭제만 묻기): default 로 띄우고, 묻지 않을 것은 두레의 PreToolUse hook 이 허용한다 (hooks.ts).
+        // 두레가 답하지 못하면(hook 실패, 시간 초과) 모든 것을 묻는 쪽으로 떨어져야 한다: acceptEdits 는 작업 폴더 안의 rm 을 묻지 않고 실행하므로 쓰지 않는다.
+        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', i.manualEdits || i.permissionMode === 'guard' ? 'default' : i.permissionMode === 'auto' ? 'auto' : 'acceptEdits']),
       ],
       env: {},
       files: [
@@ -146,7 +148,8 @@ function buildBase(i: AgentLaunchInput): AgentLaunch {
       '-c', `developer_instructions=${toml(i.instructions)}`,
       ...(i.permissionMode === 'bypass'
         ? ['--dangerously-bypass-approvals-and-sandbox']
-        : i.permissionMode === 'auto'
+        // guard 는 Codex 에서 자동 판단처럼 돈다: Codex 에는 도구 호출마다 답할 길이 없다.
+        : i.permissionMode === 'auto' || i.permissionMode === 'guard'
           // 작업 폴더 안에서만 쓰게 가두고, 승인 요청은 Codex 의 자동 검토로 넘긴다.
           ? ['--sandbox', 'workspace-write', '--approve-for-me']
           : ['--sandbox', 'workspace-write', '--ask-for-approval', 'on-request']),

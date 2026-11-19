@@ -4,7 +4,7 @@ import { ProjectStore, RepoStore, WorkspaceStore } from '@core/stores';
 import { DeliveryService } from '@core/delivery';
 import { MessageService } from '@core/messages';
 import { pendingMessage, TodoService } from '@core/todos';
-import type { WorkspaceStatus } from '@shared/types';
+import type { Workspace, WorkspaceStatus } from '@shared/types';
 
 // 실험 10 에서 받은 실제 본문 (spikes/out/notification.json)
 const PERMISSION = { hook_event_name: 'Notification', message: 'Claude needs your permission', notification_type: 'permission_prompt' };
@@ -39,8 +39,35 @@ function setup(initial: WorkspaceStatus = 'idle') {
   const fire = (event: string, payload: unknown = {}) => handleHook(deps, workspaces.get(ws.id)!, event, payload);
   const status = () => workspaces.get(ws.id)!.status;
   const userAdds = (title: string) => todos.add({ projectId: p.id, workspaceId: ws.id, title }, 'user');
-  return { fire, status, userAdds, todos, ws, p, statusCalls, receive, messages, userPrompts };
+  const setMode = (permissionMode: Workspace['permissionMode']) => workspaces.update(ws.id, { permissionMode });
+  return { fire, status, userAdds, todos, ws, p, statusCalls, receive, messages, userPrompts, setMode };
 }
+
+test('삭제만 묻기: 도구를 쓰기 직전에 지우는 일이면 묻게 하고, 아니면 묻지 않고 허용한다. 다른 권한 단계에서는 답하지 않는다', () => {
+  const s = setup('idle');
+  const pre = (tool_name: string, tool_input: unknown) => s.fire('PreToolUse', { hook_event_name: 'PreToolUse', tool_name, tool_input });
+  // 승인 필요(기본)에서는 지금처럼 빈 답: Claude Code 가 스스로 정한다
+  expect(pre('Bash', { command: 'rm victim.txt' })).toBe('');
+  expect(pre('Bash', { command: 'npm test' })).toBe('');
+  expect(s.status()).toBe('working');
+  s.setMode('guard');
+  expect(JSON.parse(pre('Bash', { command: 'npm test' }))).toEqual({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: '삭제만 묻기: 지우는 일이 아니라 묻지 않습니다' } });
+  const asked = JSON.parse(pre('Bash', { command: 'rm victim.txt' }));
+  expect(asked.hookSpecificOutput.permissionDecision).toBe('ask');
+  expect(asked.hookSpecificOutput.permissionDecisionReason).toBe('삭제만 묻기: 파일을 지우는 명령입니다 (rm)');
+  // 작업 폴더(/tmp/w) 안의 파일 고치기는 허용, 밖은 답하지 않는다 (평소 승인)
+  expect(JSON.parse(pre('Write', { file_path: '/tmp/w/a.txt', content: 'x' })).hookSpecificOutput.permissionDecision).toBe('allow');
+  expect(pre('Write', { file_path: '/etc/hosts', content: 'x' })).toBe('');
+  // 사용자에게 묻는 도구와 두레의 도구는 건드리지 않는다
+  expect(pre('AskUserQuestion', { questions: [] })).toBe('');
+  expect(pre('mcp__dure__todo_update', {})).toBe('');
+  // 계획 모드에서는 답하지 않는다
+  expect(s.fire('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' }, permission_mode: 'plan' })).toBe('');
+  // 도구 이름이 없는 이상한 호출에는 답하지 않는다
+  expect(s.fire('PreToolUse', {})).toBe('');
+  expect(s.fire('PreToolUse', null)).toBe('');
+  for (const mode of ['auto', 'bypass'] as const) { s.setMode(mode); expect(pre('Bash', { command: 'npm test' })).toBe(''); }
+});
 
 test('SessionStart: TODO 가 있으면 현재 목록을 additionalContext 로 다시 알려주고, 쌓인 변경 기록은 비운다', () => {
   const c = setup('working');

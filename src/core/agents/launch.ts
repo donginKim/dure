@@ -122,8 +122,9 @@ function buildBase(i: AgentLaunchInput): AgentLaunch {
         '--settings', settings,
         '--append-system-prompt', i.instructions,
         // auto: Claude Code 가 안전한 동작은 스스로 허용하고, 되돌리기 어렵거나 위험한 것만 묻는다.
-        // guard(삭제만 묻기): acceptEdits 로 띄우고, 묻지 않을 것은 두레의 PreToolUse hook 이 허용한다 (hooks.ts). 승인 생략으로 띄우지 않는다: 두레가 답하지 못하면 평소 승인으로 떨어져야 한다.
-        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', i.manualEdits ? 'default' : i.permissionMode === 'auto' ? 'auto' : 'acceptEdits']),
+        // guard(삭제만 묻기): default 로 띄우고, 묻지 않을 것은 두레의 PreToolUse hook 이 허용한다 (hooks.ts).
+        // 두레가 답하지 못하면(hook 실패, 시간 초과) 모든 것을 묻는 쪽으로 떨어져야 한다: acceptEdits 는 작업 폴더 안의 rm 을 묻지 않고 실행하므로 쓰지 않는다.
+        ...(i.permissionMode === 'bypass' ? ['--dangerously-skip-permissions'] : ['--permission-mode', i.manualEdits || i.permissionMode === 'guard' ? 'default' : i.permissionMode === 'auto' ? 'auto' : 'acceptEdits']),
       ],
       env: {},
       files: [

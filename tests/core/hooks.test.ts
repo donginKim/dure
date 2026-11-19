@@ -61,6 +61,8 @@ test('삭제만 묻기: 도구를 쓰기 직전에 지우는 일이면 묻게 �
   // 사용자에게 묻는 도구와 두레의 도구는 건드리지 않는다
   expect(pre('AskUserQuestion', { questions: [] })).toBe('');
   expect(pre('mcp__dure__todo_update', {})).toBe('');
+  // 계획 모드에서는 답하지 않는다
+  expect(s.fire('PreToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' }, permission_mode: 'plan' })).toBe('');
   // 도구 이름이 없는 이상한 호출에는 답하지 않는다
   expect(s.fire('PreToolUse', {})).toBe('');
   expect(s.fire('PreToolUse', null)).toBe('');

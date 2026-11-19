@@ -64,6 +64,8 @@ export function handleHook(deps: HookDeps, workspace: Workspace, event: string, 
       if (workspace.permissionMode !== 'guard' || workspace.role === 'coordinator') return '';
       const call = typeof payload === 'object' && payload !== null ? payload as { tool_name?: unknown; tool_input?: unknown } : {};
       if (typeof call.tool_name !== 'string' || !call.tool_name) return '';
+      // 계획 모드에서는 답하지 않는다: 계획만 세우는 중에 묻지 않고 실행되면 안 된다.
+      if ((payload as { permission_mode?: unknown }).permission_mode === 'plan') return '';
       const d = guardDecision(call.tool_name, call.tool_input, workspace.worktreePath);
       if (d.decision === 'pass') return '';
       return JSON.stringify({ hookSpecificOutput: {

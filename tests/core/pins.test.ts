@@ -43,6 +43,14 @@ test('제목은 첫 줄 60자, 본문은 50,000자에서 자른다', () => {
   expect(MAX_PIN_BODY).toBe(50_000);
 });
 
+test('제목에서 마크다운 기호는 뗀다. 기호뿐인 줄은 건너뛴다', () => {
+  expect(core.pins.add(input('a', '## 배포 순서\n1. 빌드')).title).toBe('배포 순서');
+  expect(core.pins.add(input('b', '---\n- **API** 는 `4310`')).title).toBe('API 는 4310');
+  expect(core.pins.add(input('c', '> 인용한 글')).title).toBe('인용한 글');
+  expect(core.pins.add(input('d', '1. 첫째 할 일')).title).toBe('첫째 할 일');
+  expect(core.pins.add(input('e', 'a - b * c')).title).toBe('a - b * c');
+});
+
 test('누가 쓴 글인지는 한 줄 80자로 다듬는다', () => {
   const p = core.pins.add({ ...input('a'), source: `조율@민지가\n보냄${'x'.repeat(100)}` });
   expect(p.source).not.toContain('\n');

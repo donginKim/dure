@@ -13,8 +13,11 @@ const KINDS: readonly PinKind[] = ['user', 'assistant', 'dure', 'output', 'peer'
 // eslint-disable-next-line no-control-regex
 const oneLine = (s: unknown, max: number): string => String(s ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim().slice(0, max);
 const toPin = (r: Row): Pin => ({ id: r.id, workspaceId: r.workspace_id, itemId: r.item_id, kind: r.kind as PinKind, source: r.source, title: r.title, body: r.body, createdAt: r.created_at });
-/** 목록에 보일 제목: 글이 든 첫 줄. */
-const titleOf = (body: string): string => oneLine(body.split('\n').find((l) => l.trim()) ?? '', MAX_TITLE);
+/** 목록에 보일 제목: 글이 든 첫 줄. 마크다운 기호(#, -, >, **, `)는 떼어 글자만 남긴다. */
+const titleOf = (body: string): string => {
+  const line = body.split('\n').find((l) => l.replace(/[#>\-*`_\s|]/g, '')) ?? '';
+  return oneLine(line.replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)+/, '').replace(/\*\*|__|`/g, ''), MAX_TITLE);
+};
 
 /**
  * 대화의 글에 꽂은 핀. 글의 id 와 함께 내용을 담아 둔다:

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Note, NoteSummary } from '@shared/types';
 import { markMatches, noteHeading, noteTime } from '../notesView';
+import { Markdown } from './Markdown';
 
 const Marked = ({ text, query }: { text: string; query: string }) => <>{markMatches(text, query).map((p, i) => (p.hit ? <mark key={i}>{p.text}</mark> : <span key={i}>{p.text}</span>))}</>;
 
 /**
  * 메모장. 프로젝트와 상관없이 하나이고, 어느 화면에서든 오른쪽에 열어 쓴다.
  * 적는 대로 저장된다 (저장 버튼이 없다). 위의 칸으로 제목과 본문에서 찾는다.
+ * 메모를 열면 마크다운으로 그린 모습(보기)이 먼저 보이고, "고치기" 를 눌러야 입력칸이 된다.
  */
 export function NotesPanel({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('');
@@ -15,6 +17,8 @@ export function NotesPanel({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // 고치는 중인가. 아니면 마크다운으로 그려 보인다. 빈 메모는 바로 고친다.
+  const [editing, setEditing] = useState(false);
   // 아직 저장하지 않은 글. 닫거나 다른 메모로 갈 때 먼저 저장한다.
   const pending = useRef<{ id: string; title: string; body: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -60,12 +64,12 @@ export function NotesPanel({ onClose }: { onClose: () => void }) {
     await flush();
     setError(''); setConfirmDelete(false);
     const n = await window.dure.notes.get(id).catch(() => null);
-    if (n) setNote(n); else { setError('메모가 없습니다 (지워졌을 수 있습니다).'); load(); }
+    if (n) { setNote(n); setEditing(!n.body.trim()); } else { setError('메모가 없습니다 (지워졌을 수 있습니다).'); load(); }
   };
   const create = async (): Promise<void> => {
     await flush();
     setError(''); setConfirmDelete(false);
-    try { setNote(await window.dure.notes.create()); } catch (e) { setError((e as Error).message); }
+    try { setNote(await window.dure.notes.create()); setEditing(true); } catch (e) { setError((e as Error).message); }
   };
   const back = async (): Promise<void> => {
     await flush();
@@ -88,14 +92,22 @@ export function NotesPanel({ onClose }: { onClose: () => void }) {
       <div className="notes-head">
         {note ? <button className="btn ghost" onClick={() => void back()} title="메모 목록으로">‹ 목록</button> : <div className="notes-title">메모</div>}
         <span className="spacer" />
-        {note && <span className="notes-saved">{saved ? '저장됨' : '저장하는 중…'}</span>}
+        {note && editing && <span className="notes-saved">{saved ? '저장됨' : '저장하는 중…'}</span>}
+        {note && (editing
+          ? <button className="btn ghost" onClick={() => { void flush().then(() => setEditing(false)); }} title="마크다운으로 그린 모습을 봅니다">보기</button>
+          : <button className="btn ghost" onClick={() => setEditing(true)} title="이 메모를 고칩니다">고치기</button>)}
         {note && (confirmDelete
           ? <><button className="btn danger" onClick={() => void remove()}>지우기</button><button className="btn ghost" onClick={() => setConfirmDelete(false)}>취소</button></>
           : <button className="btn ghost" onClick={() => setConfirmDelete(true)} title="이 메모를 지웁니다">지우기…</button>)}
         <button className="btn ghost" onClick={() => { void flush().then(onClose); }} title="메모를 닫습니다 (⌘⇧M)">닫기</button>
       </div>
       {error && <div className="error" style={{ margin: '0 12px 8px' }} onClick={() => setError('')}>{error}</div>}
-      {note ? (
+      {note && !editing ? (
+        <div className="notes-read">
+          <div className="notes-read-title">{noteHeading(note.title, note.body.replace(/\s+/g, ' ').trim().slice(0, 60))}</div>
+          <div className="notes-view" onDoubleClick={() => setEditing(true)} title="두 번 누르면 고칩니다"><Markdown text={note.body} /></div>
+        </div>
+      ) : note ? (
         <div className="notes-edit">
           <input type="text" className="notes-name" value={note.title} placeholder="제목 (비워도 됩니다)" onChange={(e) => edit({ title: e.target.value })} />
           <textarea className="notes-body" value={note.body} autoFocus placeholder="여기에 적으세요. 적는 대로 저장됩니다." onChange={(e) => edit({ body: e.target.value })} />

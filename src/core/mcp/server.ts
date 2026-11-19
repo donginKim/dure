@@ -24,12 +24,17 @@ import type { ProjectStore, RepoStore, WorkspaceStore } from '../stores';
 import type { TodoService } from '../todos';
 
 /** 요청을 보낸 에이전트가 속한 워크스페이스와 프로젝트. 토큰으로 정해진다. */
+/** 두레 안의 것을 읽기만 하는 도구는 감사 기록에 적지 않는다 (밖에 닿는 DB·슬랙·브라우저 도구는 읽기여도 적는다). */
+const QUIET_TOOL = /^(?!db_|slack_|browser_).*(_list|_read|_get|_overview|_status|_inbox|_search|_whoami|_describe)$|^project_overview$|^browser_(snapshot|screenshot|console)$/;
+
 export interface McpContext {
   workspace: Workspace;
   project: Project;
 }
 
 export interface McpDeps {
+  /** 에이전트가 도구를 부를 때마다 (읽기만 하는 것은 빼고) 알린다: 감사 기록 */
+  onTool?: (ctx: McpContext, tool: string, ok: boolean, why: string) => void;
   workspaces: WorkspaceStore;
   projects: ProjectStore;
   repos: RepoStore;
@@ -121,6 +126,20 @@ export async function startMcpServer(deps: McpDeps, bundles: ToolBundle[], port 
     // (완료 뒤에도 살아 있는 프로세스나, 작업 폴더에서 따로 띄운 에이전트).
     if (ctx.project.status === 'done') { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('완료된 프로젝트입니다.'); return; }
     const mcp = new McpServer({ name: 'dure', version: '0.1.0' });
+    // 도구가 불릴 때마다 감사 기록에 남긴다 (도구의 이름과 결과만. 인자와 본문은 적지 않는다).
+    if (deps.onTool) {
+      const register = mcp.registerTool.bind(mcp) as (...a: unknown[]) => unknown;
+      (mcp as unknown as { registerTool: (...a: unknown[]) => unknown }).registerTool = (name: unknown, config: unknown, handler: unknown) => {
+        if (typeof handler !== 'function' || QUIET_TOOL.test(String(name))) return register(name, config, handler);
+        return register(name, config, async (...a: unknown[]) => {
+          try {
+            const out = await (handler as (...x: unknown[]) => Promise<{ isError?: boolean; content?: { text?: string }[] }>)(...a);
+            deps.onTool!(ctx, String(name), out?.isError !== true, out?.isError === true ? String(out.content?.[0]?.text ?? '').slice(0, 200) : '');
+            return out;
+          } catch (e) { deps.onTool!(ctx, String(name), false, e instanceof Error ? e.message : String(e)); throw e; }
+        });
+      };
+    }
     for (const bundle of bundles) bundle(mcp, ctx, deps);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => { void transport.close(); void mcp.close(); });

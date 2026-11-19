@@ -1,5 +1,5 @@
 import type {
-  Make, MakeKind, AgentConfig,
+  Make, MakeKind, AgentConfig, AuditEntry, AuditFilter, AuditVerify,
   WorkDay, WorkSession, WorkStatus,
   Brief,
   PrInfo,
@@ -15,7 +15,7 @@ import type {
 } from './types';
 import type { ProjectViewPref, RoleId } from './roles';
 
-export type ChangeTopic = 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
+export type ChangeTopic = 'audit' | 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -333,6 +333,16 @@ export interface DureApi {
     /** 기록을 지운다 (id 를 비우면 전부) */
     clear(id?: string | null): Promise<void>;
   };
+  /** 감사 기록: 누가 무엇을 했고 어떻게 됐나 (본문은 담지 않는다). 줄마다 지문으로 이어져 있어 고치거나 빼면 드러난다 */
+  audit: {
+    /** 새것부터. filter.before 로 이어 읽는다 */
+    list(filter: AuditFilter): Promise<AuditEntry[]>;
+    count(filter: AuditFilter): Promise<number>;
+    /** 이어짐을 처음부터 끝까지 확인한다 */
+    verify(): Promise<AuditVerify>;
+    /** 파일로 내보낸다 (저장한 경로. 그만두면 null). JSONL 은 받는 쪽이 이어짐을 다시 확인할 수 있다 */
+    export(format: 'jsonl' | 'csv', filter: AuditFilter): Promise<string | null>;
+  };
   /** 만들기: 프로젝트의 자료로 보고서·발표 자료·눌러 보는 그림을 만든다 (누를 때 한 번만 모델을 부른다) */
   makes: {
     kinds(projectId: string): Promise<MakeKind[]>;
@@ -474,7 +484,7 @@ export interface DureApi {
 
 /** 요청 채널. 이름은 '<묶음>.<메서드>' 이고 메인과 preload 가 이 목록 하나를 같이 쓴다. */
 export const IPC_CHANNELS = [
-  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.view', 'projects.setView', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'makes.kinds', 'makes.list', 'makes.create', 'makes.remove', 'makes.open', 'makes.save', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.market', 'plugins.installFrom', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
+  'projects.list', 'projects.setAutoShip', 'projects.shipLog', 'projects.budget', 'projects.view', 'projects.setView', 'projects.dashboard', 'projects.paddy', 'projects.usageBar', 'projects.digest', 'audit.list', 'audit.count', 'audit.verify', 'audit.export', 'makes.kinds', 'makes.list', 'makes.create', 'makes.remove', 'makes.open', 'makes.save', 'plugins.list', 'plugins.installFolder', 'plugins.installGit', 'plugins.update', 'plugins.approve', 'plugins.remove', 'plugins.enabled', 'plugins.setEnabled', 'plugins.scheduleTemplates', 'plugins.news', 'plugins.openLink', 'plugins.market', 'plugins.installFrom', 'away.list', 'away.clear', 'memory.list', 'memory.add', 'memory.remove', 'captures.list', 'captures.add', 'captures.remove', 'captures.toTodo', 'schedules.list', 'schedules.save', 'schedules.remove', 'schedules.setEnabled', 'schedules.runNow', 'projects.setBudget', 'projects.allowToday', 'projects.create', 'projects.remove', 'projects.reopen',
   'coordinator.get', 'coordinator.approve', 'coordinator.reject', 'coordinator.revise', 'coordinator.pickSpec',
   'worktime.status', 'worktime.month', 'worktime.clockIn', 'worktime.clockOut', 'worktime.rememberCurrent', 'worktime.forgetNetworks', 'worktime.removeSession', 'worktime.editSession', 'worktime.addSession', 'worktime.setBreak',
   'pr.info', 'pr.create', 'pr.open',

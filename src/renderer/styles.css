@@ -1416,3 +1416,27 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .chat-foot > .chat-col > .permit { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-foot > .chat-col > .permit > * { flex: none; }
 .chat-foot > .chat-col > .permit > .permit-actions { position: sticky; bottom: -12px; margin: 0 -14px -12px; padding: 10px 14px 12px; background: var(--panel); border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; z-index: 1; }
+
+/* 감사 기록 */
+.audit-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.audit-actions .btn { white-space: nowrap; }
+.audit-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 12px; font-size: 12.5px; color: var(--muted); }
+.audit-filters label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.audit-filters select { font-size: 12.5px; max-width: 180px; }
+.audit-filters .grow { flex: 1; }
+.audit-table { border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; background: var(--panel); }
+.audit-row { display: grid; grid-template-columns: 128px minmax(120px, 0.9fr) minmax(150px, 1.2fr) minmax(140px, 1.2fr) 82px minmax(180px, 2fr); gap: 10px; align-items: baseline; padding: 7px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; min-width: 860px; }
+.audit-row:last-child { border-bottom: 0; }
+.audit-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-head { color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; background: var(--panel-2); position: sticky; top: 0; }
+.audit-time { font-variant-numeric: tabular-nums; color: var(--muted); }
+.audit-who, .audit-target, .audit-why { color: var(--muted); }
+.audit-row.failed .audit-what, .audit-row.denied .audit-what { color: var(--text); }
+.tag.audit-agent { color: var(--accent); border-color: var(--accent); }
+.tag.audit-peer { color: var(--info, #7aa7e0); }
+.tag.audit-out-ok { color: var(--ok, #6fbf73); }
+.tag.audit-out-denied { color: var(--warn); border-color: var(--warn-line, var(--warn)); }
+.tag.audit-out-failed { color: var(--danger, #e06c6c); border-color: var(--danger, #e06c6c); }
+.notice.audit-bad { border-color: var(--danger, #e06c6c); }
+.audit-path { overflow-wrap: anywhere; }
+.audit-more { margin-top: 10px; }

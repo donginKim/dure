@@ -55,6 +55,7 @@ export function CommandPalette({ tree, onSelect, onClose, onNewProject, onToggle
     act('people', '사람', 'people peers 연결', go({ type: 'people' }));
     act('worktime', '근무시간', 'worktime', go({ type: 'worktime' }));
     act('settings', '설정', 'settings preferences', go({ type: 'settings' }), '⌘,');
+    act('audit', '감사 기록', 'audit log 감사 로그 기록', go({ type: 'audit' }));
     act('market', '플러그인 마켓', 'plugin market store 플러그인 설치', go({ type: 'market' }));
     act('home', '프로젝트 전체 보기', 'home dashboard 대시보드', go(null));
     return out;

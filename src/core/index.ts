@@ -10,6 +10,7 @@ import { ReviewService, type ReviewRunner } from './review';
 import { MakeService, type MakeRunner } from './makes';
 import { readAgentConfig } from './agentConfig';
 import { riskyChoice } from './away';
+import { AuditLog } from './audit';
 import { cleanViewPref, type ProjectViewPref } from '@shared/roles';
 import { MergeService } from './merge';
 import { AutoShipService } from './autoship';
@@ -135,6 +136,8 @@ export interface Core {
   plugins: PluginService;
   /** 만들기: 프로젝트의 자료로 보고서·발표 자료·그림을 만든다 */
   makes: MakeService;
+  /** 감사 기록 */
+  audit: AuditLog;
   /** 소식 화면: 승인한 플러그인의 소식판을 읽어 온다 (force 면 받아 둔 것을 쓰지 않는다) */
   news(force?: boolean): Promise<NewsPanel[]>;
   /** 소식 화면에 보인 적이 있는 링크인가 (그런 것만 바깥 브라우저로 연다) */
@@ -224,6 +227,10 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   const todos = new TodoService(db);
   const settings = new SettingsService(db);
+  // 감사 기록: 누가 무엇을 했고 어떻게 됐나. 사용자의 동작은 IPC 에서, 에이전트의 동작은 MCP 도구에서, 두레가 스스로 한 일은 아래 곳곳에서 적는다.
+  const audit = new AuditLog({ db, keepDays: () => settings.get().auditKeepDays });
+  audit.prune();
+  const wsName = (id: string): string => { const w = workspaces.get(id); return w ? (w.role === 'coordinator' ? '조율 에이전트' : w.name) : ''; };
   const messages = new MessageService(db);
   const git = createGit(o.baseEnv);
   const notes = new NoteStore(db);
@@ -264,6 +271,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const chat = new ChatService({ workspaces, // Claude Code 는 CLAUDE_CONFIG_DIR 가 있으면 그 폴더에 대화 기록을 둔다. 에이전트가 물려받는 환경과 같은 값을 쓴다.
     allowedRoot: o.claudeDir ?? [o.baseEnv.CLAUDE_CONFIG_DIR ?? '', join(homedir(), '.claude')], onInterrupted: (id) => service.noteInterrupted(id), onUsage: (id, u) => { usage.record(id, u); const w = workspaces.get(id); if (w) budget.check(w.projectId); } });
   const mcp = await startMcpServer({
+    onTool: (ctx, tool, ok, why) => audit.record({ actor: 'agent', actorName: ctx.workspace.role === 'coordinator' ? '조율 에이전트' : ctx.workspace.name, action: `tool.${tool}`, projectId: ctx.project.id, workspaceId: ctx.workspace.id, outcome: ok ? 'ok' : 'failed', reason: ok ? '' : why }),
     workspaces, projects, repos, todos, messages, commitDrafts, cleanup, git,
     // 조율 서비스는 워크스페이스 서비스가 만들어진 뒤에 생긴다. 요청을 처리할 때 읽으므로 그때는 이미 있다.
     get coordinator() { return coordinator; },
@@ -319,6 +327,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools, memoryTools]);
   const service = new WorkspaceService({
+    onAgentStart: (w, info) => audit.record({ actor: 'system', action: 'agent.launch', projectId: w.projectId, workspaceId: w.id, target: w.role === 'coordinator' ? '조율 에이전트' : w.name, detail: info }),
     agentConfigTrusted: (repoId, hash) => db.prepare('SELECT 1 FROM agent_config_trust WHERE repo_id = ? AND hash = ?').get(repoId, hash) !== undefined,
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
   });
@@ -422,7 +431,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     materials: makeMaterials,
     pluginKinds: (id) => plugins.makers(id),
     blocked: (id) => budget.blocked(id),
-    onUsage: (projectId, u) => { usage.recordProject(projectId, '만들기', { messageId: `make:${crypto.randomUUID()}`, model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead, at: Date.now() }); budget.check(projectId); },
+    onUsage: (projectId, u) => { audit.record({ actor: 'system', action: 'model.call', projectId, target: '만들기', detail: { model: u.model, input: u.input, output: u.output } }); usage.recordProject(projectId, '만들기', { messageId: `make:${crypto.randomUUID()}`, model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead, at: Date.now() }); budget.check(projectId); },
   });
   service.attachPlugins({ instructions: (projectId) => { try { return plugins.instructionsFor(projectId); } catch { return ''; } }, mcp: (projectId) => { try { return plugins.mcpFor(projectId); } catch { return {}; } } });
   service.attachChat(chat);
@@ -488,15 +497,16 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   const paddy = new PaddyService(db);
   const commit = new CommitService({
-    onCommitted: (projectId, workspaceId, hash) => {
+    onCommitted: (projectId, workspaceId, hash, auto) => {
       // 두레가 만든 커밋을 적어 둔다 (자동 반영이 "검사를 거친 커밋" 과 에이전트가 직접 한 커밋을 가린다).
       if (/^[0-9a-f]{7,40}$/.test(hash)) db.prepare('INSERT OR IGNORE INTO dure_commits (hash, workspace_id, at) VALUES (?, ?, ?)').run(hash, workspaceId, Date.now());
+      if (auto) audit.record({ actor: 'system', action: 'commit.create', projectId, workspaceId, target: wsName(workspaceId), reason: '자동 반영 (확인 명령 통과, 리뷰에 높음 없음)', detail: { hash: hash.slice(0, 12) } });
       paddy.note('commit', projectId, workspaceId);
     }, workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
   // 리뷰 에이전트: 커밋 초안이 올라오면 다른 에이전트가 변경을 읽고 문제를 찾는다.
   const review = new ReviewService({
     db, workspaces, git, env: o.baseEnv, runner: o.reviewRunner,
-    onUsage: (id, u) => { usage.record(id, { messageId: `review:${crypto.randomUUID()}`, model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead, at: Date.now() }); const w = workspaces.get(id); if (w) budget.check(w.projectId); },
+    onUsage: (id, u) => { audit.record({ actor: 'system', action: 'model.call', projectId: workspaces.get(id)?.projectId, workspaceId: id, target: '리뷰', detail: { model: u.model, input: u.input, output: u.output } }); usage.record(id, { messageId: `review:${crypto.randomUUID()}`, model: u.model, input: u.input, output: u.output, cacheWrite: u.cacheWrite, cacheRead: u.cacheRead, at: Date.now() }); const w = workspaces.get(id); if (w) budget.check(w.projectId); },
     blocked: (projectId) => budget.blocked(projectId),
     changes: async (id) => {
       const st = await commit.state(id);
@@ -525,7 +535,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     }
   });
   // 자동 반영: 확인 명령, 리뷰, 비밀 값을 거쳐 커밋하고, 설정이면 기준 브랜치까지 옮긴다.
-  const autoShip = new AutoShipService({ db, knownCommit: (hash) => db.prepare("SELECT 1 FROM dure_commits WHERE ? LIKE hash || '%'").get(hash) !== undefined, projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
+  const autoShip = new AutoShipService({ db, onNote: (projectId, workspaceId, stage, ok, message) => audit.record({ actor: 'system', action: ok ? (stage === 'done' ? 'autoship.merge' : `autoship.${stage}`) : 'autoship.stop', projectId, workspaceId, target: wsName(workspaceId), outcome: ok ? 'ok' : 'denied', reason: message, detail: { stage } }), knownCommit: (hash) => db.prepare("SELECT 1 FROM dure_commits WHERE ? LIKE hash || '%'").get(hash) !== undefined, projects, repos, workspaces, drafts: commitDrafts, messages, commit, verify, review, merges, git, isProjectClosed: (id) => service.isProjectClosed(id) });
   autoShip.on('changed', () => attention.poke());
   const activity = new ActivityService({ workspaces, messages, todos, git, chat, verify, review, autoShip, figures });
   budget.on('changed', () => attention.poke());
@@ -583,7 +593,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     workspace: (id) => workspaces.get(id),
     isProjectClosed: (id) => service.isProjectClosed(id),
     blocked: (id) => budget.blocked(id),
-    send: (projectId, workspaceId, body, title) => { messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }); },
+    send: (projectId, workspaceId, body, title) => { messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }); audit.record({ actor: 'system', action: 'schedule.run', projectId, workspaceId, target: title ?? '', detail: { to: wsName(workspaceId) } }); },
   });
   if (o.networkProbe !== null) schedules.start();
   const captures = new CaptureStore({ db, addTodo: (projectId, workspaceId, title, detail) => { todos.add({ projectId, workspaceId, title, detail }, 'user'); } });
@@ -604,6 +614,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
           : '사용자가 자리를 비웠다. 가장 안전하다고 보는 쪽으로 스스로 정해 진행하라. 되돌리기 어려운 일이면 하지 말고 다음 일로 넘어가라.';
     }
     service.answerQuestion(workspaceId, q.requestId, answers);
+    for (const one of q.questions) { const held = answers[one.question] !== one.options[0]?.label; audit.record({ actor: 'system', action: 'away.auto_answer', projectId: ws.projectId, workspaceId: ws.id, target: wsName(ws.id), outcome: held ? 'denied' : 'ok', reason: held ? '되돌리기 어려운 일로 보여 대신 고르지 않음' : '자리 비움: 첫째 선택지', detail: { options: one.options.length } }); }
     const add = db.prepare('INSERT INTO away_log (id, project_id, workspace_id, workspace_name, question, answer, at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const one of q.questions) add.run(crypto.randomUUID(), ws.projectId, ws.id, ws.role === 'coordinator' ? '조율 에이전트' : ws.name, one.question.slice(0, 500), (answers[one.question] ?? '').slice(0, 500), Date.now());
     db.prepare('DELETE FROM away_log WHERE id NOT IN (SELECT id FROM away_log ORDER BY at DESC LIMIT 300)').run();
@@ -615,7 +626,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const newsLinks = new Set<string>();
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, audit, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async news(force = false) {
       const panels = plugins.panels();
       const out: NewsPanel[] = [];

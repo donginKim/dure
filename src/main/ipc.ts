@@ -8,8 +8,10 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openMake } from './makeViewer';
 import { isAppUrl } from './appUrl';
+import { auditOf } from './auditIpc';
+import { hostname, userInfo } from 'node:os';
 import { safeHtml } from '@core/makes';
-import type { ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem } from '@shared/types';
+import type { ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem, AuditFilter } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -28,6 +30,20 @@ function tagged(e: unknown): Error {
 function fromApp(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
   const f = e.senderFrame;
   return !!f && f === e.sender.mainFrame && isAppUrl(f.url);
+}
+
+/** 기록이 몰려 와도 화면에는 1초에 한 번만 알린다. */
+function throttledAudit(fn: () => void): () => void {
+  let timer: NodeJS.Timeout | undefined;
+  return () => { if (timer) return; timer = setTimeout(() => { timer = undefined; fn(); }, 1000); timer.unref?.(); };
+}
+
+/** 화면이 넘긴 거르기 조건에서 아는 것만 받는다. */
+function cleanFilter(f: unknown): AuditFilter {
+  const x = typeof f === 'object' && f !== null ? f as Record<string, unknown> : {};
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v.slice(0, 80) : undefined);
+  return { actor: str(x.actor) as AuditFilter['actor'], outcome: str(x.outcome) as AuditFilter['outcome'], projectId: str(x.projectId), action: str(x.action), since: num(x.since), until: num(x.until), before: num(x.before), limit: num(x.limit) };
 }
 
 /** 마켓의 모음들: 설정의 기본 모음과 사용자가 더한 것 */
@@ -75,6 +91,23 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'projects.dashboard': () => core.dashboard(),
     'projects.paddy': (projectId: string | null) => core.paddy.days(typeof projectId === 'string' && projectId ? projectId : null),
     'projects.usageBar': () => core.usageBar(),
+    'audit.list': (filter: AuditFilter) => core.audit.list(cleanFilter(filter)),
+    'audit.count': (filter: AuditFilter) => core.audit.count(cleanFilter(filter)),
+    'audit.verify': () => core.audit.verify(),
+    'audit.export': async (format: string, filter: AuditFilter) => {
+      const fmt = format === 'csv' ? 'csv' : 'jsonl';
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const day = new Date().toISOString().slice(0, 10);
+      const res = await dialog.showSaveDialog(win!, { title: '감사 기록 내보내기', defaultPath: join(app.getPath('documents'), `dure-audit-${day}.${fmt}`), filters: [{ name: fmt.toUpperCase(), extensions: [fmt] }] });
+      if (res.canceled || !res.filePath) return null;
+      const f = cleanFilter(filter);
+      let user = ''; try { user = userInfo().username; } catch { /* 모르면 비운다 */ }
+      const text = core.audit.export(fmt, f, { host: hostname(), user, app: app.getVersion() });
+      await writeFile(res.filePath, text, 'utf8');
+      // 내보낸 것도 기록한다 (무엇을 언제 밖으로 꺼냈나)
+      core.audit.record({ actor: 'user', action: 'audit.export', target: fmt, detail: { rows: core.audit.count(f) } });
+      return res.filePath;
+    },
     'makes.kinds': (projectId: string) => core.makes.kinds(String(projectId)),
     'makes.list': (projectId: string) => core.makes.list(String(projectId)),
     'makes.create': (projectId: string, kind: string, direction: string, extra: string) => core.makes.create(String(projectId), String(kind), direction, extra),
@@ -402,8 +435,12 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       ipcMain.handle(ipcName(channel), async (e, ...args) => {
         if (!fromApp(e)) throw new Error('두레의 화면에서 온 요청이 아닙니다.');
         try {
-          return await handler(...args);
+          const out = await handler(...args);
+          // 사용자가 화면에서 한 일을 감사 기록에 남긴다 (적는 채널만).
+          const a = auditOf(core, channel, args); if (a) core.audit.record(a);
+          return out;
         } catch (e) {
+          const a = auditOf(core, channel, args, e); if (a) core.audit.record(a);
           throw tagged(e);
         }
       });
@@ -508,6 +545,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.schedules.on('changed', onSchedulesChanged);
   const onCapturesChanged = (): void => changed('captures');
   core.captures.on('changed', onCapturesChanged);
+  const onAuditChanged = throttledAudit(() => changed('audit'));
+  core.audit.on('changed', onAuditChanged);
   const onMakesChanged = (): void => changed('makes');
   core.makes.on('changed', onMakesChanged);
   const onMemoryChanged = (): void => changed('memory');
@@ -551,6 +590,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.captures.off('changed', onCapturesChanged);
     core.memory.off('changed', onMemoryChanged);
     core.makes.off('changed', onMakesChanged);
+    core.audit.off('changed', onAuditChanged);
     core.plugins.off('changed', onPluginsChanged);
     clearTimeout(noteTimer);
     core.browser.off('changed', onBrowserChanged);

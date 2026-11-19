@@ -66,7 +66,7 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
 }
 
 /** 두레의 설정 화면. 바꾸면 바로 저장된다. */
-export function SettingsView({ onOpenMarket }: { onOpenMarket?: () => void }) {
+export function SettingsView({ onOpenMarket, onOpenAudit }: { onOpenMarket?: () => void; onOpenAudit?: () => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [defaults, setDefaults] = useState<Settings | null>(null);
   const [models, setModels] = useState<ModelChoice[]>([]);
@@ -112,7 +112,7 @@ export function SettingsView({ onOpenMarket }: { onOpenMarket?: () => void }) {
   const row = (key: Key): { changed: boolean; error?: string; onReset: () => void } => ({
     changed: s[key] !== defaults[key], error: errors[key], onReset: () => save(key, defaults[key]),
   });
-  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize' | 'peerPort' | 'workGraceMin' | 'workDayHours' | 'verifyTimeoutSec') => (v: string): void => {
+  const number = (key: 'threadCap' | 'projectCap' | 'terminalFontSize' | 'chatFontSize' | 'peerPort' | 'workGraceMin' | 'workDayHours' | 'verifyTimeoutSec' | 'auditKeepDays') => (v: string): void => {
     const n = Number(v.trim());
     if (!v.trim() || Number.isNaN(n)) { setErrors((e) => ({ ...e, [key]: '숫자를 쓰세요.' })); return; }
     save(key, n);
@@ -189,6 +189,15 @@ export function SettingsView({ onOpenMarket }: { onOpenMarket?: () => void }) {
           </Row>
           <Row label="에이전트에게 허용할 바깥 주소" help="호스트 이름을 쉼표나 공백으로 나눠 적습니다 (예: staging.example.com). 하위 도메인도 함께 허용됩니다. 로그인된 사이트를 적으면 에이전트가 그 내용을 볼 수 있으니 필요한 것만 적으세요." {...row('agentBrowserHosts')}>
             <TextInput wide value={s.agentBrowserHosts} placeholder="비워 두면 로컬 주소만" onCommit={(v) => save('agentBrowserHosts', v)} />
+          </Row>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head"><h2>감사 기록</h2>{onOpenAudit && <button className="btn" onClick={onOpenAudit}>기록 열기</button>}</div>
+        <div className="set-box">
+          <Row label="보관 기간" help="누가 무엇을 했고 어떻게 됐는지 적은 기록을 이만큼 둡니다. 지난 것은 두레를 켤 때 지웁니다. 0 이면 지우지 않습니다. 본문(프롬프트, 메시지, 조회 결과, 비밀 값)은 처음부터 적지 않습니다." {...row('auditKeepDays')}>
+            <TextInput numeric value={String(s.auditKeepDays)} onCommit={number('auditKeepDays')} /><span className="set-unit">일</span>
           </Row>
         </div>
       </div>

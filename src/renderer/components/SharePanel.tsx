@@ -23,7 +23,11 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const ids = workspaces.map((w) => w.id).join(',');
+  // 공개 범위를 정할 수 있는 것: 조율 에이전트(있으면 맨 앞)와 일하는 워크스페이스.
+  // 조율 에이전트를 공개해야 그 에이전트가 다른 사람의 에이전트에게 메시지와 자료(기획서 등)를 보낼 수 있다.
+  const coordinator = everyone.find((w) => w.role === 'coordinator' && w.projectId === project.id);
+  const shareable = coordinator ? [coordinator, ...workspaces.filter((w) => w.id !== coordinator.id)] : workspaces;
+  const ids = shareable.map((w) => w.id).join(',');
   const load = useCallback(() => {
     void Promise.all([window.dure.peers.share(project.id), window.dure.peers.list(), window.dure.peers.invites(), window.dure.peers.remote(project.id)])
       .then(([s, p, i, r]) => { setShare(s); setPeers(p); setInvites(i); setRemote(r); }).catch((e: Error) => setError(clean(e)));
@@ -146,13 +150,14 @@ export function SharePanel({ project, workspaces, everyone, readOnly, onOpenPeop
       <div className="section">
         <div className="section-head"><h2>내 워크스페이스의 공개 범위 <span className="plan-hint">공개한 워크스페이스만 상대에게 이름이 보이고 메시지를 주고받습니다</span></h2></div>
         <div className="rows">
-          {workspaces.length === 0 && <div className="rows-empty">워크스페이스가 없습니다.</div>}
-          {workspaces.map((w) => {
+          {shareable.length === 0 && <div className="rows-empty">워크스페이스가 없습니다.</div>}
+          {shareable.map((w) => {
             const s = sharing[w.id] ?? { workspaceId: w.id, audience: 'none' as SharingAudience, peers: [] };
             return (
               <div key={w.id} className="row share-row">
                 <div className="grow">
-                  <div>{w.name}</div>
+                  <div>{w.role === 'coordinator' ? '조율 에이전트' : w.name}</div>
+                  {w.role === 'coordinator' && <div className="muted share-note">공개하면 그 사람의 에이전트와 메시지와 자료(기획서 등)를 주고받습니다. 일을 나눠 준 사람에게는 저절로 공개됩니다.</div>}
                   {s.audience === 'selected' && (
                     <div className="share-pick">
                       {others.length === 0 && <span className="muted">아직 참여한 사람이 없습니다.</span>}

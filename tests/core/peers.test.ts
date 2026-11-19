@@ -362,6 +362,23 @@ describe('에이전트끼리의 메시지', () => {
     expect(await call(a.core, a.ws.id, 'message_send', { to: '없는것@나', body: 'x' })).toContain('라는 다른 사람의 워크스페이스가 없다');
   });
 
+  test('조율 에이전트도 공개 범위를 정할 수 있고, 막혔을 때는 어디서 푸는지 알려 준다', async () => {
+    const { a, b } = await shared();
+    const coordinator = a.core.coordinator.ensure(a.projectId);
+    const bId = b.core.peers.status().id;
+    // 공개하지 않은 조율 에이전트는 다른 사람의 에이전트에게 보낼 수 없다: 사용자가 어디서 공개하는지 알려 준다
+    expect(a.core.peers.visibleTo(coordinator.id, bId)).toBe(false);
+    const blocked = await call(a.core, coordinator.id, 'message_send', { to: '나-화면@나', body: '기획서 정리를 보낸다' });
+    expect(blocked).toContain('공개돼 있지 않아');
+    expect(blocked).toContain('함께 탭');
+    // 다른 워크스페이스처럼 공개하면 보낼 수 있고, 다시 닫을 수 있다
+    a.core.peers.setSharing(coordinator.id, 'all');
+    expect(a.core.peers.visibleTo(coordinator.id, bId)).toBe(true);
+    expect(await call(a.core, coordinator.id, 'message_send', { to: '나-화면@나', body: '기획서 정리를 보낸다' })).not.toContain('공개돼 있지 않아');
+    a.core.peers.setSharing(coordinator.id, 'none');
+    expect(a.core.peers.visibleTo(coordinator.id, bId)).toBe(false);
+  });
+
   test('상대가 꺼져 있으면 보낸 것으로 남지 않고 이유를 알려 준다', async () => {
     const { a, b } = await shared();
     b.core.settings.update({ peersEnabled: false }); await b.core.peers.apply();

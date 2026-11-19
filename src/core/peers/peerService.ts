@@ -1015,15 +1015,15 @@ export class PeerService extends EventEmitter {
     }
     // 그 사람이 이 스레드에서 나에게 먼저 보내왔으면 (사용자가 넘겨준 것이다) 공개하지 않은 워크스페이스에서도 답할 수 있다.
     const replying = earlier.some((m) => m.from.kind === 'workspace' && m.toWorkspaceId === ws.id && parseRemoteRef(m.from.workspaceId)?.peerId === target.peerId);
-    if (!person && !replying && !this.visibleTo(ws.id, target.peerId)) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 그 사람의 에이전트에게 메시지를 보낼 수 없다. 필요하면 사용자에게 두레에서 이 워크스페이스를 공개해 달라고 하라. 그 사람에게 직접 묻는 것은 "@${target.peerName}" 으로 할 수 있다.`);
+    if (!person && !replying && !this.visibleTo(ws.id, target.peerId)) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 그 사람의 에이전트에게 메시지를 보낼 수 없다. 필요하면 사용자에게 프로젝트의 함께 탭에서 이 워크스페이스를 공개해 달라고 하라. 그 사람에게 직접 묻는 것은 "@${target.peerName}" 으로 할 수 있다.`);
     const body = String(i.body ?? '').trim();
     if (!body) throw new Error('메시지 내용을 입력하세요.');
     if (body.length > MAX_BODY) throw new Error(`메시지가 너무 깁니다 (최대 ${MAX_BODY}자).`);
     const ids = (i.artifactIds ?? []).slice(0, MAX_ARTIFACTS);
     // 공개하지 않은 워크스페이스에서 사람에게 묻는 것은 짧은 글만이다: 사용자가 내보내기로 정하지 않은 내용이 뭉텅이로 나가지 않게 한다.
     if (person && !replying && !this.visibleTo(ws.id, target.peerId)) {
-      if (ids.length) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 자료를 붙여 보낼 수 없다. 자료 없이 짧게 묻거나, 사용자에게 두레에서 이 워크스페이스를 공개해 달라고 하라.`);
-      if (body.length > MAX_ASK_BODY) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 ${MAX_ASK_BODY}자까지만 물을 수 있다. 줄여서 묻거나, 사용자에게 두레에서 이 워크스페이스를 공개해 달라고 하라.`);
+      if (ids.length) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 자료를 붙여 보낼 수 없다. 자료 없이 짧게 묻거나, 사용자에게 프로젝트의 함께 탭에서 이 워크스페이스를 공개해 달라고 하라.`);
+      if (body.length > MAX_ASK_BODY) throw new Error(`이 워크스페이스는 ${target.peerName} 에게 공개돼 있지 않아 ${MAX_ASK_BODY}자까지만 물을 수 있다. 줄여서 묻거나, 사용자에게 프로젝트의 함께 탭에서 이 워크스페이스를 공개해 달라고 하라.`);
       const unanswered = this.d.messages.threads(ws.projectId).filter((t) => {
         const ms = this.d.messages.messages(t.id);
         const last = ms.map((m) => m.from.kind === 'workspace' && m.from.workspaceId === ws.id && m.toWorkspaceId === target.ref).lastIndexOf(true);

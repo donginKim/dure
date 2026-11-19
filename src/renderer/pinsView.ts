@@ -12,12 +12,20 @@ export function peerTitle(e: PeerEntry, workspaces: Workspace[]): string {
 }
 
 /**
+ * 핀이 글을 가리키는 id. 두레가 전달한 글은 짝이 되는 메시지를 찾으면 카드로 바뀌어 그려지는데 (id 가 달라진다),
+ * 찾기 전후로 같은 글을 가리키도록 원래 대화 항목의 id 를 쓴다.
+ */
+export function pinKey(entry: Entry): string {
+  return (entry.kind === 'peer' && entry.anchorId) || entry.id;
+}
+
+/**
  * 이 글에 핀을 꽂을 때 담을 것. 꽂을 수 없는 글이면 null.
  * 접힌 작업 줄(steps)과 안내 줄(notice)은 다시 볼 내용이 아니라서 꽂지 않는다.
  */
 export function pinInput(entry: Entry, workspaceId: string, workspaces: Workspace[]): PinInput | null {
   const make = (kind: PinInput['kind'], source: string, body: string): PinInput | null =>
-    (body.trim() ? { workspaceId, itemId: entry.id, kind, source, body } : null);
+    (body.trim() ? { workspaceId, itemId: pinKey(entry), kind, source, body } : null);
   switch (entry.kind) {
     case 'user': return make('user', '나', entry.text);
     case 'assistant': return make('assistant', '에이전트', entry.text);
@@ -35,5 +43,5 @@ export function pinSourceLabel(pin: Pin): string {
 
 /** 그 핀의 글이 지금 화면에 있는가. 없으면 null (지난 대화이거나 앞쪽이 줄어든 것). */
 export function findEntry(entries: Entry[], pin: Pin): Entry | null {
-  return entries.find((e) => e.id === pin.itemId) ?? null;
+  return entries.find((e) => pinKey(e) === pin.itemId) ?? null;
 }

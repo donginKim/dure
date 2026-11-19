@@ -1,6 +1,6 @@
 import type { Message, Pin, Workspace } from '@shared/types';
 import type { Entry } from '../../src/renderer/chatView';
-import { findEntry, pinInput, pinSourceLabel } from '../../src/renderer/pinsView';
+import { findEntry, pinInput, pinKey, pinSourceLabel } from '../../src/renderer/pinsView';
 
 const workspaces = [{ id: 'w1', name: '화면' }, { id: 'w2', name: '서버' }] as Workspace[];
 const message = (over: Partial<Message>): Message => ({ id: 'm1', threadId: 't', projectId: 'p', from: { kind: 'workspace', workspaceId: 'w2' } as Message['from'], toWorkspaceId: 'w1', body: 'API 형식이다', artifactIds: [], createdAt: 1, deliveredAt: 2, failed: false, ...over });
@@ -18,6 +18,17 @@ test('주고받은 메시지는 누가 보냈는지를 함께 담는다', () => 
   expect(pinInput(received, 'w1', workspaces)).toEqual({ workspaceId: 'w1', itemId: 'p1', kind: 'peer', source: '서버가 보냄', body: 'API 형식이다' });
   const sent: Entry = { kind: 'peer', id: 'p2', at: 1, direction: 'sent', pending: false, message: message({ toWorkspaceId: 'w2' }) };
   expect(pinInput(sent, 'w1', workspaces)?.source).toBe('서버에게 보냄');
+});
+
+test('두레가 전달한 글이 메시지 카드로 바뀌어도 같은 글을 가리킨다', () => {
+  const item: Entry = { kind: 'dure', id: 'uuid-1', at: 1, title: '서버가 보냄 (스레드 abcd1234)', text: '> API 형식이다' };
+  const card: Entry = { kind: 'peer', id: 'peer:m1', at: 1, direction: 'received', pending: false, message: message({}), anchorId: 'uuid-1' };
+  expect(pinKey(item)).toBe('uuid-1');
+  expect(pinKey(card)).toBe('uuid-1');
+  expect(pinInput(card, 'w1', workspaces)?.itemId).toBe('uuid-1');
+  const pin = { id: 'x', workspaceId: 'w1', itemId: 'uuid-1', kind: 'dure', source: '', title: '', body: '', createdAt: 1 } as Pin;
+  expect(findEntry([card], pin)).toBe(card);
+  expect(findEntry([item], pin)).toBe(item);
 });
 
 test('접힌 작업 줄, 안내 줄, 빈 글에는 꽂을 수 없다', () => {

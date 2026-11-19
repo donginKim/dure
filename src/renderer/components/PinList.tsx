@@ -18,7 +18,15 @@ export function PinList({ pins, entries, onJump, onClose }: { pins: Pin[]; entri
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return;
+      // 입력칸이나 다른 대화상자에서 누른 Esc 는 그쪽의 것이다 (슬래시 목록 닫기, 대화상자 닫기).
+      const t = e.target as HTMLElement | null;
+      const inside = !!(t && box.current?.contains(t));
+      if (!inside && t?.closest?.('textarea, input, select, [role="dialog"]')) return;
+      e.stopPropagation();
+      onClose();
+    };
     const onDown = (e: MouseEvent): void => {
       const t = e.target as HTMLElement | null;
       if (box.current && t && !box.current.contains(t) && !t.closest('.pin-toggle')) onClose();

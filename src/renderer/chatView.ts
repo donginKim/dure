@@ -148,6 +148,8 @@ export type PeerEntry = {
   kind: 'peer'; id: string; at: number; direction: 'sent' | 'received'; message: Message;
   /** 아직 받는 쪽에 전달되지 않았다 */
   pending: boolean;
+  /** 이 카드가 대신 놓인 대화 항목(두레가 전달한 글)의 id. 짝을 찾기 전후로 같은 글을 가리키는 데 쓴다 (핀) */
+  anchorId?: string;
 };
 export type Entry = ChatItem | PeerEntry;
 
@@ -176,7 +178,7 @@ export function mergeEntries(items: ChatItem[], messages: Message[], workspaceId
     const hit = candidates.find((m) => m.body.trim() === body.trim()) ?? candidates.find((m) => m.deliveredAt !== null);
     if (!hit) return item;
     placed.add(hit.id);
-    return peer(hit, 'received', item.at);
+    return { ...peer(hit, 'received', item.at), anchorId: item.id };
   });
 
   const start = items[0]?.at ?? Infinity;

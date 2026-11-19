@@ -7,7 +7,7 @@ import { clock, deliveryNote, workspaceName } from '../conversationView';
 import { Attachment, type ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
 import { PinList } from './PinList';
-import { peerTitle, pinInput } from '../pinsView';
+import { peerTitle, pinInput, pinKey } from '../pinsView';
 import { TerminalPane } from './TerminalPane';
 
 const MAX_SHOWN = 20_000;
@@ -131,7 +131,7 @@ const EntryRow = memo(function EntryRow({ entry, workspaceId, workspaces, conver
 }) {
   const input = pinInput(entry, workspaceId, workspaces);
   return (
-    <div className={`entry${pinId ? ' pinned' : ''}${flash ? ' pin-flash' : ''}${entry.kind === 'user' ? ' mine' : ''}`} data-entry-id={entry.id}>
+    <div className={`entry${pinId ? ' pinned' : ''}${flash ? ' pin-flash' : ''}${entry.kind === 'user' ? ' mine' : ''}`} data-entry-id={pinKey(entry)}>
       <EntryView entry={entry} workspaceId={workspaceId} workspaces={workspaces} conversation={conversation} />
       {input && (
         <button className="pin-btn" aria-pressed={!!pinId} title={pinId ? '핀 빼기' : '핀 꽂기: 핀 목록에서 이 글로 바로 올 수 있습니다'} onClick={() => onToggle(input, pinId)}>
@@ -250,7 +250,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   useEffect(() => {
     let alive = true;
     const loadPins = (): void => { window.dure.pins.list(workspace.id).then((list) => { if (alive) setPins(list); }).catch(() => undefined); };
-    setPins([]); setPinsOpen(false);
+    setPins([]); setPinsOpen(false); setFlashId(null);
     loadPins();
     const off = window.dure.onChanged((topic) => { if (topic === 'pins') loadPins(); });
     return () => { alive = false; off(); };
@@ -268,8 +268,13 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     setPinsOpen(false);
     stick.current = false;
     el.scrollIntoView({ block: 'center' });
-    setFlashId(itemId);
+    // 위를 읽는 중이 됐다: "새 내용 ↓" 단추로 맨 아래에 돌아갈 수 있게 한다 (맨 아래가 보이면 onScroll 이 다시 끈다).
+    setBehind(true);
+    // 같은 글로 연달아 가도 강조가 다시 돌게, 한 번 비웠다가 건다.
+    setFlashId(null);
+    requestAnimationFrame(() => setFlashId(itemId));
   }, []);
+  const closePins = useCallback(() => setPinsOpen(false), []);
   useEffect(() => {
     if (!flashId) return;
     const t = setTimeout(() => setFlashId(null), 1600);
@@ -593,7 +598,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
       <button className={`pin-toggle${pins.length ? '' : ' none'}${pinsOpen ? ' on' : ''}`} aria-expanded={pinsOpen} onClick={() => setPinsOpen((v) => !v)} title="이 대화에 꽂은 핀을 봅니다">
         핀{pins.length > 0 && <span className="count">{pins.length}</span>}
       </button>
-      {pinsOpen && <PinList pins={pins} entries={entries} onJump={jumpTo} onClose={() => setPinsOpen(false)} />}
+      {pinsOpen && <PinList pins={pins} entries={entries} onJump={jumpTo} onClose={closePins} />}
       <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
         <div className="chat-col">
           {view.hidden > 0 && <div className="chat-notice"><span>앞쪽 {view.hidden}개 항목은 줄였습니다. 전부 보려면 터미널 보기를 쓰세요.</span></div>}
@@ -609,7 +614,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
               )}
             </div>
           )}
-          {entries.map((e) => <EntryRow key={e.id} entry={e} workspaceId={workspace.id} workspaces={workspaces} conversation={conversation} pinId={pinByItem.get(e.id) ?? null} flash={flashId === e.id} onToggle={togglePin} />)}
+          {entries.map((e) => <EntryRow key={e.id} entry={e} workspaceId={workspace.id} workspaces={workspaces} conversation={conversation} pinId={pinByItem.get(pinKey(e)) ?? null} flash={flashId === pinKey(e)} onToggle={togglePin} />)}
           {view.streaming && (
             <div className="say streaming"><Markdown text={view.streaming} /><span className="typing" aria-hidden /></div>
           )}

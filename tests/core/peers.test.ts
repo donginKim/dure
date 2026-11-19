@@ -371,6 +371,7 @@ describe('에이전트끼리의 메시지', () => {
     const blocked = await call(a.core, coordinator.id, 'message_send', { to: '나-화면@나', body: '기획서 정리를 보낸다' });
     expect(blocked).toContain('공개돼 있지 않아');
     expect(blocked).toContain('함께 탭');
+    expect(blocked).toContain('조율 에이전트');
     // 다른 워크스페이스처럼 공개하면 보낼 수 있고, 다시 닫을 수 있다
     a.core.peers.setSharing(coordinator.id, 'all');
     expect(a.core.peers.visibleTo(coordinator.id, bId)).toBe(true);

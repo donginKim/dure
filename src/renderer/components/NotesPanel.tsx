@@ -41,12 +41,18 @@ export function NotesPanel({ onClose }: { onClose: () => void }) {
     });
   }, [openId]);
 
-  const flush = useCallback(async (): Promise<void> => {
+  /** 남은 글을 저장한다. 저장하지 못했으면 false: 그 글은 남겨 두어 다시 저장할 수 있고, 다른 쪽의 글로 덮이지 않는다. */
+  const flush = useCallback(async (): Promise<boolean> => {
     clearTimeout(timer.current);
     const p = pending.current;
     pending.current = null;
-    if (!p) return;
-    try { await window.dure.notes.update(p.id, { title: p.title, body: p.body }); setSaved(true); } catch (e) { setError((e as Error).message); }
+    if (!p) return true;
+    try { await window.dure.notes.update(p.id, { title: p.title, body: p.body }); setSaved(true); return true; } catch (e) {
+      // 그 사이에 더 적었으면 그 글이 새 것이다. 아니면 저장하지 못한 글을 그대로 남긴다.
+      if (!pending.current) pending.current = p;
+      setError((e as Error).message);
+      return false;
+    }
   }, []);
   // 패널이 닫힐 때 남은 글을 저장한다.
   useEffect(() => () => { void flush(); }, [flush]);
@@ -94,7 +100,7 @@ export function NotesPanel({ onClose }: { onClose: () => void }) {
         <span className="spacer" />
         {note && editing && <span className="notes-saved">{saved ? '저장됨' : '저장하는 중…'}</span>}
         {note && (editing
-          ? <button className="btn ghost" onClick={() => { void flush().then(() => setEditing(false)); }} title="마크다운으로 그린 모습을 봅니다">보기</button>
+          ? <button className="btn ghost" disabled={!note.body.trim()} onClick={() => { void flush().then((ok) => { if (ok) setEditing(false); }); }} title={note.body.trim() ? '마크다운으로 그린 모습을 봅니다' : '적은 글이 없습니다'}>보기</button>
           : <button className="btn ghost" onClick={() => setEditing(true)} title="이 메모를 고칩니다">고치기</button>)}
         {note && (confirmDelete
           ? <><button className="btn danger" onClick={() => void remove()}>지우기</button><button className="btn ghost" onClick={() => setConfirmDelete(false)}>취소</button></>

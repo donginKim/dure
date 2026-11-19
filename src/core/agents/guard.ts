@@ -93,6 +93,15 @@ const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 /** 도구 이름이 지우는 일로 보이는가 (플러그인이 붙인 MCP 도구 등) */
 const DELETE_NAME = /(?:^|[_\-.]|[a-z](?=[A-Z]))(delete|remove|drop|destroy|purge|trash|truncate|erase|wipe|unlink)/i;
 
+/**
+ * 승인 창에 보일 "왜 묻는지". 삭제만 묻기에서 지우는 일로 보여 물은 것이면 그 이유, 아니면 undefined.
+ * 승인 창이 아는 것(도구 이름과 화면에 보이는 입력: Bash 는 명령 그대로)만으로 다시 가린다.
+ */
+export function guardPromptReason(tool: string, shownInput: string): string | undefined {
+  const d = tool === 'Bash' ? (shownInput.trim() ? bashDecision(shownInput) : PASS) : DELETE_NAME.test(tool) ? guardDecision(tool, {}, '/') : PASS;
+  return d.decision === 'ask' ? `삭제만 묻기: ${d.reason}` : undefined;
+}
+
 export function guardDecision(tool: string, input: unknown, worktreePath: string): GuardDecision {
   const name = String(tool ?? '');
   // 두레의 도구는 이미 허용돼 있고, 두레가 스스로 묻는 것(DB 조회 등)은 두레 화면에서 따로 묻는다.

@@ -505,6 +505,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
         <div className="permit-title">{permission ? '에이전트가 이것을 실행해도 되는지 묻습니다' : '에이전트가 터미널에서 답을 기다립니다'}</div>
         {permission && (
           <>
+            {permission.reason && <div className="permit-reason">{permission.reason}</div>}
             <div className="permit-what">{permission.summary}</div>
             {permission.input && permission.input !== permission.summary && <pre className="raw">{cut(permission.input)}</pre>}
           </>

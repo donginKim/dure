@@ -1,4 +1,4 @@
-import { guardDecision } from '@core/agents/guard';
+import { guardDecision, guardPromptReason } from '@core/agents/guard';
 
 const W = '/work/tree';
 const bash = (command: string) => guardDecision('Bash', { command }, W);
@@ -43,6 +43,14 @@ test('묻는 이유를 알려 준다', () => {
   expect(bash('rm -rf build').reason).toContain('rm');
   expect(bash('git reset --hard').reason).toContain('git reset --hard');
   expect(bash('psql -c "delete from t"').reason).toMatch(/데이터/);
+});
+
+test('승인 창에 보일 이유: 지우는 일로 물은 것만 있고, 다른 까닭으로 뜬 승인 창에는 없다', () => {
+  expect(guardPromptReason('Bash', 'rm hello.txt')).toBe('삭제만 묻기: 파일을 지우는 명령입니다 (rm)');
+  expect(guardPromptReason('Bash', 'npm test')).toBeUndefined();
+  expect(guardPromptReason('Bash', '  ')).toBeUndefined();
+  expect(guardPromptReason('Write', '/etc/hosts')).toBeUndefined();
+  expect(guardPromptReason('mcp__files__delete_file', '')).toContain('mcp__files__delete_file');
 });
 
 test('파일을 고치는 도구: 작업 폴더 안은 묻지 않고, 밖은 평소 승인에 맡긴다', () => {

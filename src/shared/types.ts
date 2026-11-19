@@ -501,6 +501,8 @@ export interface ChatPermission {
   requestId?: string;
   /** 이 뒤에 기다리는 요청 수 (채팅 방식) */
   more?: number;
+  /** 왜 묻는지 (권한 단계 "삭제만 묻기" 에서 지우는 일로 보여 물었을 때) */
+  reason?: string;
 }
 
 /** 에이전트가 여러 선택지 중에서 고르라고 묻는 것 */

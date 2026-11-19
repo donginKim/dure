@@ -28,6 +28,7 @@ import { SlackService } from './slackService';
 import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
 import { PinStore } from './pins';
+import { guardPromptReason } from './agents/guard';
 import { AttentionService } from './attention';
 import { DoingService } from './doing';
 import { PaddyService, dayOf } from './paddy';
@@ -52,7 +53,7 @@ import { DbService, noSecrets, type SecretBox } from './dbService';
 import { cleanupTools } from './mcp/tools/cleanup';
 import { SettingsService } from './settings';
 import { ChatEngine } from './chat/engine';
-import type { ChatView, CompletionChoice, CompletionPlan, ModelChoice, Project, SlashCommand } from '@shared/types';
+import type { ChatPermission, ChatView, PermissionMode, CompletionChoice, CompletionPlan, ModelChoice, Project, SlashCommand } from '@shared/types';
 import { CommitDraftStore } from './commitDrafts';
 import { CommitService } from './commitService';
 import { openDatabase } from './db';
@@ -213,6 +214,12 @@ export interface CoreOptions {
 }
 
 /** 두레 코어를 만든다. 모든 상태의 원본이다. Electron 에 의존하지 않는다. */
+function withGuardReason(p: ChatPermission | null, mode: PermissionMode | undefined): ChatPermission | null {
+  if (!p || mode !== 'guard') return p;
+  const reason = guardPromptReason(p.tool, p.input);
+  return reason ? { ...p, reason } : p;
+}
+
 export async function createCore(o: CoreOptions): Promise<Core> {
   mkdirSync(o.dataDir, { recursive: true });
   const db = openDatabase(join(o.dataDir, 'dure.db'));
@@ -823,7 +830,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       return {
         ...snap,
         // 채팅 방식에서는 승인 요청이 엔진으로 온다 (hook 의 알림이 아니라).
-        pendingPermission: live ? o.permission : snap.pendingPermission,
+        // 삭제만 묻기에서 물은 것이면 왜 묻는지를 함께 보인다.
+        pendingPermission: withGuardReason(live ? o.permission : snap.pendingPermission, ws?.permissionMode),
         streaming: o.streaming,
         question: o.question,
         engine: ws?.engine ?? 'terminal',

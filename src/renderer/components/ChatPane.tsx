@@ -1,11 +1,13 @@
 import { StuckBanner } from './StuckBanner';
 import { LimitBanner } from './LimitBanner';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type ChatImage, type ChatItem, type ChatQuestion, type ChatStep, type ChatView, type Message, type SlashCommand, type Workspace } from '@shared/types';
+import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type ChatImage, type ChatItem, type ChatQuestion, type ChatStep, type ChatView, type Message, type Pin, type PinInput, type SlashCommand, type Workspace } from '@shared/types';
 import { applyMention, elapsed, matchCommands, matchMentions, mergeEntries, stepsLabel, stepsRunning, type Entry, type Mention, type PeerEntry } from '../chatView';
 import { clock, deliveryNote, workspaceName } from '../conversationView';
 import { Attachment, type ConversationData } from './ConversationPanel';
 import { Markdown } from './Markdown';
+import { PinList } from './PinList';
+import { peerTitle, pinInput, pinKey } from '../pinsView';
 import { TerminalPane } from './TerminalPane';
 
 const MAX_SHOWN = 20_000;
@@ -80,14 +82,6 @@ function DureLine({ item }: { item: Extract<ChatItem, { kind: 'dure' }> }) {
   );
 }
 
-function peerTitle(e: PeerEntry, workspaces: Workspace[]): string {
-  const m = e.message;
-  if (e.direction === 'sent') return `${workspaceName(m.toWorkspaceId, workspaces)}에게 보냄`;
-  if (m.from.kind === 'user') return '내가 대화에 남긴 말';
-  if (m.from.kind === 'system') return '두레 알림';
-  return `${workspaceName(m.from.workspaceId, workspaces)}가 보냄`;
-}
-
 function PeerCard({ entry, workspaces, conversation }: { entry: PeerEntry; workspaces: Workspace[]; conversation: ConversationData }) {
   const m: Message = entry.message;
   const info = conversation.delivery[m.toWorkspaceId];
@@ -125,6 +119,27 @@ const EntryView = memo(function EntryView({ entry, workspaceId, workspaces, conv
     case 'notice': return <div className="chat-notice"><span>{entry.text}</span></div>;
     case 'peer': return <PeerCard entry={entry} workspaces={workspaces} conversation={conversation} />;
   }
+});
+
+/**
+ * 대화의 한 줄과 그 줄의 핀 단추. 꽂을 수 있는 글(input 이 있는 글)에만 단추가 붙는다.
+ * data-entry-id 로 핀 목록에서 이 글로 스크롤해 온다.
+ */
+const EntryRow = memo(function EntryRow({ entry, workspaceId, workspaces, conversation, pinId, flash, onToggle }: {
+  entry: Entry; workspaceId: string; workspaces: Workspace[]; conversation: ConversationData;
+  pinId: string | null; flash: boolean; onToggle: (input: PinInput, pinId: string | null) => void;
+}) {
+  const input = pinInput(entry, workspaceId, workspaces);
+  return (
+    <div className={`entry${pinId ? ' pinned' : ''}${flash ? ' pin-flash' : ''}${entry.kind === 'user' ? ' mine' : ''}`} data-entry-id={pinKey(entry)}>
+      <EntryView entry={entry} workspaceId={workspaceId} workspaces={workspaces} conversation={conversation} />
+      {input && (
+        <button className="pin-btn" aria-pressed={!!pinId} title={pinId ? '핀 빼기' : '핀 꽂기: 핀 목록에서 이 글로 바로 올 수 있습니다'} onClick={() => onToggle(input, pinId)}>
+          <svg viewBox="0 0 16 16" width="13" height="13" fill={pinId ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9.6 1.8l4.6 4.6-2 .5-2.4 2.4.3 3.1-1 1-2.8-2.8L2.5 14.4l-.9-.9 3.8-3.8L2.6 6.9l1-1 3.1.3 2.4-2.4z" /></svg>
+        </button>
+      )}
+    </div>
+  );
 });
 
 /** 에이전트가 여러 선택지 중에서 고르라고 묻는 카드 (채팅 방식). */
@@ -218,6 +233,10 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
   const scroller = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const stick = useRef(true);
+  // 핀: 이 대화의 글에 꽂아 둔 것. 목록에서 눌러 그 글로 간다.
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const [flashId, setFlashId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     window.dure.chat.get(workspace.id).then((v) => { setView(v); setLoaded(true); }).catch((e: Error) => setError(e.message));
@@ -227,6 +246,40 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
     load();
     return window.dure.onChanged((topic) => { if (topic === 'chat' || topic === 'workspaces') load(); });
   }, [load]);
+
+  useEffect(() => {
+    let alive = true;
+    const loadPins = (): void => { window.dure.pins.list(workspace.id).then((list) => { if (alive) setPins(list); }).catch(() => undefined); };
+    setPins([]); setPinsOpen(false); setFlashId(null);
+    loadPins();
+    const off = window.dure.onChanged((topic) => { if (topic === 'pins') loadPins(); });
+    return () => { alive = false; off(); };
+  }, [workspace.id]);
+  const pinByItem = useMemo(() => new Map(pins.map((p) => [p.itemId, p.id])), [pins]);
+  const togglePin = useCallback((input: PinInput, pinId: string | null) => {
+    setError('');
+    (pinId ? window.dure.pins.remove(pinId) : window.dure.pins.add(input)).catch((e: Error) => setError(e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')));
+  }, []);
+  // 핀의 글로 간다. 맨 아래 붙기를 끈다: 새 글이 와도 읽던 자리에서 끌려 내려가지 않는다.
+  const jumpTo = useCallback((itemId: string) => {
+    const root = scroller.current;
+    const el = root && [...root.querySelectorAll<HTMLElement>('[data-entry-id]')].find((x) => x.dataset.entryId === itemId);
+    if (!el) return;
+    setPinsOpen(false);
+    stick.current = false;
+    el.scrollIntoView({ block: 'center' });
+    // 위를 읽는 중이 됐다: "새 내용 ↓" 단추로 맨 아래에 돌아갈 수 있게 한다 (맨 아래가 보이면 onScroll 이 다시 끈다).
+    setBehind(true);
+    // 같은 글로 연달아 가도 강조가 다시 돌게, 한 번 비웠다가 건다.
+    setFlashId(null);
+    requestAnimationFrame(() => setFlashId(itemId));
+  }, []);
+  const closePins = useCallback(() => setPinsOpen(false), []);
+  useEffect(() => {
+    if (!flashId) return;
+    const t = setTimeout(() => setFlashId(null), 1600);
+    return () => clearTimeout(t);
+  }, [flashId]);
 
   useEffect(() => {
     if (view.workingSince === null) return;
@@ -542,6 +595,10 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
         </div>
       )}
       <div className="chat-main">
+      <button className={`pin-toggle${pins.length ? '' : ' none'}${pinsOpen ? ' on' : ''}`} aria-expanded={pinsOpen} onClick={() => setPinsOpen((v) => !v)} title="이 대화에 꽂은 핀을 봅니다">
+        핀{pins.length > 0 && <span className="count">{pins.length}</span>}
+      </button>
+      {pinsOpen && <PinList pins={pins} entries={entries} onJump={jumpTo} onClose={closePins} />}
       <div className="chat-scroll" ref={scroller} onScroll={onScroll}>
         <div className="chat-col">
           {view.hidden > 0 && <div className="chat-notice"><span>앞쪽 {view.hidden}개 항목은 줄였습니다. 전부 보려면 터미널 보기를 쓰세요.</span></div>}
@@ -557,7 +614,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
               )}
             </div>
           )}
-          {entries.map((e) => <EntryView key={e.id} entry={e} workspaceId={workspace.id} workspaces={workspaces} conversation={conversation} />)}
+          {entries.map((e) => <EntryRow key={e.id} entry={e} workspaceId={workspace.id} workspaces={workspaces} conversation={conversation} pinId={pinByItem.get(pinKey(e)) ?? null} flash={flashId === pinKey(e)} onToggle={togglePin} />)}
           {view.streaming && (
             <div className="say streaming"><Markdown text={view.streaming} /><span className="typing" aria-hidden /></div>
           )}

@@ -11,7 +11,7 @@ import { isAppUrl } from './appUrl';
 import { auditOf } from './auditIpc';
 import { hostname, userInfo } from 'node:os';
 import { safeHtml } from '@core/makes';
-import type { ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem, AuditFilter } from '@shared/types';
+import type { PinInput, ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem, AuditFilter } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -206,6 +206,9 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'checkpoints.restore': (id: string) => core.checkpoints.restore(String(id)),
     'usage.summary': (projectId: string, days?: number) => core.usage.summary(String(projectId), Number(days) > 0 ? Date.now() - Number(days) * 86_400_000 : 0),
     'attention.list': () => core.attention.list(),
+    'pins.list': (workspaceId: string) => core.pins.list(String(workspaceId)),
+    'pins.add': (input: PinInput) => core.pins.add(input),
+    'pins.remove': (id: string) => core.pins.remove(String(id)),
     'notes.list': (query?: string) => core.notes.list(String(query ?? '')),
     'notes.get': (id: string) => core.notes.get(String(id)) ?? null,
     'notes.create': (input?: { title?: string; body?: string }) => core.notes.create(input ?? {}),
@@ -461,6 +464,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onSlackChanged = (): void => changed('slack');
   const onUpdateChanged = (): void => changed('update');
   const onNotesChanged = (): void => changed('notes');
+  const onPinsChanged = (): void => changed('pins');
   const onCheckpointsChanged = (): void => changed('checkpoints');
   const onWorktimeChanged = (): void => changed('worktime');
   // 확인할 것: Dock 아이콘에 수를 적고, 새로 생기면 알림을 띄운다 (두레를 보고 있을 때는 띄우지 않는다).
@@ -528,6 +532,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.slack.on('changed', onSlackChanged);
   core.updates.on('changed', onUpdateChanged);
   core.notes.on('changed', onNotesChanged);
+  core.pins.on('changed', onPinsChanged);
   core.checkpoints.on('changed', onCheckpointsChanged);
   core.worktime.on('changed', onWorktimeChanged);
   core.verify.on('changed', onTodosChanged);
@@ -576,6 +581,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.slack.off('changed', onSlackChanged);
     core.updates.off('changed', onUpdateChanged);
     core.notes.off('changed', onNotesChanged);
+    core.pins.off('changed', onPinsChanged);
     core.checkpoints.off('changed', onCheckpointsChanged);
     core.worktime.off('changed', onWorktimeChanged);
     core.verify.off('changed', onTodosChanged);

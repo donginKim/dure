@@ -1440,3 +1440,39 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .notice.audit-bad { border-color: var(--danger, #e06c6c); }
 .audit-path { overflow-wrap: anywhere; }
 .audit-more { margin-top: 10px; }
+
+/* 핀: 대화의 글에 꽂아 두고 다시 본다 */
+.entry { position: relative; border-radius: 8px; }
+.pin-btn { position: absolute; left: -22px; top: 2px; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; opacity: 0; }
+.entry:hover > .pin-btn, .pin-btn:focus-visible { opacity: 0.75; }
+.pin-btn:hover { opacity: 1; background: var(--panel-2); color: var(--text); }
+.entry.pinned > .pin-btn { opacity: 1; color: var(--accent); }
+.entry.pin-flash { animation: pin-flash 1.6s ease-out; }
+@keyframes pin-flash { 0%, 35% { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; box-shadow: 0 0 0 6px transparent; } }
+.pin-toggle { position: absolute; top: 8px; right: 22px; z-index: 6; display: flex; align-items: center; gap: 6px; padding: 3px 10px; font-size: 12px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+.pin-toggle.none { color: var(--muted); opacity: 0.6; }
+.pin-toggle:hover, .pin-toggle.on { opacity: 1; background: var(--panel-2); }
+.pin-toggle .count { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.pin-list { position: absolute; top: 38px; right: 22px; z-index: 7; width: min(440px, calc(100% - 44px)); max-height: min(70%, 560px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
+.pin-list-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 6px 14px; border-bottom: 1px solid var(--line); }
+.pin-list-title { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.pin-list > .error { margin: 8px 12px 0; }
+.pin-empty { padding: 16px 14px; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.pin-rows { overflow-y: auto; overscroll-behavior: contain; }
+.pin-row { border-bottom: 1px solid var(--line); }
+.pin-row:last-child { border-bottom: 0; }
+.pin-go { display: block; width: 100%; text-align: left; padding: 9px 14px 4px; background: transparent; border: 0; color: var(--text); cursor: pointer; font: inherit; }
+.pin-go:hover { background: var(--panel-2); }
+.pin-row-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin-row-meta { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+.pin-row-tools { display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 8px 6px; }
+.pin-row-tools .btn { font-size: 11.5px; padding: 2px 8px; }
+.pin-sent { font-size: 11.5px; color: var(--ok); padding: 2px 8px; }
+.pin-saved { margin: 0 12px 10px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; line-height: 1.6; word-break: break-word; }
+.pin-saved-note { font-size: 11.5px; color: var(--muted); margin-bottom: 8px; }
+
+/* 메모 보기: 마크다운으로 그린 모습 */
+.notes-read { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.notes-read-title { font-weight: 600; font-size: 15px; padding: 4px 2px 0; word-break: break-word; }
+.notes-view { flex: 1; min-height: 0; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.65; word-break: break-word; user-select: text; }
+.share-note { font-size: 12px; margin-top: 2px; line-height: 1.5; }

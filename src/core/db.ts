@@ -537,6 +537,21 @@ const MIGRATIONS: string[] = [
   CREATE INDEX audit_log_action ON audit_log (action);
   CREATE TABLE audit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  // 대화의 글에 꽂은 핀. 글의 id 와 내용 사본을 함께 둔다 (대화가 바뀌어 그 글이 화면에서 사라져도 볼 수 있게).
+  `
+  CREATE TABLE pins (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (workspace_id, item_id)
+  );
+  CREATE INDEX pins_workspace ON pins (workspace_id, created_at DESC);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

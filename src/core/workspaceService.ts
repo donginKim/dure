@@ -459,12 +459,13 @@ export class WorkspaceService extends EventEmitter {
   /**
    * 권한 방식을 바꾼다. 승인 필요 ↔ 자동 판단은 채팅 방식으로 도는 중이면 대화를 끊지 않고 바로 바꾼다.
    * 승인 생략으로 바꾸거나 거기서 되돌리는 것, 터미널 방식, 꺼져 있을 때는 다음에 시작할 때 듣는다.
+   * 삭제만 묻기는 Claude Code 쪽에서는 승인 필요와 같은 모드(acceptEdits)이고, 무엇을 묻지 않을지는 두레의 hook 이 도구 호출마다 가린다.
    */
   async setPermissionMode(id: string, mode: PermissionMode): Promise<{ applied: 'now' | 'next' }> {
     const ws = this.mustGet(id);
     if (ws.role === 'coordinator') throw new Error('조율 에이전트의 권한 방식은 바꿀 수 없습니다.');
     if (this.isProjectClosed(ws.projectId)) throw new Error(DONE_PROJECT);
-    if (mode !== 'ask' && mode !== 'auto' && mode !== 'bypass') throw new Error('권한 방식이 올바르지 않습니다.');
+    if (mode !== 'ask' && mode !== 'auto' && mode !== 'guard' && mode !== 'bypass') throw new Error('권한 방식이 올바르지 않습니다.');
     let applied: 'now' | 'next' = 'next';
     if (ws.agentKind === 'claude' && mode !== 'bypass' && ws.permissionMode !== 'bypass' && this.engine?.has(id)) {
       try {

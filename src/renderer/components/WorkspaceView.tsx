@@ -14,7 +14,7 @@ import { DbRequests } from './DbRequests';
 import { SlackRequests } from './SlackRequests';
 import { PeerInbox } from './PeerInbox';
 import { CommitDialog } from './CommitDialog';
-import { ConfirmDialog, BYPASS_WARNING } from './dialogs';
+import { ConfirmDialog, BYPASS_WARNING, GUARD_NOTE } from './dialogs';
 import { TerminalPane } from './TerminalPane';
 import type { ConversationData } from './ConversationPanel';
 import { SidePanel } from './SidePanel';
@@ -198,17 +198,18 @@ export function WorkspaceView({ workspace, workspaces, project, repo, todos, pro
         <ModelPicker workspace={workspace} readOnly={readOnly} onError={setError} onNote={setNote} />
         <select
           className={`perm-select${workspace.permissionMode === 'bypass' ? ' warn' : ''}`} value={workspace.permissionMode} disabled={readOnly}
-          title="에이전트가 명령을 실행할 때 묻는 방식. 자동 판단: 안전한 것은 스스로 하고 위험한 것만 묻습니다"
+          title={workspace.permissionMode === 'guard' ? GUARD_NOTE : '에이전트가 명령을 실행할 때 묻는 방식. 자동 판단: 안전한 것은 스스로 하고 위험한 것만 묻습니다. 삭제만 묻기: 지우는 것만 묻습니다'}
           onChange={(e) => {
             const mode = e.target.value as PermissionMode;
             if (mode === 'bypass' && !window.confirm(BYPASS_WARNING)) return;
             window.dure.workspaces.setPermissionMode(workspace.id, mode)
-              .then((r) => setNote(r.applied === 'now' ? '권한 방식을 바꿨습니다 (지금부터 적용).' : '권한 방식을 바꿨습니다. 에이전트를 다음에 시작할 때 적용됩니다.'))
+              .then((r) => setNote(`${r.applied === 'now' ? '권한 방식을 바꿨습니다 (지금부터 적용).' : '권한 방식을 바꿨습니다. 에이전트를 다음에 시작할 때 적용됩니다.'}${mode === 'guard' ? ` ${GUARD_NOTE}` : ''}`))
               .catch((err: Error) => setError(err.message));
           }}
         >
           <option value="auto">권한: 자동 판단</option>
           <option value="ask">권한: 승인 필요</option>
+          <option value="guard">권한: 삭제만 묻기</option>
           <option value="bypass">권한: 승인 생략</option>
         </select>
         {canChat && !hasAgent && !readOnly && (

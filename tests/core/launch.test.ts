@@ -192,6 +192,15 @@ test('모든 에이전트에게: 고를 것이 있으면 글이 아니라 질문
   }
 });
 
+test('삭제만 묻기: Claude Code 는 acceptEdits 로 띄운다 (묻지 않을 것은 hook 이 허용한다: 두레가 답하지 못하면 평소 승인으로 떨어진다). Codex 는 자동 판단처럼', () => {
+  const c = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'guard' });
+  expect(c.args.slice(c.args.indexOf('--permission-mode'), c.args.indexOf('--permission-mode') + 2)).toEqual(['--permission-mode', 'acceptEdits']);
+  expect(c.args).not.toContain('--dangerously-skip-permissions');
+  const k = buildAgentLaunch({ ...common, kind: 'codex', permissionMode: 'guard' });
+  expect(k.args).toEqual(buildAgentLaunch({ ...common, kind: 'codex', permissionMode: 'auto' }).args);
+  expect(k.args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+});
+
 test('자동 판단: Claude Code 는 auto 권한 모드, Codex 는 작업 폴더 안에 가두고 자동 검토. 조율(파일 수정 수동)은 그대로 default', () => {
   const c = buildAgentLaunch({ ...common, kind: 'claude', permissionMode: 'auto' });
   expect(c.args.slice(c.args.indexOf('--permission-mode'), c.args.indexOf('--permission-mode') + 2)).toEqual(['--permission-mode', 'auto']);

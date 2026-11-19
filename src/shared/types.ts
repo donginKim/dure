@@ -4,7 +4,14 @@ export type AgentKind = 'claude' | 'codex';
  * auto: 에이전트(Claude Code 의 auto 모드, Codex 의 자동 검토)가 안전한 것은 스스로 허용하고 위험한 것만 묻는다.
  * bypass: 묻지 않고 모두 실행한다.
  */
-export type PermissionMode = 'ask' | 'auto' | 'bypass';
+/**
+ * 에이전트가 명령을 실행할 때 묻는 정도.
+ *  ask: 파일 고치기만 저절로, 명령은 묻는다
+ *  auto: Claude Code 가 안전하다고 본 것은 스스로, 위험해 보이면 묻는다
+ *  guard: 지우거나 작업을 버리는 것만 묻고 나머지는 묻지 않는다 ("삭제만 묻기". 두레가 도구 호출마다 가린다)
+ *  bypass: 아무것도 묻지 않는다
+ */
+export type PermissionMode = 'ask' | 'auto' | 'guard' | 'bypass';
 /**
  * 에이전트를 돌리는 방식.
  * chat: 터미널 화면 없이 구조화된 입출력으로 돌린다 (글이 실시간으로 흐르고, 승인과 질문이 화면의 버튼으로 온다). Claude Code 만 된다.

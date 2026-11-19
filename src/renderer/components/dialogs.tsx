@@ -17,6 +17,8 @@ export function Dialog({ title, children, onClose, wide }: { title: string; chil
   );
 }
 
+/** 권한 단계 "삭제만 묻기" 의 설명. 한계(글자를 보고 가린다)를 함께 알린다 */
+export const GUARD_NOTE = '삭제만 묻기: 파일이나 데이터를 지우거나 작업한 것을 버리는 명령만 묻고, 나머지는 묻지 않습니다. 명령의 글자를 보고 가리므로 스크립트 안에서 지우는 것까지는 잡지 못합니다. 두레가 따로 묻는 것(DB 조회, 브라우저 주소, 커밋)은 그대로 묻습니다. Codex 는 자동 판단처럼 돕니다.';
 export const BYPASS_WARNING = '에이전트가 묻지 않고 모든 명령을 실행합니다. 믿는 저장소에서만 켜세요.';
 
 export function NewWorkspaceDialog({ projectId, repos, initialRepoId, onClose, onCreated }: {
@@ -98,10 +100,12 @@ export function NewWorkspaceDialog({ projectId, repos, initialRepoId, onClose, o
         <div className="radio-row">
           <label><input type="radio" checked={permissionMode === 'auto'} onChange={() => setPermissionMode('auto')} /> 자동 판단 (위험한 것만 묻기)</label>
           <label><input type="radio" checked={permissionMode === 'ask'} onChange={() => setPermissionMode('ask')} /> 승인 필요</label>
+          <label><input type="radio" checked={permissionMode === 'guard'} onChange={() => setPermissionMode('guard')} /> 삭제만 묻기</label>
           <label><input type="radio" checked={permissionMode === 'bypass'} onChange={() => setPermissionMode('bypass')} /> 승인 생략</label>
         </div>
         <span className="hint">승인 필요: 파일 수정은 자동 승인, 명령 실행은 승인을 거칩니다.</span>
       </div>
+      {permissionMode === 'guard' && <div className="notice">{GUARD_NOTE}</div>}
       {permissionMode === 'bypass' && <div className="notice">{BYPASS_WARNING}</div>}
       <div className="dialog-actions">
         <button className="btn" onClick={onClose}>취소</button>

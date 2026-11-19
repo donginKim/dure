@@ -27,6 +27,7 @@ import { slackTools } from './mcp/tools/slack';
 import { SlackService } from './slackService';
 import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
+import { PinStore } from './pins';
 import { AttentionService } from './attention';
 import { DoingService } from './doing';
 import { PaddyService, dayOf } from './paddy';
@@ -87,6 +88,7 @@ export interface Core {
   slack: SlackService;
   updates: UpdateService;
   notes: NoteStore;
+  pins: PinStore;
   attention: AttentionService;
   usage: UsageStore;
   checkpoints: CheckpointService;
@@ -234,6 +236,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const messages = new MessageService(db);
   const git = createGit(o.baseEnv);
   const notes = new NoteStore(db);
+  const pins = new PinStore(db, workspaces);
   const usage = new UsageStore(db, workspaces);
   // 예산: 하루·전체 상한을 넘으면 그 프로젝트의 에이전트를 멈추고 새로 일을 시키지 않는다.
   const budget = new BudgetService(db, projects, Date.now, () => settings.get().defaultBudgetDaily);
@@ -626,7 +629,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const newsLinks = new Set<string>();
   let disposed = false;
   return {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, audit, cleanup, coordinator, dbs, slack, updates, notes, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, audit, cleanup, coordinator, dbs, slack, updates, notes, pins, attention, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async news(force = false) {
       const panels = plugins.panels();
       const out: NewsPanel[] = [];

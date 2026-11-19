@@ -1066,6 +1066,13 @@ export interface UpdateStatus {
 }
 
 // ---- 메모 (프로젝트와 상관없이 하나) ----
+// ---- 핀: 대화의 글에 꽂아 두고 다시 본다 ----
+/** 핀을 꽂을 수 있는 글의 종류. peer 는 에이전트끼리 주고받은 메시지 */
+export type PinKind = 'user' | 'assistant' | 'dure' | 'output' | 'peer';
+/** 핀 하나. body 는 꽂을 때 담아 둔 글의 사본: 그 글이 화면에서 사라져도 볼 수 있다. source 는 누가 쓴 글인지 (화면에 보일 말) */
+export interface Pin { id: string; workspaceId: string; itemId: string; kind: PinKind; source: string; title: string; body: string; createdAt: number }
+export interface PinInput { workspaceId: string; itemId: string; kind: PinKind; source: string; body: string }
+
 export interface Note { id: string; title: string; body: string; createdAt: number; updatedAt: number }
 /** 목록에 보이는 메모 한 줄. preview 는 찾은 낱말의 앞뒤 (찾지 않았으면 본문의 앞부분) */
 export interface NoteSummary { id: string; title: string; preview: string; updatedAt: number }

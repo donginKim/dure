@@ -1,4 +1,4 @@
-import type {
+import type { Pin, PinInput,
   Make, MakeKind, AgentConfig, AuditEntry, AuditFilter, AuditVerify,
   WorkDay, WorkSession, WorkStatus,
   Brief,
@@ -15,7 +15,7 @@ import type {
 } from './types';
 import type { ProjectViewPref, RoleId } from './roles';
 
-export type ChangeTopic = 'audit' | 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
+export type ChangeTopic = 'pins' | 'audit' | 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -383,6 +383,14 @@ export interface DureApi {
     /** 알림을 눌렀을 때: 그 항목으로 가라고 알린다 */
     onOpen(cb: (item: AttentionItem) => void): () => void;
   };
+  /** 핀: 대화의 글에 꽂아 두고 다시 본다 (워크스페이스마다) */
+  pins: {
+    /** 새로 꽂은 것부터 */
+    list(workspaceId: string): Promise<Pin[]>;
+    /** 이미 꽂힌 글이면 있던 핀을 돌려준다 */
+    add(input: PinInput): Promise<Pin>;
+    remove(id: string): Promise<void>;
+  };
   /** 메모장: 프로젝트와 상관없이 하나 */
   notes: {
     /** 고친 순서대로. query 가 있으면 그 낱말이 든 것만 */
@@ -491,6 +499,7 @@ export const IPC_CHANNELS = [
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',
   'attention.list',
+  'pins.list', 'pins.add', 'pins.remove',
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',
   'slack.status', 'slack.connect', 'slack.disconnect', 'slack.setAccess', 'slack.requests', 'slack.decide',

@@ -1506,3 +1506,7 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .steward-art { display: block; margin: 0 auto 10px; animation: steward-bob 2.4s ease-in-out infinite; }
 @keyframes steward-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 @media (prefers-reduced-motion: reduce) { .steward-art { animation: none; } }
+.steward-art.rest, .steward-art.work { animation: none; }
+.steward-art.work { animation: steward-bob 0.9s ease-in-out infinite; }
+.steward-wait { color: var(--warn); }
+.side-steward:has(.steward-wait) { border-color: var(--warn); }

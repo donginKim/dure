@@ -1,6 +1,6 @@
 import { UpdateNotice } from './UpdateNotice';
 import { throttled } from '../throttle';
-import stewardFace from '../assets/steward-face.png';
+import { STEWARD_FACE, STEWARD_MOOD_LABEL, stewardMood, type StewardMood } from '../stewardArt';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Project, Repo, Todo, Workspace } from '@shared/types';
 import { deliveryNote } from '../conversationView';
@@ -27,10 +27,15 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
 }) {
   // 비서의 이름 (설정에서 정한다)
   const [stewardName, setStewardName] = useState('비서');
+  // 비서의 모습: 비서의 에이전트가 지금 무엇을 하는지 (일하는 중, 내 답을 기다림, 쉬는 중)
+  const [stewardNow, setStewardNow] = useState<StewardMood>('rest');
   useEffect(() => {
-    const load = (): void => { window.dure.settings.get().then((st) => setStewardName(st.stewardName || '비서')).catch(() => undefined); };
+    const load = (): void => {
+      window.dure.settings.get().then((st) => setStewardName(st.stewardName || '비서')).catch(() => undefined);
+      window.dure.steward.get().then((st) => setStewardNow(stewardMood(st.workspace.status))).catch(() => undefined);
+    };
     load();
-    return window.dure.onChanged((topic) => { if (topic === 'settings') load(); });
+    return window.dure.onChanged((topic) => { if (topic === 'settings' || topic === 'workspaces' || topic === 'steward') load(); });
   }, []);
   useEffect(() => { if (newProjectTick > 0) setAdding(true); }, [newProjectTick]);
   // 일하는 에이전트가 지금 하는 일 (마지막 도구 사용). 한 줄로 보인다.
@@ -149,8 +154,8 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
         <span className="count">{attention}</span>
       </button>
       <button className={`side-attention side-steward${selection?.type === 'steward' ? ' selected' : ''}`} title="모든 프로젝트를 보는 비서: 브리핑, TODO 정리, 확인할 것 처리" onClick={() => onSelect({ type: 'steward' })}>
-        <span className="side-steward-name"><img className="steward-face" src={stewardFace} alt="" width={26} height={26} />{stewardName}</span>
-        <span className="muted" style={{ fontSize: 11 }}>전체 관리</span>
+        <span className="side-steward-name"><img className="steward-face" src={STEWARD_FACE[stewardNow]} alt="" width={26} height={26} />{stewardName}</span>
+        <span className={stewardNow === 'wait' ? 'steward-wait' : 'muted'} style={{ fontSize: 11 }}>{stewardNow === 'rest' ? '전체 관리' : STEWARD_MOOD_LABEL[stewardNow]}</span>
       </button>
       <div className="side-section">
         <button className={`side-title${selection === null ? ' selected' : ''}`} title="프로젝트 전체 보기" onClick={() => onSelect(null)}>

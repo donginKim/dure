@@ -211,6 +211,8 @@ export interface CoreOptions {
   suggestEveryMs?: number;
   /** 확인할 것이 생긴 뒤 비서에게 알리기까지 모으는 시간 (ms). 기본 20초 */
   stewardDelayMs?: number;
+  /** 비서에게 저절로 알리는 횟수의 한 시간 상한. 기본 6 */
+  stewardMaxPerHour?: number;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
   repoRoot?: string;
   /** 터미널과 에이전트에 물려줄 환경 (로그인 셸 환경) */
@@ -538,6 +540,10 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 자동 처리: 확인할 것이 새로 생기면 잠깐 모았다가 비서에게 알린다 (설정에서 켰고, 추천만이 아닐 때).
   let stewardTimer: NodeJS.Timeout | undefined;
   let stewardSince = 0; // 처음 미룬 시각: 항목이 계속 생겨도 알림을 끝없이 미루지 않는다
+  // 저절로 알린 시각들. 비서가 정한 것이 에이전트를 움직이고 그 에이전트가 다시 물으면, 사람 없이 끝없이 돌 수 있다:
+  // 한 시간에 알리는 횟수에 상한을 둔다. 넘으면 알리지 않고, 남은 것은 사용자가 확인할 것에서 본다.
+  let stewardWakes: number[] = [];
+  let stewardCapped = false;
   attention.on('added', () => {
     const s = settings.get();
     if (!s.stewardAuto) return;
@@ -554,6 +560,14 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         if (!waiting.some((a) => a.allowed)) return;
         const { project, workspace } = steward.ensure();
         if (budget.blocked(project.id)) return;
+        const hourAgo = Date.now() - 3_600_000;
+        stewardWakes = stewardWakes.filter((t) => t > hourAgo);
+        if (stewardWakes.length >= (o.stewardMaxPerHour ?? 6)) {
+          if (!stewardCapped) { stewardCapped = true; audit.record({ actor: 'system', action: 'steward.auto_capped', projectId: project.id, workspaceId: workspace.id, target: '비서', outcome: 'denied', reason: `한 시간에 ${o.stewardMaxPerHour ?? 6}번까지만 저절로 알립니다` }); }
+          return;
+        }
+        stewardCapped = false;
+        stewardWakes.push(Date.now());
         messages.send({ projectId: project.id, from: { kind: 'system' }, toWorkspaceId: workspace.id, title: '확인할 것이 생겼습니다',
           body: `사용자를 기다리는 것이 ${waiting.length}건 있다 (그중 네가 정할 수 있는 것 ${waiting.filter((a) => a.allowed).length}건). steward_waiting 으로 보고, 정할 수 있는 것은 정하고, 남긴 것은 무엇을 추천하는지 한 줄씩 적어라. 길게 쓰지 마라.` });
       } catch { /* 알리지 못하면 사용자가 화면에서 본다 */ }

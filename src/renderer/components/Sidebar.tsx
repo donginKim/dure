@@ -24,6 +24,13 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   /** 확인할 것의 수 */
   attention?: number;
 }) {
+  // 비서의 이름 (설정에서 정한다)
+  const [stewardName, setStewardName] = useState('비서');
+  useEffect(() => {
+    const load = (): void => { window.dure.settings.get().then((st) => setStewardName(st.stewardName || '비서')).catch(() => undefined); };
+    load();
+    return window.dure.onChanged((topic) => { if (topic === 'settings') load(); });
+  }, []);
   useEffect(() => { if (newProjectTick > 0) setAdding(true); }, [newProjectTick]);
   // 일하는 에이전트가 지금 하는 일 (마지막 도구 사용). 한 줄로 보인다.
   const [doing, setDoing] = useState<Record<string, { text: string; at: number }>>({});
@@ -139,6 +146,10 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
       <button className={`side-attention${selection?.type === 'attention' ? ' selected' : ''}${attention > 0 ? ' has' : ''}`} title="에이전트나 다른 사람이 나를 기다리는 것을 한곳에서 봅니다" onClick={() => onSelect({ type: 'attention' })}>
         <span>확인할 것</span>
         <span className="count">{attention}</span>
+      </button>
+      <button className={`side-attention side-steward${selection?.type === 'steward' ? ' selected' : ''}`} title="모든 프로젝트를 보는 비서: 브리핑, TODO 정리, 확인할 것 처리" onClick={() => onSelect({ type: 'steward' })}>
+        <span>{stewardName}</span>
+        <span className="muted" style={{ fontSize: 11 }}>전체 관리</span>
       </button>
       <div className="side-section">
         <button className={`side-title${selection === null ? ' selected' : ''}`} title="프로젝트 전체 보기" onClick={() => onSelect(null)}>

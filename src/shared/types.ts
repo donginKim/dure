@@ -12,6 +12,16 @@ export type AgentKind = 'claude' | 'codex';
  *  bypass: 아무것도 묻지 않는다
  */
 export type PermissionMode = 'ask' | 'auto' | 'guard' | 'bypass';
+/** 비서가 스스로 정해도 되는 범위 */
+export type StewardApproval = 'suggest' | 'safe' | 'all';
+/** 비서가 "확인할 것" 하나를 처리한 기록 */
+export interface StewardLogEntry { id: string; at: number; itemId: string; kind: string; projectId: string | null; projectName: string; title: string; decision: 'approve' | 'deny'; reason: string; outcome: string }
+/** 화면이 받는 비서의 상태 */
+export interface StewardState {
+  workspace: Workspace; project: Project; name: string; approval: StewardApproval; auto: boolean;
+  /** 비서가 오늘 쓴 토큰이 상한을 넘어 멈췄으면 그 까닭. 아니면 null */
+  blocked: string | null;
+}
 /**
  * 에이전트를 돌리는 방식.
  * chat: 터미널 화면 없이 구조화된 입출력으로 돌린다 (글이 실시간으로 흐르고, 승인과 질문이 화면의 버튼으로 온다). Claude Code 만 된다.
@@ -42,6 +52,8 @@ export interface Project {
   budgetDaily: number;
   /** 프로젝트 전체에 쓸 토큰의 상한. 0 이면 없다 */
   budgetTotal: number;
+  /** 두레가 관리하는 보이지 않는 프로젝트면 'steward' (비서의 자리). 사용자의 프로젝트에는 없다 */
+  kind?: 'steward';
 }
 /**
  * 프로젝트의 예산. 토큰은 입력 + 출력 (캐시에서 읽은 것은 빼고 센다: 값이 훨씬 싸다).
@@ -594,6 +606,14 @@ export interface Settings {
   coordinatorModel: string;
   /** 조율 에이전트의 effort. 비우면 Claude Code 의 기본 (일하는 에이전트의 effort 는 claudeEffort) */
   coordinatorEffort: string;
+  /** 비서(모든 프로젝트를 보는 에이전트)의 이름. 화면과 에이전트에게 보이는 말 */
+  stewardName: string;
+  /** 비서가 "확인할 것" 을 어디까지 스스로 정하나. suggest: 정리와 추천만, safe: 안전한 것만 스스로, all: 전부 스스로 (연결 확인은 빼고) */
+  stewardApproval: StewardApproval;
+  /** 확인할 것이 생기면 비서에게 저절로 알려 처리하게 한다. 끄면 내가 시킬 때만 */
+  stewardAuto: boolean;
+  /** 비서의 모델. 비우면 조율 에이전트의 모델 */
+  stewardModel: string;
   /** 일하는 에이전트가 TODO 를 끝내고 쉬면, 다음 TODO 는 새 대화로 시작한다 (앞 대화를 다시 읽지 않아 토큰을 아낀다) */
   freshPerTodo: boolean;
   /** 대화가 이 크기(토큰)를 넘으면 Claude Code 가 저절로 줄인다. 0 이면 Claude Code 의 기본 */

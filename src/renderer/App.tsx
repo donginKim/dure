@@ -21,6 +21,7 @@ import { NotesPanel } from './components/NotesPanel';
 import { Sidebar } from './components/Sidebar';
 import { WorkspaceView } from './components/WorkspaceView';
 import { buildTree, reconcileSelection, type Selection } from './tree';
+import { StewardView } from './components/StewardView';
 import { layout, SIDE } from './layout';
 import { Resizer } from './components/Resizer';
 import { MarketView } from './components/MarketView';
@@ -209,11 +210,12 @@ export function App() {
         {current?.type === 'market' && <MarketView onSelect={setSelection} />}
         {current?.type === 'audit' && <AuditView projects={projects} />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
+        {current?.type === 'steward' && <StewardView onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {current?.type === 'news' && <NewsView onSelect={setSelection} />}
         {current?.type === 'team' && <TeamView tree={tree.filter((n) => n.project.status !== 'done')} onSelect={setSelection} />}
         {current?.type === 'worktime' && <WorkTimeView onOpenSettings={() => setSelection({ type: 'settings' })} />}
         {current?.type === 'people' && <PeopleView projects={projects} onOpenSettings={() => setSelection({ type: 'settings' })} />}
-        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'worktime' && current?.type !== 'team' && current?.type !== 'news' && current?.type !== 'market' && current?.type !== 'audit' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
+        {!node && !workspace && current?.type !== 'settings' && current?.type !== 'people' && current?.type !== 'attention' && current?.type !== 'steward' && current?.type !== 'worktime' && current?.type !== 'team' && current?.type !== 'news' && current?.type !== 'market' && current?.type !== 'audit' && <ProjectsHome tree={tree.filter((n) => n.project.status !== 'done')} repos={repos} onSelect={setSelection} onCreate={createProject} />}
       </main>
       <UsageBar onOpenAttention={() => setSelection({ type: 'attention' })} />
       {palette && (

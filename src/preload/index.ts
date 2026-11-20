@@ -256,6 +256,10 @@ const api: DureApi = {
     list: () => call('attention.list'),
     onOpen: (cb) => subscribe<[AttentionItem]>(IPC_EVENTS.attentionOpen, cb),
   },
+  steward: {
+    get: () => call('steward.get'),
+    history: () => call('steward.history'),
+  },
   pins: {
     list: (workspaceId) => call('pins.list', workspaceId),
     add: (input) => call('pins.add', input),

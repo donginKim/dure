@@ -6,7 +6,8 @@ const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], is
 
 /** 조율 에이전트만 쓰는 도구. 보통 워크스페이스의 에이전트에게는 보이지 않는다. */
 export const coordinatorTools: ToolBundle = (server, ctx, deps) => {
-  if (ctx.workspace.role !== 'coordinator') return;
+  // 비서도 조율 자리(role coordinator)에 살지만 프로젝트의 조율 에이전트가 아니다: 계획안을 올리는 도구는 싣지 않는다.
+  if (ctx.workspace.role !== 'coordinator' || ctx.project.kind === 'steward') return;
 
   const TODO = z.object({
     title: z.string().describe('할 일 한 줄'),

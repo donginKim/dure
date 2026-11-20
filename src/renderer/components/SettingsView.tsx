@@ -212,6 +212,34 @@ export function SettingsView({ onOpenMarket, onOpenAudit }: { onOpenMarket?: () 
       </div>
 
       <div className="section">
+        <div className="section-head"><h2>비서</h2></div>
+        <div className="set-box">
+          <Row label="이름" help="모든 프로젝트를 보는 비서의 이름입니다. 왼쪽 목록과 대화에 이 이름으로 보입니다. 에이전트를 다음에 시작할 때부터 이 이름을 씁니다." {...row('stewardName')}>
+            <TextInput value={s.stewardName} placeholder="비서" onCommit={(v) => save('stewardName', v || '비서')} />
+          </Row>
+          <Row
+            label="승인 범위" {...row('stewardApproval')}
+            help={s.stewardApproval === 'all'
+              ? <span className="set-warn">전부 스스로: 명령 실행 허용, 계획안, 약속, 다른 사람이 보낸 것까지 비서가 정합니다 (연결 요청의 확인, 나에게 직접 온 질문, 예산·사용 한도는 빼고). 비서는 에이전트의 출력과 다른 사람의 글을 읽고 판단하므로, 그 글에 속아 허용할 수 있습니다. 권한 단계 "삭제만 묻기" 가 묻는 것도 비서가 대신 답합니다. 정한 것은 비서 화면의 기록과 감사 기록에 남습니다.</span>
+              : s.stewardApproval === 'safe'
+                ? '안전한 것만 스스로: 읽기만 하는 승인(경고가 없는 DB 조회, 슬랙 읽기, 이 PC 의 개발 서버 주소), 되돌릴 수 있는 선택지 질문(추천 답만), 멈춘 에이전트 깨우기는 비서가 정합니다. 명령 실행 허용, 계획안, 약속, 다른 사람이 끼어 있는 것은 추천만 합니다.'
+                : '추천만: 비서는 아무것도 스스로 정하지 않습니다. 확인할 것을 모아 무엇을 추천하는지와 까닭을 정리해 줍니다.'}
+          >
+            <Choice value={s.stewardApproval} onChange={(v) => save('stewardApproval', v)} options={[{ value: 'suggest', label: '추천만' }, { value: 'safe', label: '안전한 것만' }, { value: 'all', label: '전부 스스로' }]} />
+          </Row>
+          <Row label="자동 처리" help="켜면 확인할 것이 새로 생겼을 때 두레가 비서에게 저절로 알려, 승인 범위 안의 것을 처리하게 합니다 (여러 건을 20초쯤 모아 한 번에 알립니다). 비서가 정할 수 있는 것이 없으면 깨우지 않습니다. 알릴 때마다 토큰을 씁니다. 끄면 내가 시킬 때만 처리합니다." {...row('stewardAuto')}>
+            <Toggle on={s.stewardAuto} onChange={(v) => save('stewardAuto', v)} label="비서의 자동 처리" />
+          </Row>
+          <Row label="모델" help="비서만 이 모델로 돕니다. 비우면 조율 에이전트의 모델을 씁니다. 다음에 시작할 때부터 적용됩니다." {...row('stewardModel')}>
+            <select className="set-select" value={s.stewardModel} onChange={(e) => save('stewardModel', e.target.value)}>
+              <option value="">조율 에이전트와 같게</option>
+              {claudeModels.length > 0 && <optgroup label="Claude">{claudeModels.map(modelOption)}</optgroup>}
+              {s.stewardModel && !models.some((m) => m.value === s.stewardModel) && <option value={s.stewardModel}>{s.stewardModel}</option>}
+            </select>
+          </Row>
+        </div>
+      </div>
+      <div className="section">
         <div className="section-head"><h2>Claude Code</h2></div>
         <div className="set-box">
           <Row label="조율 에이전트의 모델" help="계획을 세우고 일을 나누는 조율 에이전트만 이 모델로 돕니다. 일하는 에이전트는 아래 '모델' 을 씁니다. 비우면 같은 모델을 씁니다." {...row('coordinatorModel')}>

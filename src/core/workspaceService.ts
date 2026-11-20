@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { CHAT_IMAGE_TYPES, MAX_CHAT_IMAGES, MAX_CHAT_IMAGE_BYTES, type AgentKind, type PermissionMode, type ChatImage, type CreateWorkspaceInput, type TerminalInfo, type Workspace, type Settings, type ModelChoice, type LimitInfo, type StuckInfo } from '@shared/types';
-import { baseInstructions, coordinatorInstructions } from './agents/instructions';
+import { baseInstructions, coordinatorInstructions, stewardInstructions } from './agents/instructions';
 import { buildAgentLaunch, HEADLESS_ARGS } from './agents/launch';
 import { trustPrompt } from './agents/trustPrompt';
 import type { ChatService } from './chat/chatService';
@@ -851,7 +851,8 @@ export class WorkspaceService extends EventEmitter {
     const project = this.d.projects.get(ws.projectId)!;
     if (this.isProjectClosed(project.id)) throw new Error(DONE_PROJECT);
     const settings = this.settings();
-    try { this.d.onAgentStart?.(ws, { agent: ws.agentKind, permissionMode: ws.permissionMode, engine: ws.engine, model: ws.model || (ws.role === 'coordinator' ? settings.coordinatorModel || settings.claudeModel : settings.claudeModel) || '' }); } catch { /* 기록만 빠진다 */ }
+    const steward = coordinator && project.kind === 'steward';
+    try { this.d.onAgentStart?.(ws, { agent: ws.agentKind, permissionMode: ws.permissionMode, engine: ws.engine, model: ws.model || (steward ? settings.stewardModel || settings.coordinatorModel || settings.claudeModel : ws.role === 'coordinator' ? settings.coordinatorModel || settings.claudeModel : settings.claudeModel) || '' }); } catch { /* 기록만 빠진다 */ }
     const executable = this.agentExecutable(ws.agentKind, settings);
     // 저장된 뒤에 규칙이 바뀌었을 수도 있으니 쓰기 직전에 한 번 더 거른다.
     const extraArgs = parseArgs(ws.agentKind === 'claude' ? settings.claudeArgs : settings.codexArgs);
@@ -879,10 +880,12 @@ export class WorkspaceService extends EventEmitter {
       token: this.d.workspaces.getToken(id),
       configDir: this.configDir(id),
       // 이 프로젝트에서 켠 플러그인의 지시문을 덧붙이고, 플러그인의 MCP 서버를 붙인다 (사용자가 승인한 것만).
-      instructions: (coordinator ? coordinatorInstructions(project) : baseInstructions(ws, project)) + (this.plugins?.instructions(project.id) ?? ''),
+      // 비서는 두레가 관리하는 프로젝트의 조율 자리에 산다: 조율 에이전트와 같은 틀로 띄우되 지침과 모델이 다르다.
+      instructions: (steward ? stewardInstructions(settings.stewardName, settings.stewardApproval) : coordinator ? coordinatorInstructions(project) : baseInstructions(ws, project)) + (this.plugins?.instructions(project.id) ?? ''),
       extraMcpServers: this.plugins?.mcp(project.id),
       // 조율 에이전트는 코드를 고치지 않는다: 파일을 고치는 도구를 빼고, 등록된 저장소는 읽을 수 있게 한다.
-      disallowedTools: coordinator ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : undefined,
+      // 비서는 셸도 쓰지 않는다: 두레의 도구로만 일한다 (읽은 글에 속아도 이 PC 에서 명령을 실행할 길이 없게).
+      disallowedTools: steward ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash'] : coordinator ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : undefined,
       addDirs: coordinator ? repoPaths : undefined,
       // 조율 에이전트는 사용자의 원본 저장소에 닿는다: 파일을 바꾸는 셸 명령(rm, mv, sed 등)도 하나하나 승인을 받게 한다.
       manualEdits: coordinator,
@@ -890,7 +893,7 @@ export class WorkspaceService extends EventEmitter {
       headless,
       resumeSessionId,
       // 조율 에이전트는 계획과 판단을 하므로 따로 정한 모델(기본 Opus), 일하는 에이전트는 설정의 모델(기본 Sonnet).
-      model: ws.model || (coordinator ? settings.coordinatorModel : '') || settings.claudeModel || undefined,
+      model: ws.model || (steward ? settings.stewardModel : '') || (coordinator ? settings.coordinatorModel : '') || settings.claudeModel || undefined,
       effort: (coordinator ? settings.coordinatorEffort : settings.claudeEffort) || undefined,
       autoCompact: settings.autoCompactTokens || undefined,
       extraArgs,

@@ -32,6 +32,10 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultBudgetDaily: 2_000_000,
   claudeEffort: 'medium',
   coordinatorEffort: '',
+  stewardName: '비서',
+  stewardApproval: 'safe',
+  stewardAuto: false,
+  stewardModel: '',
   freshPerTodo: true,
   claudeArgs: '',
   codexPath: '',
@@ -203,6 +207,15 @@ const CHECKS: { [K in keyof Settings]: Check<K> } = {
   },
   claudeEffort: oneOf('effort', '', 'low', 'medium', 'high', 'xhigh', 'max'),
   coordinatorEffort: oneOf('조율 에이전트의 effort', '', 'low', 'medium', 'high', 'xhigh', 'max'),
+  stewardName: (v) => {
+    // eslint-disable-next-line no-control-regex
+    const t = String(v ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').trim();
+    if (!t || t.length > 20 || /[@"`<>]/.test(t)) throw new Error('비서의 이름: 1~20자이고 @ " ` < > 는 쓸 수 없습니다.');
+    return t;
+  },
+  stewardApproval: oneOf('비서의 승인 범위', 'suggest', 'safe', 'all'),
+  stewardAuto: bool('비서의 자동 처리'),
+  stewardModel: model,
   freshPerTodo: bool('TODO 마다 새 대화'),
   claudeArgs: args('Claude Code 추가 인자', 'claude'),
   codexPath: path('Codex 실행 파일'),

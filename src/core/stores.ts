@@ -2,7 +2,7 @@ import { basename } from 'node:path';
 import type Database from 'better-sqlite3';
 import type { Project, Repo, Workspace } from '@shared/types';
 
-interface ProjectRow { id: string; name: string; created_at: number; status: string; completed_at: number | null; auto_ship?: string; budget_daily?: number; budget_total?: number }
+interface ProjectRow { id: string; name: string; created_at: number; status: string; completed_at: number | null; auto_ship?: string; budget_daily?: number; budget_total?: number; kind?: string }
 interface RepoRow { id: string; project_id: string; name: string; path: string; verify_command?: string }
 interface WorkspaceRow {
   id: string; project_id: string; repo_id: string; name: string; name_locked: number; summary: string;
@@ -10,7 +10,7 @@ interface WorkspaceRow {
   status: string; token: string; created_at: number; engine: string; session_id: string | null; role: string; model?: string;
 }
 
-const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at, status: r.status === 'done' ? 'done' : 'active', completedAt: r.completed_at, autoShip: r.auto_ship === 'commit' || r.auto_ship === 'main' ? r.auto_ship : 'off', budgetDaily: r.budget_daily ?? 0, budgetTotal: r.budget_total ?? 0 });
+const toProject = (r: ProjectRow): Project => ({ id: r.id, name: r.name, createdAt: r.created_at, status: r.status === 'done' ? 'done' : 'active', completedAt: r.completed_at, autoShip: r.auto_ship === 'commit' || r.auto_ship === 'main' ? r.auto_ship : 'off', budgetDaily: r.budget_daily ?? 0, budgetTotal: r.budget_total ?? 0, ...(r.kind === 'steward' ? { kind: 'steward' as const } : {}) });
 const toRepo = (r: RepoRow): Repo => ({ id: r.id, projectId: r.project_id, name: r.name, path: r.path, verifyCommand: r.verify_command ?? '' });
 // 토큰은 일부러 옮기지 않는다. 화면으로 나가는 객체에 들어가면 안 된다.
 const toWorkspace = (r: WorkspaceRow): Workspace => ({
@@ -29,8 +29,24 @@ export class ProjectStore {
     return p;
   }
 
+  /** 사용자의 프로젝트. 두레가 관리하는 보이지 않는 프로젝트(비서의 자리)는 들지 않는다. */
   list(): Project[] {
-    return (this.db.prepare('SELECT * FROM projects ORDER BY created_at, rowid').all() as ProjectRow[]).map(toProject);
+    return (this.db.prepare("SELECT * FROM projects WHERE kind = 'normal' ORDER BY created_at, rowid").all() as ProjectRow[]).map(toProject);
+  }
+
+  /** 비서가 사는 보이지 않는 프로젝트. 없으면 undefined */
+  steward(): Project | undefined {
+    const r = this.db.prepare("SELECT * FROM projects WHERE kind = 'steward' ORDER BY created_at, rowid LIMIT 1").get() as ProjectRow | undefined;
+    return r && toProject(r);
+  }
+
+  /** 비서가 사는 프로젝트를 만든다 (하나뿐이다: 이미 있으면 그것). */
+  ensureSteward(): Project {
+    const found = this.steward();
+    if (found) return found;
+    const id = crypto.randomUUID();
+    this.db.prepare("INSERT INTO projects (id, name, created_at, kind) VALUES (?, ?, ?, 'steward')").run(id, '비서', Date.now());
+    return this.get(id)!;
   }
 
   get(id: string): Project | undefined {

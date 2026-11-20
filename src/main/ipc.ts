@@ -206,6 +206,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'checkpoints.restore': (id: string) => core.checkpoints.restore(String(id)),
     'usage.summary': (projectId: string, days?: number) => core.usage.summary(String(projectId), Number(days) > 0 ? Date.now() - Number(days) * 86_400_000 : 0),
     'attention.list': () => core.attention.list(),
+    'steward.get': () => core.steward.state(),
+    'steward.history': () => core.steward.history(),
     'pins.list': (workspaceId: string) => core.pins.list(String(workspaceId)),
     'pins.add': (input: PinInput) => core.pins.add(input),
     'pins.remove': (id: string) => core.pins.remove(String(id)),
@@ -465,6 +467,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onUpdateChanged = (): void => changed('update');
   const onNotesChanged = (): void => changed('notes');
   const onPinsChanged = (): void => changed('pins');
+  const onStewardChanged = (): void => changed('steward');
   const onCheckpointsChanged = (): void => changed('checkpoints');
   const onWorktimeChanged = (): void => changed('worktime');
   // 확인할 것: Dock 아이콘에 수를 적고, 새로 생기면 알림을 띄운다 (두레를 보고 있을 때는 띄우지 않는다).
@@ -533,6 +536,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.updates.on('changed', onUpdateChanged);
   core.notes.on('changed', onNotesChanged);
   core.pins.on('changed', onPinsChanged);
+  core.steward.on('changed', onStewardChanged);
   core.checkpoints.on('changed', onCheckpointsChanged);
   core.worktime.on('changed', onWorktimeChanged);
   core.verify.on('changed', onTodosChanged);
@@ -582,6 +586,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.updates.off('changed', onUpdateChanged);
     core.notes.off('changed', onNotesChanged);
     core.pins.off('changed', onPinsChanged);
+    core.steward.off('changed', onStewardChanged);
     core.checkpoints.off('changed', onCheckpointsChanged);
     core.worktime.off('changed', onWorktimeChanged);
     core.verify.off('changed', onTodosChanged);

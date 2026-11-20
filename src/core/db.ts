@@ -570,6 +570,33 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX steward_log_at ON steward_log (at DESC);
   `,
+  // 슬랙에서 나를 부른 글 (직접 언급, 내가 든 채널의 @here·@channel, DM). 두레가 주기적으로 찾아 적어 둔다.
+  // slack_watch_channels: 채널마다 어디까지 봤는지. slack_watch_state: 지켜보기의 상태 (언제부터 보는지 등).
+  `
+  CREATE TABLE slack_calls (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    channel_name TEXT NOT NULL,
+    user_name TEXT NOT NULL,
+    text TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    permalink TEXT NOT NULL,
+    seen INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE (channel_id, ts)
+  );
+  CREATE INDEX slack_calls_at ON slack_calls (created_at DESC);
+  CREATE TABLE slack_watch_channels (
+    channel_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    last_ts TEXT NOT NULL,
+    active_at INTEGER NOT NULL DEFAULT 0,
+    checked_at INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE slack_watch_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

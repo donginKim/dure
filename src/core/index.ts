@@ -29,6 +29,7 @@ import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
 import { PinStore } from './pins';
 import { StewardService } from './steward';
+import { SlackWatch } from './slackWatch';
 import { stewardTools } from './mcp/tools/steward';
 import { guardPromptReason } from './agents/guard';
 import { AttentionService } from './attention';
@@ -89,6 +90,8 @@ export interface Core {
   coordinator: CoordinatorService;
   dbs: DbService;
   slack: SlackService;
+  /** 슬랙에서 나를 부른 글 지켜보기 */
+  slackWatch: SlackWatch;
   updates: UpdateService;
   notes: NoteStore;
   pins: PinStore;
@@ -297,6 +300,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     get steward() { return steward; },
     get dbs() { return dbs; },
     get slack() { return slack; },
+    get slackWatch() { return slackWatch; },
     notes,
     notesForAgents: () => settings.get().notesForAgents,
     notesWriteForAgents: () => settings.get().notesWriteForAgents,
@@ -389,6 +393,22 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   service.on('changed', (id: string) => { if (!workspaces.get(id)) dbs.dropWorkspace(id); });
   const slack: SlackService = new SlackService({ db, exposed, workspaces, messages, secrets: o.secrets ?? noSecrets, fetch: o.slackFetch, waitMs: o.dbWaitMs, isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
   service.on('changed', (id: string) => { if (!workspaces.get(id)) slack.dropWorkspace(id); });
+  const slackWatch = new SlackWatch({ db, slack, settings: () => settings.get() });
+  // 연결을 끊으면 적어 둔 글도 지운다. 켜거나 다시 연결하면 기다리지 않고 한 번 본다.
+  let watchOn = settings.get().slackWatch; let slackOn = slack.status().connected;
+  slack.on('changed', () => {
+    const on = slack.status().connected;
+    if (on === slackOn) return;
+    slackOn = on;
+    if (!on) slackWatch.clear(); else void slackWatch.check().catch(() => undefined);
+  });
+  settings.on('changed', () => {
+    const on = settings.get().slackWatch;
+    if (on === watchOn) return;
+    watchOn = on;
+    if (on) { slackWatch.rebase(); void slackWatch.check().catch(() => undefined); } else slackWatch.emit('changed');
+  });
+  if (o.networkProbe !== null) slackWatch.start();
   const updates = new UpdateService({ git, dataDir: o.dataDir, infoPath: join(o.dataDir, 'install.json'), runningApp: o.runningApp ?? null, env: o.baseEnv, reopen: o.updateReopen });
   updates.start();
   const browser = new BrowserService({ driver: o.browser ?? noBrowser, workspaces, messages, waitMs: o.browserWaitMs, settings: () => settings.get(), isProjectClosed: (projectId) => service.isProjectClosed(projectId) });
@@ -707,7 +727,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const newsLinks = new Set<string>();
   let disposed = false;
   const api: Core = {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, audit, cleanup, coordinator, dbs, slack, updates, notes, pins, attention, steward, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, audit, cleanup, coordinator, dbs, slack, slackWatch, updates, notes, pins, attention, steward, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
     async news(force = false) {
       const panels = plugins.panels();
       const out: NewsPanel[] = [];
@@ -941,6 +961,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       attention.dispose();
       doing.dispose();
       schedules.dispose();
+      slackWatch.dispose();
       clearTimeout(stewardTimer);
       chat.dispose();
       await engine.stopAll();

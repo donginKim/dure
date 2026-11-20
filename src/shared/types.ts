@@ -16,6 +16,24 @@ export type PermissionMode = 'ask' | 'auto' | 'guard' | 'bypass';
 export type StewardApproval = 'suggest' | 'safe' | 'all';
 /** 비서가 "확인할 것" 하나를 처리한 기록 */
 export interface StewardLogEntry { id: string; at: number; itemId: string; kind: string; projectId: string | null; projectName: string; title: string; decision: 'approve' | 'deny'; reason: string; outcome: string }
+/** 슬랙에서 나를 부른 글. mention: 나를 직접 언급, here: 내가 든 채널의 @here·@channel·@everyone, dm: 나에게 온 개인 메시지 */
+export type SlackCallKind = 'mention' | 'here' | 'dm';
+export interface SlackCall { id: string; kind: SlackCallKind; channelId: string; channelName: string; userName: string; text: string; ts: string; permalink: string; seen: boolean; createdAt: number }
+/** 슬랙 지켜보기의 상태 */
+export interface SlackWatchStatus {
+  /** 설정에서 켰는가 */
+  enabled: boolean;
+  /** 슬랙이 연결돼 있는가 */
+  connected: boolean;
+  /** 마지막으로 확인한 시각 (없으면 0) */
+  lastRunAt: number;
+  /** 마지막 확인에서 난 문제 (없으면 빈 값). 권한이 모자라면 무엇이 모자란지 */
+  lastError: string;
+  /** 지켜보는 채널과 개인 메시지의 수 */
+  channels: number;
+  /** 아직 보지 않은 것의 수 */
+  unseen: number;
+}
 /** 화면이 받는 비서의 상태 */
 export interface StewardState {
   workspace: Workspace; project: Project; name: string; approval: StewardApproval; auto: boolean;
@@ -614,6 +632,10 @@ export interface Settings {
   stewardAuto: boolean;
   /** 비서의 모델. 비우면 조율 에이전트의 모델 */
   stewardModel: string;
+  /** 슬랙에서 나를 부른 글(직접 언급, 내가 든 채널의 @here)을 두레가 주기적으로 찾아 알린다 */
+  slackWatch: boolean;
+  /** 나에게 온 개인 메시지도 알린다 */
+  slackWatchDm: boolean;
   /** 일하는 에이전트가 TODO 를 끝내고 쉬면, 다음 TODO 는 새 대화로 시작한다 (앞 대화를 다시 읽지 않아 토큰을 아낀다) */
   freshPerTodo: boolean;
   /** 대화가 이 크기(토큰)를 넘으면 Claude Code 가 저절로 줄인다. 0 이면 Claude Code 의 기본 */

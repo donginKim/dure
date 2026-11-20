@@ -20,6 +20,17 @@ interface Row { id: number; secret: string; team: string; user: string; access: 
 interface Held extends SlackRequest { op: SlackOp; status: 'pending' | 'approved' | 'denied' | 'failed'; error?: string; result?: SlackResult; waiter?: (r: Held) => void; announced: boolean; running: boolean; token: string }
 type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string> }>;
 
+/** 두레가 스스로 슬랙을 읽을 때 받는 것: 내가 누구인지와, 내 토큰으로 부르는 길 */
+export interface SlackSelf {
+  userId: string;
+  /** 워크스페이스의 주소 (https://이름.slack.com/). 글의 링크를 만드는 데 쓴다. 모르면 빈 값 */
+  url: string;
+  call(method: string, params: Record<string, string | number | boolean | undefined>): Promise<Record<string, unknown>>;
+  userName(id: string): Promise<string>;
+  /** 글 안의 <@U123> 을 이름으로 바꾼다 */
+  readable(text: string): Promise<string>;
+}
+
 const ACCESS: SlackAccess[] = ['ask', 'auto', 'off'];
 /** 승인을 기다리며 도구 호출을 붙잡아 두는 시간. 넘으면 "기다리는 중" 으로 돌려주고, 결정되면 메시지로 알린다 */
 const WAIT_MS = 40_000;
@@ -54,8 +65,11 @@ function slackError(code: string, needed?: string): Error {
     ratelimited: '슬랙이 요청이 너무 잦다고 합니다. 잠시 뒤에 다시 하세요.',
     not_allowed_token_type: '이 토큰으로는 할 수 없는 일입니다 (검색은 사용자 토큰만 됩니다).',
   };
-  if (code === 'missing_scope') return new Error(`슬랙 토큰에 권한이 없습니다${needed ? ` (필요한 권한: ${oneLine(needed, 200)})` : ''}. 슬랙 앱의 User Token Scopes 에 더하고 다시 설치하세요.`);
-  return new Error(known[code] ?? `슬랙이 요청을 받지 않았습니다 (${oneLine(code, 60) || '알 수 없는 오류'}).`);
+  // slackCode: 두레가 스스로 읽을 때(slackWatch.ts) 어떤 오류인지 가리는 데 쓴다.
+  const text = code === 'missing_scope'
+    ? `슬랙 토큰에 권한이 없습니다${needed ? ` (필요한 권한: ${oneLine(needed, 200)})` : ''}. 슬랙 앱의 User Token Scopes 에 더하고 다시 설치하세요.`
+    : known[code] ?? `슬랙이 요청을 받지 않았습니다 (${oneLine(code, 60) || '알 수 없는 오류'}).`;
+  return Object.assign(new Error(text), { slackCode: oneLine(code, 60) });
 }
 
 /** 슬랙 메시지 주소에서 채널과 시각을 꺼낸다: https://팀.slack.com/archives/C123/p1700000000123456?thread_ts=1700000000.123456 */
@@ -132,6 +146,30 @@ export class SlackService extends EventEmitter {
     super();
   }
 
+  private me: { userId: string; url: string } | null = null;
+
+  /**
+   * 두레가 스스로 슬랙을 읽을 때 쓰는 길 (나를 부른 글 지켜보기, slackWatch.ts).
+   * 에이전트의 읽기와 다르다: 에이전트가 고른 것을 읽는 것이 아니라 두레가 정해진 것만 읽고, 사용자가 설정에서 켠 것이라 요청마다 묻지 않는다.
+   * 연결돼 있지 않으면 null.
+   */
+  async self(): Promise<SlackSelf | null> {
+    const r = this.row();
+    if (!r) return null;
+    const token = this.d.secrets.decrypt(r.secret);
+    if (!this.me) {
+      const a = await this.api(token, 'auth.test', {});
+      const url = String(a.url ?? '');
+      this.me = { userId: String(a.user_id ?? ''), url: /^https:\/\/[a-z0-9-]+(\.enterprise)?\.slack\.com\/$/.test(url) ? url : '' };
+    }
+    return {
+      ...this.me,
+      call: (method, params) => this.api(token, method, params),
+      userName: (id) => this.userName(token, id),
+      readable: (text) => this.readable(token, text),
+    };
+  }
+
   private row(): Row | undefined {
     return this.d.db.prepare('SELECT * FROM slack_connection WHERE id = 1').get() as Row | undefined;
   }
@@ -150,7 +188,7 @@ export class SlackService extends EventEmitter {
     const secret = this.d.secrets.encrypt(t);
     this.d.db.prepare('INSERT INTO slack_connection (id, secret, team, user, access, created_at) VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET secret = excluded.secret, team = excluded.team, user = excluded.user')
       .run(secret, oneLine(me.team, 80), oneLine(me.user, 80), 'ask', Date.now());
-    this.users.clear(); this.channelNames.clear();
+    this.users.clear(); this.channelNames.clear(); this.me = null;
     this.denyAll('슬랙 연결이 바뀌었다');
     this.emit('changed');
     return this.status();
@@ -158,7 +196,7 @@ export class SlackService extends EventEmitter {
 
   disconnect(): void {
     this.d.db.prepare('DELETE FROM slack_connection WHERE id = 1').run();
-    this.users.clear(); this.channelNames.clear();
+    this.users.clear(); this.channelNames.clear(); this.me = null;
     this.denyAll('사용자가 슬랙 연결을 끊었다');
     this.emit('changed');
   }

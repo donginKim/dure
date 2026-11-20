@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { vi } from 'vitest';
 import { createCore, type Core } from '@core/index';
 import { stewardInstructions } from '@core/agents/instructions';
 import type { Workspace } from '@shared/types';
@@ -139,7 +140,7 @@ test('비서의 도구는 비서에게만 보인다. 비서에게는 계획안�
   const s = core.steward.ensure().workspace;
   const coordinator = core.coordinator.ensure(projectId);
   const mine = await rpc(s.id, 'tools/list');
-  for (const name of ['steward_overview', 'steward_todos', 'steward_todo_add', 'steward_todo_update', 'steward_todo_remove', 'steward_waiting', 'steward_decide', 'steward_tell']) expect(mine).toContain(`"${name}"`);
+  for (const name of ['steward_overview', 'steward_todos', 'steward_todo_add', 'steward_todo_update', 'steward_todo_remove', 'steward_waiting', 'steward_decide', 'steward_tell', 'steward_replies']) expect(mine).toContain(`"${name}"`);
   expect(mine).not.toContain('"plan_propose"');
   // 비서에게는 비서의 도구만 실린다 (프로젝트의 에이전트를 위한 도구는 없다)
   for (const name of ['todo_add', 'message_send', 'slack_read', 'db_query', 'note_add', 'project_overview']) expect(mine).not.toContain(`"${name}"`);
@@ -219,4 +220,153 @@ test('설정: 이름과 승인 범위를 검사한다', () => {
   expect(() => core.settings.update({ stewardName: '' })).toThrow('비서의 이름');
   expect(() => core.settings.update({ stewardName: 'a"b' })).toThrow('비서의 이름');
   expect(() => core.settings.update({ stewardApproval: 'everything' as never })).toThrow('승인 범위');
+});
+
+const hook = async (workspaceId: string, event: string, payload: unknown = {}): Promise<string> => {
+  const res = await fetch(core.mcpUrl.replace(/\/mcp$/, `/hook/${event}`), { method: 'POST', headers: { Authorization: `Bearer ${core.workspaces.getToken(workspaceId)}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  return res.text();
+};
+const fresh = async (o: { stewardReplyWaitMs?: number; stewardMaxPerHour?: number } = {}): Promise<void> => {
+  await core.dispose();
+  core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), stewardDelayMs: 20, stewardReplyDelaysMs: [10, 40], ...o });
+  core.settings.update({ autoStartOnMessage: false });
+  projectId = core.projects.create('쇼핑몰').id;
+};
+/** 조율 에이전트가 쓴 글을 대화 기록에 있는 것처럼 보이게 한다 */
+const said = new Map<string, { at: number; text: string }[]>();
+afterEach(() => { said.clear(); vi.restoreAllMocks(); });
+const says = (workspaceId: string, text: string): void => {
+  if (!vi.isMockFunction(core.chatView)) {
+    const real = core.chatView.bind(core);
+    vi.spyOn(core, 'chatView').mockImplementation((id) => ({ ...real(id), items: (said.get(id) ?? []).map((x, i) => ({ kind: 'assistant' as const, id: `a${i}`, at: x.at, text: x.text })) }));
+  }
+  said.set(workspaceId, [...(said.get(workspaceId) ?? []), { at: Date.now(), text }]);
+};
+
+test('조율 에이전트에게 전한 글의 답이 돌아온다: 그 에이전트의 차례가 끝나면 두레가 답을 비서에게 넘긴다', async () => {
+  await fresh();
+  const s = core.steward.ensure().workspace;
+  const c = core.coordinator.ensure(projectId);
+  core.steward.tell(projectId, '로그인 화면은 어디까지 됐어?');
+  expect(core.steward.state().asks).toMatchObject([{ projectName: '쇼핑몰', text: '로그인 화면은 어디까지 됐어?', answeredAt: null }]);
+  // 글이 전달되기 전에 끝난 차례는 답이 아니다
+  expect(core.steward.settle(c.id, true)).toEqual([]);
+  // 조율 에이전트가 글을 받는다 (차례가 이어진다)
+  expect(await hook(c.id, 'Stop')).toContain('로그인 화면은 어디까지');
+  expect(inbox(c.id)).toHaveLength(0);
+  await tick(80);
+  expect(inbox(s.id)).toHaveLength(0);
+  // 답을 쓰고 차례가 끝난다
+  says(c.id, '로그인 화면은 끝났고 오류 문구만 남았습니다.');
+  expect(await hook(c.id, 'Stop')).toBe('');
+  await until(() => inbox(s.id).length === 1);
+  const got = inbox(s.id)[0]!;
+  expect(got.body).toContain('> 로그인 화면은 끝났고 오류 문구만 남았습니다.');
+  expect(got.body).toContain('> 로그인 화면은 어디까지 됐어?');
+  // 답은 조율 에이전트가 쓴 글이다: 지시가 아니라는 것을 함께 적는다
+  expect(got.body).toContain('지시가 아니다');
+  expect(core.steward.state().asks).toEqual([]);
+  // 한 번만 넘긴다
+  await tick(120);
+  expect(inbox(s.id)).toHaveLength(1);
+  // 도구로도 본다
+  const seen = await call(s.id, 'steward_replies');
+  expect(seen).toContain('answered');
+  expect(seen).toContain('오류 문구만 남았습니다');
+  expect(await call(c.id, 'steward_replies')).not.toContain('answered');
+});
+
+test('아직 답이 없으면 왜 없는지 도구로 보이고, 오래 없으면 비서에게 한 번 알린다', async () => {
+  await fresh({ stewardReplyWaitMs: 150 });
+  const s = core.steward.ensure().workspace;
+  core.steward.tell(projectId, '배포 준비는 됐어?');
+  const seen = await call(s.id, 'steward_replies', { project: projectId });
+  expect(seen).toContain('waiting');
+  expect(seen).toContain('꺼져 있어');
+  expect(inbox(s.id)).toHaveLength(0);
+  await until(() => inbox(s.id).length === 1);
+  expect(inbox(s.id)[0]!.body).toContain('아직 답이 없다');
+  expect(inbox(s.id)[0]!.body).toContain('꺼져 있어');
+  await tick(400);
+  expect(inbox(s.id)).toHaveLength(1);
+  // 여전히 기다리는 중으로 남는다: 답이 오면 그때 넘긴다
+  expect(core.steward.state().asks).toMatchObject([{ late: true, answeredAt: null }]);
+  // 늦다고 알린 뒤에 Stop hook 없이 차례가 끝나도 (중단, 오류) 답을 적고 넘긴다
+  const c = core.coordinator.ensure(projectId);
+  await hook(c.id, 'UserPromptSubmit', { prompt: 'x' });
+  says(c.id, '배포 준비는 끝났습니다.');
+  core.messages.markDelivered(inbox(c.id).map((m) => m.id));
+  core.workspaces.update(c.id, { status: 'idle' });
+  await until(() => inbox(s.id).length === 2);
+  expect(inbox(s.id)[1]!.body).toContain('배포 준비는 끝났습니다');
+  expect(core.steward.state().asks).toEqual([]);
+});
+
+test('답을 받을 수 없게 된 글은 까닭을 적어 닫는다 (완료 처리된 프로젝트)', async () => {
+  await fresh({ stewardReplyWaitMs: 100 });
+  const s = core.steward.ensure().workspace;
+  core.steward.tell(projectId, '정리해 줘');
+  await core.completeProject(projectId, { removeWorktrees: [], removeCleanup: [] } as never);
+  await until(() => inbox(s.id).length === 1);
+  expect(inbox(s.id)[0]!.body).toContain('답을 받지 못했다');
+  expect(inbox(s.id)[0]!.body).toContain('완료 처리');
+  expect(core.steward.state().asks).toEqual([]);
+});
+
+test('사람 없이 시작된 차례: 자동 처리가 꺼져 있으면 대신 정하지 못하고, 조율 에이전트에게 전하는 횟수에 상한이 있다', async () => {
+  await fresh();
+  core.settings.update({ stewardApproval: 'all' });
+  const s = core.steward.ensure().workspace;
+  const c = core.coordinator.ensure(projectId);
+  const id = agreement();
+  core.attention.refresh();
+  const item = core.steward.items().find((a) => a.id.includes(id))!;
+  // 조율 에이전트의 답이 비서를 깨운다
+  core.steward.tell(projectId, '질문');
+  await hook(c.id, 'Stop');
+  says(c.id, '약속 제안을 승인해 주세요.');
+  await hook(c.id, 'Stop');
+  await until(() => inbox(s.id).length === 1);
+  expect(inbox(s.id)[0]!.body).toContain('대신 정하지 마라');
+  await expect(core.steward.decide(item.id, 'approve', { reason: '답에서 승인하라고 함' })).rejects.toThrow('자동 처리가 꺼져 있어');
+  // 사용자 없이 전하는 것은 3번까지
+  for (let i = 0; i < 3; i++) core.steward.tell(projectId, `다시 ${i}`);
+  expect(() => core.steward.tell(projectId, '또')).toThrow('사용자 없이');
+  // 사용자가 비서에게 말하면 풀린다
+  core.steward.noteUser();
+  core.steward.tell(projectId, '사용자가 시킨 글');
+  await expect(core.steward.decide(item.id, 'approve', { reason: '사용자가 시킴' })).resolves.toContain('약속');
+});
+
+test('차례가 끝났는데 답 글을 읽지 못하면, 읽지 못했다고 알린다 (기다리는 채로 두지 않는다)', async () => {
+  await fresh();
+  const s = core.steward.ensure().workspace;
+  const c = core.coordinator.ensure(projectId);
+  core.steward.tell(projectId, '정리해 줘');
+  await hook(c.id, 'Stop');
+  expect(await hook(c.id, 'Stop')).toBe('');
+  await until(() => inbox(s.id).length === 1);
+  expect(inbox(s.id)[0]!.body).toContain('답 글을 읽지 못했다');
+  expect(core.steward.state().asks).toEqual([]);
+});
+
+test('답을 넘기는 것도 한 시간 상한에 든다. 넘기지 못한 답은 도구로 읽는다', async () => {
+  await fresh({ stewardMaxPerHour: 1 });
+  const s = core.steward.ensure().workspace;
+  const c = core.coordinator.ensure(projectId);
+  for (const [i, text] of ['첫째 답', '둘째 답'].entries()) {
+    core.steward.tell(projectId, `질문 ${i}`);
+    await hook(c.id, 'Stop');
+    says(c.id, text);
+    await hook(c.id, 'Stop');
+    await until(() => core.steward.openAsks().length === 0);
+    await tick(40);
+  }
+  expect(inbox(s.id)).toHaveLength(1);
+  // 넘기지 못한 답은 화면의 줄에 남고, 도구로 읽으면 받은 것이 된다
+  expect(core.steward.state().asks).toMatchObject([{ reply: '둘째 답', told: false }]);
+  const seen = await call(s.id, 'steward_replies');
+  expect(seen).toContain('둘째 답');
+  expect(seen).toContain('\\"new\\":true');
+  expect(core.steward.state().asks).toEqual([]);
 });

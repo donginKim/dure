@@ -214,6 +214,10 @@ export interface CoreOptions {
   suggestEveryMs?: number;
   /** 확인할 것이 생긴 뒤 비서에게 알리기까지 모으는 시간 (ms). 기본 20초 */
   stewardDelayMs?: number;
+  /** 비서가 조율 에이전트에게 전한 글에 이만큼 답이 없으면 비서에게 알린다 (ms). 기본 10분 */
+  stewardReplyWaitMs?: number;
+  /** 조율 에이전트의 차례가 끝난 뒤 답을 읽어 보는 시각들 (ms). 마지막에는 글이 없어도 끝난 것으로 적는다. 기본 [400, 2000, 6000] */
+  stewardReplyDelaysMs?: number[];
   /** 비서에게 저절로 알리는 횟수의 한 시간 상한. 기본 6 */
   stewardMaxPerHour?: number;
   /** 계획안의 새 저장소를 만드는 상위 폴더. 기본은 worktreeRoot 옆의 repos */
@@ -331,7 +335,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
           // 두레가 넣은 프롬프트가 아니면 사용자가 직접 입력한 것이다: 에이전트끼리의 왕복 횟수를 다시 센다.
           // hook 만으로는 믿지 않는다 (에이전트도 hook 주소를 부를 수 있다): 사용자가 방금 그 터미널에 입력했을 때만 센다.
           // 채팅 방식의 입력은 보낼 때 따로 센다 (sendUserInput).
-          if (!service.consumeSynthetic(w.id) && service.userTypedRecently(w.id)) messages.userIntervened(w.projectId);
+          if (!service.consumeSynthetic(w.id) && service.userTypedRecently(w.id)) { messages.userIntervened(w.projectId); if (steward.isSteward(w.projectId)) steward.noteUser(); }
         },
       }, workspace, event, payload);
       // 승인 요청이 아닌 알림(입력을 기다린다는 알림 등)은 에이전트가 일을 시작했다는 뜻이 아니다.
@@ -347,10 +351,13 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (event === 'SessionStart' && engine.has(workspace.id)) setTimeout(() => kick(workspace.id), 0);
       // TODO 를 끝내고 쉬는 에이전트는 다음 TODO 를 새 대화로 시작한다 (설정에서 끌 수 있다).
       if (event === 'Stop' && out === '') service.maybeFresh(workspace.id);
+      // 비서가 이 조율 에이전트에게 전한 글이 있으면, 차례가 끝난 지금 그 답을 비서에게 넘긴다.
+      if (event === 'Stop' && out === '' && workspace.role === 'coordinator') { try { stewardReplySoon(workspace.id); } catch { /* 비서가 steward_replies 로 본다 */ } }
       return out;
     },
   }, [workspaceTools, todoTools, messageTools, artifactTools, commitTools, cleanupTools, coordinatorTools, stewardTools, dbTools, browserTools, slackTools, noteTools, agreementTools, figureTools, memoryTools]);
   const service = new WorkspaceService({
+    onUserInput: (w) => { if (steward.isSteward(w.projectId)) steward.noteUser(); },
     onAgentStart: (w, info) => audit.record({ actor: 'system', action: 'agent.launch', projectId: w.projectId, workspaceId: w.id, target: w.role === 'coordinator' ? '조율 에이전트' : w.name, detail: info }),
     agentConfigTrusted: (repoId, hash) => db.prepare('SELECT 1 FROM agent_config_trust WHERE repo_id = ? AND hash = ?').get(repoId, hash) !== undefined,
     projects, repos, workspaces, pty, todos, messages, git, mcpUrl: mcp.url, hookUrl: mcp.hookUrl, dataDir: o.dataDir, worktreeRoot: o.worktreeRoot, settings: () => settings.get(), baseEnv: o.baseEnv,
@@ -554,7 +561,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     peers: { held: (id) => peers.held(id), pass: (id, w) => peers.pass(id, w), drop: (id) => peers.drop(id), shareInvites: () => peers.shareInvites(), acceptInvite: (id, projectId) => peers.acceptInvite(id, projectId), declineInvite: (id) => peers.declineInvite(id) },
     assignments: { incoming: (id) => assignments.incoming(id), accept: (id, c, o2) => assignments.accept(id, c, o2), decline: (id, reason) => assignments.decline(id, reason), takeBrief: (id) => assignments.takeBrief(id), dropBrief: (id) => assignments.dropBrief(id) },
     agreements,
-    send: (projectId, workspaceId, body, title) => { messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }); },
+    send: (projectId, workspaceId, body, title) => messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }).id,
     audit: (i) => audit.record(i),
   });
   // 자동 처리: 확인할 것이 새로 생기면 잠깐 모았다가 비서에게 알린다 (설정에서 켰고, 추천만이 아닐 때).
@@ -564,6 +571,55 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   // 한 시간에 알리는 횟수에 상한을 둔다. 넘으면 알리지 않고, 남은 것은 사용자가 확인할 것에서 본다.
   let stewardWakes: number[] = [];
   let stewardCapped = false;
+  /** 비서에게 두레의 알림을 보내 깨운다. 예산에 막혔거나 한 시간 상한을 넘었으면 보내지 않고 false */
+  const stewardWake = (title: string, body: string): boolean => {
+    const { project, workspace } = steward.ensure();
+    if (budget.blocked(project.id)) return false;
+    const hourAgo = Date.now() - 3_600_000;
+    stewardWakes = stewardWakes.filter((t) => t > hourAgo);
+    if (stewardWakes.length >= (o.stewardMaxPerHour ?? 6)) {
+      if (!stewardCapped) { stewardCapped = true; audit.record({ actor: 'system', action: 'steward.auto_capped', projectId: project.id, workspaceId: workspace.id, target: '비서', outcome: 'denied', reason: `한 시간에 ${o.stewardMaxPerHour ?? 6}번까지만 저절로 알립니다` }); }
+      return false;
+    }
+    stewardCapped = false;
+    stewardWakes.push(Date.now());
+    steward.noteWake();
+    messages.send({ projectId: project.id, from: { kind: 'system' }, toWorkspaceId: workspace.id, title, body });
+    return true;
+  };
+  // 비서가 조율 에이전트에게 전한 글의 답: 그 에이전트의 차례가 끝나면 답을 비서에게 넘긴다 (설정의 자동 처리와 상관없이. 비서가 물은 것의 답이다).
+  // 대화 기록은 차례가 끝난 조금 뒤에 읽히므로 몇 번 나눠 보고, 마지막에는 글이 없어도 끝난 것으로 적는다.
+  // 상한에 걸려 알리지 못한 답은 비서가 steward_replies 로 읽을 수 있다.
+  const stewardReplyTimers = new Set<NodeJS.Timeout>();
+  const stewardReplyTell = (asks: ReturnType<typeof steward.settle>): void => {
+    if (asks.length === 0) return;
+    if (stewardWake('조율 에이전트의 답이 왔습니다', steward.replyNote(asks))) steward.markTold(asks.map((a) => a.id));
+  };
+  const stewardReplySoon = (workspaceId: string): void => {
+    // 지금 끝난 차례가 받은 글만 본다: 이 뒤에 전달되는 글의 답은 다음 차례가 끝날 때 온다.
+    const ids = steward.deliveredAsks(workspaceId);
+    if (ids.length === 0) return;
+    const delays = o.stewardReplyDelaysMs ?? [400, 2000, 6000];
+    delays.forEach((ms, i) => {
+      const t = setTimeout(() => {
+        stewardReplyTimers.delete(t);
+        try { stewardReplyTell(steward.settle(workspaceId, i === delays.length - 1, ids)); } catch { /* 넘기지 못하면 비서가 steward_replies 로 본다 */ }
+      }, ms);
+      t.unref?.();
+      stewardReplyTimers.add(t);
+    });
+  };
+  // 오래 답이 없으면 (조율 에이전트가 꺼져 있거나, 사용자의 승인에 막혔거나) 비서에게 한 번 알린다: "기다린다" 고만 하고 잊히지 않게.
+  const stewardReplyWait = o.stewardReplyWaitMs ?? 600_000;
+  const stewardLateTimer = setInterval(() => {
+    try {
+      const { late } = steward.overdue(stewardReplyWait);
+      // 새로 닫힌 것과, 앞서 상한이나 예산에 막혀 넘기지 못한 답을 함께 넘긴다.
+      stewardReplyTell(steward.untold());
+      if (late.length && stewardWake('아직 답이 없습니다', steward.lateNote(late))) steward.markLate(late.map((l) => l.ask.id));
+    } catch { /* 다음에 다시 본다 */ }
+  }, Math.max(20, Math.min(30_000, Math.floor(stewardReplyWait / 4))));
+  stewardLateTimer.unref?.();
   attention.on('added', () => {
     const s = settings.get();
     if (!s.stewardAuto) return;
@@ -578,18 +634,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         const waiting = steward.items();
         // 비서가 정할 수 있는 것이 하나도 없으면 깨우지 않는다 (토큰만 쓴다).
         if (!waiting.some((a) => a.allowed)) return;
-        const { project, workspace } = steward.ensure();
-        if (budget.blocked(project.id)) return;
-        const hourAgo = Date.now() - 3_600_000;
-        stewardWakes = stewardWakes.filter((t) => t > hourAgo);
-        if (stewardWakes.length >= (o.stewardMaxPerHour ?? 6)) {
-          if (!stewardCapped) { stewardCapped = true; audit.record({ actor: 'system', action: 'steward.auto_capped', projectId: project.id, workspaceId: workspace.id, target: '비서', outcome: 'denied', reason: `한 시간에 ${o.stewardMaxPerHour ?? 6}번까지만 저절로 알립니다` }); }
-          return;
-        }
-        stewardCapped = false;
-        stewardWakes.push(Date.now());
-        messages.send({ projectId: project.id, from: { kind: 'system' }, toWorkspaceId: workspace.id, title: '확인할 것이 생겼습니다',
-          body: `사용자를 기다리는 것이 ${waiting.length}건 있다 (그중 네가 정할 수 있는 것 ${waiting.filter((a) => a.allowed).length}건). steward_waiting 으로 보고, 정할 수 있는 것은 정하고, 남긴 것은 무엇을 추천하는지 한 줄씩 적어라. 길게 쓰지 마라.` });
+        stewardWake('확인할 것이 생겼습니다',
+          `사용자를 기다리는 것이 ${waiting.length}건 있다 (그중 네가 정할 수 있는 것 ${waiting.filter((a) => a.allowed).length}건). steward_waiting 으로 보고, 정할 수 있는 것은 정하고, 남긴 것은 무엇을 추천하는지 한 줄씩 적어라. 길게 쓰지 마라.`);
       } catch { /* 알리지 못하면 사용자가 화면에서 본다 */ }
     }, wait);
     stewardTimer.unref?.();
@@ -963,6 +1009,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       schedules.dispose();
       slackWatch.dispose();
       clearTimeout(stewardTimer);
+      clearInterval(stewardLateTimer);
+      for (const t of stewardReplyTimers) clearTimeout(t);
       chat.dispose();
       await engine.stopAll();
       assignments.dispose();

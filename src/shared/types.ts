@@ -39,6 +39,18 @@ export interface StewardState {
   workspace: Workspace; project: Project; name: string; approval: StewardApproval; auto: boolean;
   /** 비서가 오늘 쓴 토큰이 상한을 넘어 멈췄으면 그 까닭. 아니면 null */
   blocked: string | null;
+  /** 비서가 조율 에이전트에게 전한 글 가운데 아직 답이 없거나, 답은 왔는데 비서가 아직 받지 못한 것 (오래된 것부터) */
+  asks: StewardAsk[];
+}
+/**
+ * 비서가 한 프로젝트의 조율 에이전트에게 전한 글과 그 답.
+ * answeredAt: 조율 에이전트의 차례가 끝나 답을 적어 둔 시각 (없으면 아직 기다리는 중). reply 는 조율 에이전트가 쓴 글이다.
+ * told: 비서가 그 답을 받았는가 (알림이나 도구로). late: 오래 답이 없다고 비서에게 알렸는가.
+ */
+export interface StewardAsk {
+  id: string; projectId: string; projectName: string; workspaceId: string; text: string; askedAt: number; answeredAt: number | null; reply: string; told: boolean; late: boolean;
+  /** 답을 받을 수 없게 돼 닫았으면 그 까닭 (조율 에이전트가 없어짐, 프로젝트가 완료 처리됨 등). 아니면 빈 값 */
+  problem: string;
 }
 /**
  * 에이전트를 돌리는 방식.

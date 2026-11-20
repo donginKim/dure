@@ -47,6 +47,8 @@ export class WorktreeMissingError extends Error {
 
 export interface WorkspaceServiceDeps {
   /** 에이전트를 띄울 때 (누가 띄웠든) 알린다: 감사 기록 */
+  /** 사용자가 화면에서 그 워크스페이스의 에이전트에게 글을 보냈다 */
+  onUserInput?: (ws: Workspace) => void;
   onAgentStart?: (ws: Workspace, info: { agent: string; permissionMode: string; engine: string; model: string }) => void;
   /** 이 저장소에서 이 내용의 에이전트 설정 파일을 사용자가 허용했는가. 없으면 가리지 않는다 */
   agentConfigTrusted?: (repoId: string, hash: string) => boolean;
@@ -1108,7 +1110,7 @@ export class WorkspaceService extends EventEmitter {
 
   /** 사용자가 채팅 입력창에서 보낸 글을 에이전트의 터미널에 써 넣는다. */
   async sendUserInput(id: string, text: string, rawImages: unknown = []): Promise<void> {
-    { const w = this.d.workspaces.get(id); if (w) this.checkBudget(w.projectId); }
+    { const w = this.d.workspaces.get(id); if (w) { this.checkBudget(w.projectId); try { this.d.onUserInput?.(w); } catch { /* 알리지 못해도 보낸다 */ } } }
     // 사용자가 말을 걸었다: 막혔다는 표시는 거둔다 (새 지시를 받았다).
     this.clearStuck(id);
     // 화면에서 사용자가 보낸 글이다 (이어서 오는 UserPromptSubmit 을 사용자 개입으로 센다).

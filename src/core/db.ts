@@ -552,6 +552,24 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX pins_workspace ON pins (workspace_id, created_at DESC);
   `,
+  // 비서: 모든 프로젝트를 보는 에이전트. 두레가 관리하는 보이지 않는 프로젝트(kind = 'steward')에 산다.
+  // steward_log 는 비서가 "확인할 것" 을 대신 처리한 기록 (무엇을, 어떻게, 왜).
+  `
+  ALTER TABLE projects ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal';
+  CREATE TABLE steward_log (
+    id TEXT PRIMARY KEY,
+    at INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    project_id TEXT,
+    project_name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    outcome TEXT NOT NULL
+  );
+  CREATE INDEX steward_log_at ON steward_log (at DESC);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

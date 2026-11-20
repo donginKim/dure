@@ -22,6 +22,7 @@ import type { DeliveryService } from '../delivery';
 import type { MessageService } from '../messages';
 import type { ProjectStore, RepoStore, WorkspaceStore } from '../stores';
 import type { TodoService } from '../todos';
+import type { StewardService } from '../steward';
 
 /** 요청을 보낸 에이전트가 속한 워크스페이스와 프로젝트. 토큰으로 정해진다. */
 /** 두레 안의 것을 읽기만 하는 도구는 감사 기록에 적지 않는다 (밖에 닿는 DB·슬랙·브라우저 도구는 읽기여도 적는다). */
@@ -44,6 +45,8 @@ export interface McpDeps {
   commitDrafts: CommitDraftStore;
   cleanup: CleanupService;
   coordinator: CoordinatorService;
+  /** 비서 (모든 프로젝트를 보는 에이전트). 없으면 그 도구를 싣지 않는다 */
+  steward?: StewardService;
   dbs: DbService;
   slack: SlackService;
   notes: NoteStore;

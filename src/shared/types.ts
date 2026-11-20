@@ -17,7 +17,11 @@ export type StewardApproval = 'suggest' | 'safe' | 'all';
 /** 비서가 "확인할 것" 하나를 처리한 기록 */
 export interface StewardLogEntry { id: string; at: number; itemId: string; kind: string; projectId: string | null; projectName: string; title: string; decision: 'approve' | 'deny'; reason: string; outcome: string }
 /** 화면이 받는 비서의 상태 */
-export interface StewardState { workspace: Workspace; project: Project; name: string; approval: StewardApproval; auto: boolean }
+export interface StewardState {
+  workspace: Workspace; project: Project; name: string; approval: StewardApproval; auto: boolean;
+  /** 비서가 오늘 쓴 토큰이 상한을 넘어 멈췄으면 그 까닭. 아니면 null */
+  blocked: string | null;
+}
 /**
  * 에이전트를 돌리는 방식.
  * chat: 터미널 화면 없이 구조화된 입출력으로 돌린다 (글이 실시간으로 흐르고, 승인과 질문이 화면의 버튼으로 온다). Claude Code 만 된다.

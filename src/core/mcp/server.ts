@@ -143,7 +143,8 @@ export async function startMcpServer(deps: McpDeps, bundles: ToolBundle[], port 
         });
       };
     }
-    for (const bundle of bundles) bundle(mcp, ctx, deps);
+    // 비서(두레가 관리하는 프로젝트의 에이전트)에게는 비서의 도구만 싣는다: 다른 묶음(슬랙·DB 읽기, 메시지, 메모 등)은 프로젝트의 에이전트를 위한 것이다.
+    for (const bundle of ctx.project.kind === 'steward' ? bundles.filter((b) => (b as { steward?: boolean }).steward === true) : bundles) bundle(mcp, ctx, deps);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => { void transport.close(); void mcp.close(); });
     await mcp.connect(transport);

@@ -852,7 +852,7 @@ export class WorkspaceService extends EventEmitter {
     if (this.isProjectClosed(project.id)) throw new Error(DONE_PROJECT);
     const settings = this.settings();
     const steward = coordinator && project.kind === 'steward';
-    try { this.d.onAgentStart?.(ws, { agent: ws.agentKind, permissionMode: ws.permissionMode, engine: ws.engine, model: ws.model || (ws.role === 'coordinator' ? settings.coordinatorModel || settings.claudeModel : settings.claudeModel) || '' }); } catch { /* 기록만 빠진다 */ }
+    try { this.d.onAgentStart?.(ws, { agent: ws.agentKind, permissionMode: ws.permissionMode, engine: ws.engine, model: ws.model || (steward ? settings.stewardModel || settings.coordinatorModel || settings.claudeModel : ws.role === 'coordinator' ? settings.coordinatorModel || settings.claudeModel : settings.claudeModel) || '' }); } catch { /* 기록만 빠진다 */ }
     const executable = this.agentExecutable(ws.agentKind, settings);
     // 저장된 뒤에 규칙이 바뀌었을 수도 있으니 쓰기 직전에 한 번 더 거른다.
     const extraArgs = parseArgs(ws.agentKind === 'claude' ? settings.claudeArgs : settings.codexArgs);

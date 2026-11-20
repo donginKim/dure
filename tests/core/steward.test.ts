@@ -67,7 +67,10 @@ test('모든 프로젝트의 현황과 TODO 를 본다. 비서의 프로젝트�
 test('어느 프로젝트의 TODO 든 더하고 고치고 지운다. 그 워크스페이스의 에이전트에게는 바뀐 것이 전해진다', () => {
   const added = core.steward.addTodo({ projectId, workspaceId: ws.id, title: '오류 문구 다듬기', assignee: 'agent' });
   expect(core.todos.listWorkspace(ws.id).map((t) => t.title)).toEqual(['오류 문구 다듬기']);
-  expect(core.todos.takePending(ws.id).join('\n')).toContain('오류 문구 다듬기');
+  // 그 에이전트에게 전해질 글에는 비서가 바꿨다는 것이 적힌다 (사용자가 직접 바꾼 것으로 읽히지 않게)
+  const told = core.todos.takePending(ws.id).join('\n');
+  expect(told).toContain('오류 문구 다듬기');
+  expect(told).toContain('(비서 "비서" 가 사용자를 대신해 바꿈)');
   expect(core.steward.updateTodo(added.id, { status: 'cancelled' }).status).toBe('cancelled');
   core.steward.removeTodo(added.id);
   expect(core.todos.listWorkspace(ws.id)).toEqual([]);
@@ -90,33 +93,46 @@ test('승인 범위 "추천만": 아무것도 스스로 정하지 못한다. 시
   expect(core.steward.history()[0]!.outcome).toContain('하지 않음');
 });
 
-test('승인 범위 "안전한 것만": 약속은 받아들이고, 계획안은 못 정한다', async () => {
+test('승인 범위 "안전한 것만": 약속과 계획안은 못 정한다 (에이전트가 쓴 글이 규칙이 되거나 되돌리기 어려운 것)', async () => {
   const id = agreement();
   const planId = await plan();
   const items = core.steward.items();
-  expect(items.find((i) => i.kind === 'agreement')!.allowed).toBe(true);
+  expect(items.find((i) => i.kind === 'agreement')).toMatchObject({ allowed: false });
   expect(items.find((i) => i.kind === 'plan')).toMatchObject({ id: `plan:${planId}`, allowed: false });
-  expect(await core.steward.decide(`agreement:${id}`, 'approve', { reason: '화면과 서버가 같은 형식을 쓴다' })).toBe('약속을 받아들임');
-  expect(core.agreements.list(projectId).map((a) => a.title)).toEqual(['API 형식']);
+  await expect(core.steward.decide(`agreement:${id}`, 'approve', { reason: '형식이 맞다' })).rejects.toThrow('전부 스스로');
   await expect(core.steward.decide(`plan:${planId}`, 'approve', { reason: 'x' })).rejects.toThrow('전부 스스로');
+  expect(core.agreements.list(projectId)).toEqual([]);
   expect(core.coordinator.pending(projectId)?.id).toBe(planId);
-  // 왜 그렇게 정했는지 없으면 정하지 않는다
-  const again = agreement('이름 규칙');
-  await expect(core.steward.decide(`agreement:${again}`, 'approve', { reason: '  ' })).rejects.toThrow('reason');
-  // 버리기
-  expect(await core.steward.decide(`agreement:${again}`, 'deny', { reason: '겹치는 약속이다' })).toBe('약속 제안을 버림');
-  expect(core.steward.history().map((h) => h.outcome)).toEqual(expect.arrayContaining(['약속을 받아들임', '약속 제안을 버림']));
 });
 
-test('승인 범위 "전부 스스로": 계획안을 올라온 그대로 승인해 워크스페이스가 만들어진다. 없는 항목은 정하지 못한다', async () => {
+test('승인 범위 "전부 스스로": 약속을 받아들이거나 버리고, 계획안을 올라온 그대로 승인한다. 까닭이 없거나 없는 항목은 정하지 못한다', async () => {
   core.settings.update({ stewardApproval: 'all' });
+  const id = agreement();
+  expect(await core.steward.decide(`agreement:${id}`, 'approve', { reason: '화면과 서버가 같은 형식을 쓴다' })).toBe('약속을 받아들임');
+  expect(core.agreements.list(projectId).map((a) => a.title)).toEqual(['API 형식']);
+  const again = agreement('이름 규칙');
+  await expect(core.steward.decide(`agreement:${again}`, 'approve', { reason: '  ' })).rejects.toThrow('reason');
+  expect(await core.steward.decide(`agreement:${again}`, 'deny', { reason: '겹치는 약속이다' })).toBe('약속 제안을 버림');
+  expect(core.steward.history().map((h) => h.outcome)).toEqual(expect.arrayContaining(['약속을 받아들임', '약속 제안을 버림']));
   const planId = await plan();
-  expect(core.steward.items().find((i) => i.kind === 'plan')!.allowed).toBe(true);
+  const item = core.steward.items().find((i) => i.kind === 'plan')!;
+  expect(item.allowed).toBe(true);
+  // 계획안은 올라온 그대로 승인하므로, 무엇이 만들어지는지(TODO 의 제목까지)가 보여야 한다
+  expect(item.detail2).toContain('API 만들기');
   expect(await core.steward.decide(`plan:${planId}`, 'approve', { reason: '기획서의 범위와 같다' })).toContain('계획안을 올라온 그대로 승인함');
   expect(core.workspaces.list(projectId).map((w) => w.name)).toEqual(expect.arrayContaining(['화면', '서버']));
   expect(core.coordinator.pending(projectId)).toBeNull();
   await expect(core.steward.decide(`plan:${planId}`, 'approve', { reason: 'x' })).rejects.toThrow('그 항목이 없습니다');
   await expect(core.steward.decide('pair:whatever', 'approve', { reason: 'x' })).rejects.toThrow('그 항목이 없습니다');
+});
+
+test('완료 처리한 프로젝트의 TODO 는 바꾸지 못하고, 현황에도 들지 않는다', async () => {
+  const t = core.todos.add({ projectId, workspaceId: ws.id, title: '폼 만들기' }, 'user');
+  await core.completeProject(projectId, { removeWorktrees: [], removeCleanup: [] } as never);
+  expect(() => core.steward.addTodo({ projectId, title: 'x' })).toThrow('완료 처리된 프로젝트');
+  expect(() => core.steward.updateTodo(t.id, { title: 'y' })).toThrow('완료 처리된 프로젝트');
+  expect(() => core.steward.tell(projectId, '일 시켜 줘')).toThrow('완료 처리된 프로젝트');
+  expect((core.steward.overview() as { projects: unknown[] }).projects).toEqual([]);
 });
 
 test('비서의 도구는 비서에게만 보인다. 비서에게는 계획안을 올리는 도구가 없다', async () => {
@@ -125,6 +141,8 @@ test('비서의 도구는 비서에게만 보인다. 비서에게는 계획안�
   const mine = await rpc(s.id, 'tools/list');
   for (const name of ['steward_overview', 'steward_todos', 'steward_todo_add', 'steward_todo_update', 'steward_todo_remove', 'steward_waiting', 'steward_decide', 'steward_tell']) expect(mine).toContain(`"${name}"`);
   expect(mine).not.toContain('"plan_propose"');
+  // 비서에게는 비서의 도구만 실린다 (프로젝트의 에이전트를 위한 도구는 없다)
+  for (const name of ['todo_add', 'message_send', 'slack_read', 'db_query', 'note_add', 'project_overview']) expect(mine).not.toContain(`"${name}"`);
   for (const other of [coordinator.id, ws.id]) expect(await rpc(other, 'tools/list')).not.toContain('steward_');
   // 다른 에이전트가 이름을 알고 불러도 없다
   expect(await call(ws.id, 'steward_decide', { id: 'x', decision: 'approve', reason: 'x' })).not.toContain('"done"');
@@ -142,7 +160,9 @@ test('조율 에이전트에게 글을 전한다: 두레의 알림으로 간다'
   const got = inbox(c.id);
   expect(got).toHaveLength(1);
   expect(got[0]).toMatchObject({ from: { kind: 'system' } });
-  expect(got[0]!.body).toContain('오류 문구');
+  expect(got[0]!.body).toContain('> 로그인 화면의 오류 문구');
+  // 사용자가 쓴 글이 아니라 비서(에이전트)가 쓴 글임을 받는 쪽이 안다
+  expect(got[0]!.body).toContain('사용자가 직접 쓴 글이 아니다');
   expect(() => core.steward.tell(projectId, '  ')).toThrow('전할 글이 없습니다');
 });
 
@@ -156,13 +176,13 @@ test('자동 처리를 켜면, 정할 수 있는 것이 생겼을 때만 비서�
   await tick(120);
   expect(sent()).toBe(0);
   core.settings.update({ stewardAuto: true });
-  // 정할 수 없는 것만 생기면 (안전한 것만에서 계획안) 깨우지 않는다: 먼저 약속을 치운다
-  for (const a of core.agreements.list(projectId, { proposed: true })) core.agreements.remove(a.id);
+  // 정할 수 없는 것만 생기면 (안전한 것만에서 약속과 계획안) 깨우지 않는다: 토큰만 쓴다
   await plan();
   core.attention.refresh();
-  await tick(120);
+  await tick(150);
   expect(sent()).toBe(0);
-  // 정할 수 있는 것이 생기면 한 번 알린다
+  // 범위를 올린 뒤 정할 수 있는 것이 생기면 한 번 알린다
+  core.settings.update({ stewardApproval: 'all' });
   agreement('둘째');
   core.attention.refresh();
   await until(() => sent() === 1);

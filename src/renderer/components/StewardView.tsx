@@ -8,7 +8,7 @@ const EMPTY_TALK: ConversationData = { threads: [], messages: {}, artifacts: [],
 const clean = (e: Error): string => e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
 const APPROVAL: Record<StewardState['approval'], { label: string; help: string }> = {
   suggest: { label: '추천만', help: '아무것도 스스로 정하지 않고, 무엇을 추천하는지 정리해 줍니다.' },
-  safe: { label: '안전한 것만 스스로', help: '읽기 승인, 되돌릴 수 있는 질문, 내 에이전트끼리의 약속은 스스로 정하고, 나머지는 추천만 합니다.' },
+  safe: { label: '안전한 것만 스스로', help: '읽기만 하는 승인과 되돌릴 수 있는 질문(추천 답)은 스스로 정하고, 나머지는 추천만 합니다.' },
   all: { label: '전부 스스로', help: '연결 요청의 확인과 예산·사용 한도를 빼고는 스스로 정합니다. 정한 것은 오른쪽 기록에 남습니다.' },
 };
 const day = (at: number): string => { const d = new Date(at); return `${d.getMonth() + 1}/${d.getDate()} ${clock(at)}`; };
@@ -52,6 +52,13 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
         <button className="btn ghost" onClick={() => setShowLog((v) => !v)}>{showLog ? '기록 접기' : `처리한 것 ${log.length}`}</button>
       </div>
       {error && <div className="error" style={{ margin: '8px 16px 0' }} onClick={() => setError('')}>{error}</div>}
+      {state.blocked && (
+        <div className="notice" style={{ margin: '8px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span>{state.name}가 오늘 쓸 수 있는 토큰의 상한을 넘어 멈췄습니다. 상한은 설정의 "프로젝트 기본 하루 예산" 을 따릅니다.</span>
+          <span className="spacer" />
+          <button className="btn" onClick={() => { window.dure.projects.allowToday(state.project.id).then(load).catch((e: Error) => setError(clean(e))); }}>오늘만 더 쓰기</button>
+        </div>
+      )}
       <div className="coord-main">
         <ChatPane
           workspace={ws} workspaces={[ws]} conversation={EMPTY_TALK} hasAgent={hasAgent}

@@ -234,7 +234,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const workspaces = new WorkspaceStore(db);
 
   // 지난 실행에서 살아 있던 터미널은 이제 없다. 남은 상태를 되돌린다.
-  for (const p of projects.list()) {
+  // 비서의 프로젝트는 목록(list)에 들지 않으므로 따로 더한다: 빠뜨리면 비정상 종료 뒤 비서가 켜진 것처럼 남는다.
+  for (const p of [...projects.list(), ...[projects.steward()].filter((x): x is NonNullable<typeof x> => Boolean(x))]) {
     for (const w of workspaces.listAll(p.id)) {
       if (w.status !== 'stopped') workspaces.update(w.id, { status: 'stopped' });
     }
@@ -518,6 +519,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     db, settings: () => settings.get(), projects, workspaces,
     ensureCoordinator: (projectId) => coordinator.ensure(projectId),
     isClosed: (id) => service.isProjectClosed(id),
+    blocked: (id) => budget.blocked(id),
     attention: () => attention.list(),
     chatView: (id) => { if (!self) throw new Error('아직 준비되지 않았습니다.'); return self.chatView(id); },
     todos,
@@ -528,18 +530,23 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     plan: { pending: (id) => coordinator.pending(id), approve: (id, d) => coordinator.approve(id, d), reject: (id, reason) => coordinator.reject(id, reason) },
     dbs, slack, browser,
     peers: { held: (id) => peers.held(id), pass: (id, w) => peers.pass(id, w), drop: (id) => peers.drop(id), shareInvites: () => peers.shareInvites(), acceptInvite: (id, projectId) => peers.acceptInvite(id, projectId), declineInvite: (id) => peers.declineInvite(id) },
-    assignments: { incoming: (id) => assignments.incoming(id), accept: (id, c, o2) => assignments.accept(id, c, o2), decline: (id) => assignments.decline(id), takeBrief: (id) => assignments.takeBrief(id), dropBrief: (id) => assignments.dropBrief(id) },
+    assignments: { incoming: (id) => assignments.incoming(id), accept: (id, c, o2) => assignments.accept(id, c, o2), decline: (id, reason) => assignments.decline(id, reason), takeBrief: (id) => assignments.takeBrief(id), dropBrief: (id) => assignments.dropBrief(id) },
     agreements,
     send: (projectId, workspaceId, body, title) => { messages.send({ projectId, from: { kind: 'system' }, toWorkspaceId: workspaceId, body, title }); },
     audit: (i) => audit.record(i),
   });
   // 자동 처리: 확인할 것이 새로 생기면 잠깐 모았다가 비서에게 알린다 (설정에서 켰고, 추천만이 아닐 때).
   let stewardTimer: NodeJS.Timeout | undefined;
+  let stewardSince = 0; // 처음 미룬 시각: 항목이 계속 생겨도 알림을 끝없이 미루지 않는다
   attention.on('added', () => {
     const s = settings.get();
     if (!s.stewardAuto) return;
+    const wait = o.stewardDelayMs ?? 20_000;
+    if (stewardTimer && stewardSince && Date.now() - stewardSince > wait * 3) return; // 이미 오래 미뤘다: 걸려 있는 알림이 그대로 간다
+    if (!stewardSince) stewardSince = Date.now();
     clearTimeout(stewardTimer);
     stewardTimer = setTimeout(() => {
+      stewardTimer = undefined; stewardSince = 0;
       try {
         if (!settings.get().stewardAuto) return;
         const waiting = steward.items();
@@ -550,7 +557,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         messages.send({ projectId: project.id, from: { kind: 'system' }, toWorkspaceId: workspace.id, title: '확인할 것이 생겼습니다',
           body: `사용자를 기다리는 것이 ${waiting.length}건 있다 (그중 네가 정할 수 있는 것 ${waiting.filter((a) => a.allowed).length}건). steward_waiting 으로 보고, 정할 수 있는 것은 정하고, 남긴 것은 무엇을 추천하는지 한 줄씩 적어라. 길게 쓰지 마라.` });
       } catch { /* 알리지 못하면 사용자가 화면에서 본다 */ }
-    }, o.stewardDelayMs ?? 20_000);
+    }, wait);
     stewardTimer.unref?.();
   });
 
@@ -641,7 +648,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
 
   const digest = new DigestService({
     db,
-    projects: () => projects.list(),
+    // 비서의 프로젝트는 목록에 없지만 토큰은 쓴다: 이름을 알려 "지운 프로젝트" 로 보이지 않게 한다.
+    projects: () => { const st = projects.steward(); return st ? [...projects.list(), { ...st, name: settings.get().stewardName || '비서' }] : projects.list(); },
     workspaceName: (id) => { const w = workspaces.get(id); return !w ? '' : w.role === 'coordinator' ? '조율' : w.name; },
     workMs: (day) => { try { const [y, m] = day.split('-').map(Number); return worktime.month(y!, m!).find((x) => x.day === day)?.totalMs ?? 0; } catch { return 0; } },
     attention: () => attention.list().map((a) => ({ title: a.title, projectName: a.projectName })),
@@ -750,6 +758,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
         .reduce((m, r) => m.set(dayOf(r.at), (m.get(dayOf(r.at)) ?? 0) + r.n), new Map<string, number>()));
       const week = Array.from({ length: 7 }, (_, i) => byDay.get(dayOf(t0 - (6 - i) * 86_400_000 + 3_600_000)) ?? 0);
       const names = new Map(projects.list().map((p) => [p.id, p.name]));
+      const st = projects.steward();
+      if (st) names.set(st.id, settings.get().stewardName || '비서');
       const projectsToday = (db.prepare(`SELECT project_id, ${COUNTED} AS n FROM token_usage WHERE at >= ? GROUP BY project_id ORDER BY n DESC LIMIT 8`).all(t0) as { project_id: string; n: number }[])
         .map((r) => ({ projectId: r.project_id, name: names.get(r.project_id) ?? '지운 프로젝트', counted: r.n }));
       const models = (db.prepare(`SELECT model, ${COUNTED} AS n FROM token_usage WHERE at >= ? AND model NOT LIKE '<%' GROUP BY model ORDER BY n DESC`).all(t0) as { model: string; n: number }[])

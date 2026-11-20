@@ -29,6 +29,7 @@ import { UpdateService } from './updateService';
 import { NoteStore } from './notes';
 import { PinStore } from './pins';
 import { StewardService } from './steward';
+import { StewardBoardService } from './stewardBoard';
 import { SlackWatch } from './slackWatch';
 import { stewardTools } from './mcp/tools/steward';
 import { guardPromptReason } from './agents/guard';
@@ -136,6 +137,8 @@ export interface Core {
   paddy: PaddyService;
   /** 하루 결산 */
   digest: DigestService;
+  /** 총괄 현황판: 정한 기간에 모든 프로젝트에서 한 일과 지금의 상태 */
+  stewardBoard: StewardBoardService;
   /** 예약 실행 */
   schedules: ScheduleService;
   /** 빠른 메모 */
@@ -305,6 +308,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     get dbs() { return dbs; },
     get slack() { return slack; },
     get slackWatch() { return slackWatch; },
+    get stewardBoard() { return stewardBoard; },
     notes,
     notesForAgents: () => settings.get().notesForAgents,
     notesWriteForAgents: () => settings.get().notesWriteForAgents,
@@ -648,6 +652,8 @@ export async function createCore(o: CoreOptions): Promise<Core> {
       if (/^[0-9a-f]{7,40}$/.test(hash)) db.prepare('INSERT OR IGNORE INTO dure_commits (hash, workspace_id, at) VALUES (?, ?, ?)').run(hash, workspaceId, Date.now());
       if (auto) audit.record({ actor: 'system', action: 'commit.create', projectId, workspaceId, target: wsName(workspaceId), reason: '자동 반영 (확인 명령 통과, 리뷰에 높음 없음)', detail: { hash: hash.slice(0, 12) } });
       paddy.note('commit', projectId, workspaceId);
+      // 총괄 현황판에 커밋의 제목을 남긴다 (워크스페이스를 정리한 뒤에도 주간 보고에 보이게).
+      void stewardBoard.recordCommit(workspaceId, hash, Date.now()).catch(() => undefined);
     }, workspaces, git, drafts: commitDrafts, messages, notifyAgent: () => settings.get().notifyAgentOnCommit });
   // 리뷰 에이전트: 커밋 초안이 올라오면 다른 에이전트가 변경을 읽고 문제를 찾는다.
   const review = new ReviewService({
@@ -735,6 +741,13 @@ export async function createCore(o: CoreOptions): Promise<Core> {
     attention: () => attention.list().map((a) => ({ title: a.title, projectName: a.projectName })),
   });
 
+  const stewardBoard = new StewardBoardService({
+    db, projects: () => projects.list(), workspaces,
+    workMonth: (y, m) => worktime.month(y, m),
+    attention: () => attention.list().map((a) => ({ title: a.title, projectName: a.projectName, projectId: a.projectId })),
+    commitSubject: async (w, hash) => { const out = (await git.raw(['-C', w.worktreePath, 'log', '-1', '--format=%s', hash])).trim(); return out || null; },
+  });
+
   const schedules = new ScheduleService({
     db,
     workspace: (id) => workspaces.get(id),
@@ -773,7 +786,7 @@ export async function createCore(o: CoreOptions): Promise<Core> {
   const newsLinks = new Set<string>();
   let disposed = false;
   const api: Core = {
-    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, audit, cleanup, coordinator, dbs, slack, slackWatch, updates, notes, pins, attention, steward, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit,
+    projects, repos, workspaces, service, todos, messages, delivery, chat, engine, settings, review, merges, agreements, figures, autoShip, budget, activity, doing, paddy, digest, schedules, captures, memory, plugins, makes, audit, cleanup, coordinator, dbs, slack, slackWatch, updates, notes, pins, attention, steward, usage, checkpoints, prs, verify, worktime, browser, peers, assignments, commitDrafts, commit, stewardBoard,
     async news(force = false) {
       const panels = plugins.panels();
       const out: NewsPanel[] = [];

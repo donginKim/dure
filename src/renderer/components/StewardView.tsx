@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SlackCall, SlackWatchStatus, StewardLogEntry, StewardState } from '@shared/types';
 import { clock } from '../conversationView';
 import { ChatPane } from './ChatPane';
+import { StewardBoardView } from './StewardBoardView';
 import type { ConversationData } from './ConversationPanel';
 import { STEWARD_ART, STEWARD_FACE, STEWARD_MOOD_LABEL, stewardMood } from '../stewardArt';
 
@@ -19,7 +20,10 @@ const day = (at: number): string => { const d = new Date(at); return `${d.getMon
  * 비서: 모든 프로젝트를 보는 에이전트와의 대화, 그리고 비서가 "확인할 것" 을 대신 처리한 기록.
  * 비서는 두레가 관리하는 보이지 않는 프로젝트에 살아, 프로젝트 목록에는 나오지 않는다.
  */
-export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function StewardView({ onOpenSettings, onOpenProject, onOpenWorkspace }: { onOpenSettings: () => void; onOpenProject: (id: string) => void; onOpenWorkspace: (id: string, projectId: string) => void }) {
+  const [view, setView] = useState<'talk' | 'board'>('talk');
+  const boardOpened = useRef(false);
+  if (view === 'board') boardOpened.current = true;
   const [state, setState] = useState<StewardState | null>(null);
   const [log, setLog] = useState<StewardLogEntry[]>([]);
   const [error, setError] = useState('');
@@ -60,6 +64,21 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
     setError('');
     window.dure.terminals.startAgent(ws.id, { cols: 120, rows: 40 }).catch((e: Error) => setError(clean(e)));
   };
+  /** 현황판에서 비서에게 시킨다: 꺼져 있으면 켜고, 받을 수 있게 되면 보낸다. */
+  const ask = (text: string): void => {
+    setView('talk'); setError('');
+    void (async () => {
+      if ((await window.dure.steward.get()).workspace.status === 'stopped') await window.dure.terminals.startAgent(ws.id, { cols: 120, rows: 40 });
+      let ready = false;
+      for (let i = 0; i < 40 && !ready; i++) {
+        const st = (await window.dure.steward.get()).workspace.status;
+        ready = st === 'idle' || st === 'working';
+        if (!ready) await new Promise((r) => setTimeout(r, 500));
+      }
+      if (!ready) throw new Error(`${state.name}가 아직 글을 받을 수 없습니다 (켜지는 중이거나 확인을 기다립니다). 잠시 뒤 총괄 현황판에서 다시 눌러 주세요.`);
+      await window.dure.chat.send(ws.id, text);
+    })().catch((e: Error) => setError(clean(e)));
+  };
   const scope = APPROVAL[state.approval];
   const mood = stewardMood(ws.status);
 
@@ -68,12 +87,16 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
       <div className="steward-head">
         <img className="steward-face" src={STEWARD_FACE[mood]} alt="" title={STEWARD_MOOD_LABEL[mood]} width={40} height={40} />
         <div className="steward-title">{state.name}<span className="plan-hint">모든 프로젝트를 봅니다: 브리핑, TODO 정리, 확인할 것 처리</span></div>
+        <div className="sb-seg steward-views" role="group" aria-label="비서 화면">
+          <button className={view === 'talk' ? 'on' : ''} aria-pressed={view === 'talk'} onClick={() => setView('talk')}>대화</button>
+          <button className={view === 'board' ? 'on' : ''} aria-pressed={view === 'board'} onClick={() => setView('board')} title="모든 프로젝트에서 얼마나, 무엇을 했는지와 주간 보고의 초안">총괄 현황판</button>
+        </div>
         <span className="spacer" />
         <button className={`tag steward-scope ${state.approval}`} onClick={onOpenSettings} title={`${scope.help} 누르면 설정에서 바꿉니다.`}>승인: {scope.label}</button>
         <button className="tag" onClick={onOpenSettings} title="확인할 것이 생기면 비서에게 저절로 알려 처리하게 합니다. 누르면 설정에서 바꿉니다.">자동 처리: {state.auto ? '켬' : '끔'}</button>
         {hasAgent && <button className="btn ghost" onClick={() => { window.dure.workspaces.stopAgent(ws.id).catch((e: Error) => setError(clean(e))); }}>끄기</button>}
         {watch?.enabled && watch.unseen > 0 && <button className="tag warn" title="슬랙에서 나를 부른 글 중 아직 보지 않은 것" onClick={() => { setShowLog(true); setTab('slack'); }}>슬랙 {watch.unseen}</button>}
-        <button className="btn ghost" onClick={() => setShowLog((v) => !v)}>{showLog ? '옆 접기' : `처리한 것 ${log.length}`}</button>
+        {view === 'talk' && <button className="btn ghost" onClick={() => setShowLog((v) => !v)}>{showLog ? '옆 접기' : `처리한 것 ${log.length}`}</button>}
       </div>
       {error && <div className="error" style={{ margin: '8px 16px 0' }} onClick={() => setError('')}>{error}</div>}
       {state.blocked && (
@@ -93,7 +116,9 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
           ))}
         </div>
       )}
-      <div className="coord-main">
+      {/* 한 번 연 현황판은 대화로 가도 내리지 않는다: 고친 초안과 고른 기간이 남는다. */}
+      {(view === 'board' || boardOpened.current) && <div className="steward-board-wrap" hidden={view !== 'board'}><StewardBoardView name={state.name} onOpenProject={onOpenProject} onOpenWorkspace={onOpenWorkspace} onAsk={ask} /></div>}
+      {view === 'talk' && <div className="coord-main">
         <ChatPane
           workspace={ws} workspaces={[ws]} conversation={EMPTY_TALK} hasAgent={hasAgent}
           onStartAgent={start}
@@ -157,7 +182,7 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
             </div>}
           </aside>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

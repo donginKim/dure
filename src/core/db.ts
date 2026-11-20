@@ -618,6 +618,51 @@ const MIGRATIONS: string[] = [
   CREATE INDEX steward_asks_at ON steward_asks (asked_at DESC);
   CREATE INDEX steward_asks_open ON steward_asks (workspace_id, answered_at);
   `,
+  // 총괄 현황판: 끝낸 일과 커밋을 따로 적어 둔다. todos 는 워크스페이스를 정리하면 함께 지워져서, 지난 주에 한 일이 사라진다.
+  // work_done: TODO 가 완료될 때 적는다 (다시 열면 지운다). 이름은 그때의 것을 적어, 워크스페이스나 프로젝트가 지워져도 남는다.
+  // work_commits: 두레가 만든 커밋의 제목.
+  // 이 표가 생기기 전에 끝낸 일은 todos.updated_at 을 끝낸 시각으로 채운다: 끝낸 뒤에 순서나 설명을 바꿨으면 그 시각이 든다 (더 정확한 기록이 없다).
+  `
+  CREATE TABLE work_done (
+    todo_id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    workspace_name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    assignee TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX work_done_at ON work_done (at);
+  CREATE TABLE work_commits (
+    hash TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    workspace_name TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX work_commits_at ON work_commits (at);
+  INSERT INTO work_done (todo_id, project_id, project_name, workspace_name, title, assignee, at)
+    SELECT t.id, t.project_id, coalesce((SELECT name FROM projects WHERE id = t.project_id), ''),
+      coalesce((SELECT CASE WHEN role = 'coordinator' THEN '조율' ELSE name END FROM workspaces WHERE id = t.workspace_id), ''), t.title, t.assignee, t.updated_at
+    FROM todos t WHERE t.status = 'done';
+  CREATE TRIGGER work_done_on_update AFTER UPDATE OF status ON todos WHEN NEW.status = 'done' AND OLD.status <> 'done' BEGIN
+    INSERT OR REPLACE INTO work_done (todo_id, project_id, project_name, workspace_name, title, assignee, at)
+    VALUES (NEW.id, NEW.project_id, coalesce((SELECT name FROM projects WHERE id = NEW.project_id), ''),
+      coalesce((SELECT CASE WHEN role = 'coordinator' THEN '조율' ELSE name END FROM workspaces WHERE id = NEW.workspace_id), ''), NEW.title, NEW.assignee, NEW.updated_at);
+  END;
+  CREATE TRIGGER work_done_on_insert AFTER INSERT ON todos WHEN NEW.status = 'done' BEGIN
+    INSERT OR REPLACE INTO work_done (todo_id, project_id, project_name, workspace_name, title, assignee, at)
+    VALUES (NEW.id, NEW.project_id, coalesce((SELECT name FROM projects WHERE id = NEW.project_id), ''),
+      coalesce((SELECT CASE WHEN role = 'coordinator' THEN '조율' ELSE name END FROM workspaces WHERE id = NEW.workspace_id), ''), NEW.title, NEW.assignee, NEW.updated_at);
+  END;
+  CREATE TRIGGER work_done_on_reopen AFTER UPDATE OF status ON todos WHEN OLD.status = 'done' AND NEW.status <> 'done' BEGIN
+    DELETE FROM work_done WHERE todo_id = NEW.id;
+  END;
+  CREATE TRIGGER work_done_on_retitle AFTER UPDATE OF title, assignee ON todos WHEN NEW.status = 'done' BEGIN
+    UPDATE work_done SET title = NEW.title, assignee = NEW.assignee WHERE todo_id = NEW.id;
+  END;
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

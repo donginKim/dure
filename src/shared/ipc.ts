@@ -1,4 +1,4 @@
-import type { StewardBoard, StewardLogEntry, StewardState, Pin, PinInput,
+import type { StewardBoard, StewardLogEntry, StewardState, TrayState, TrayTarget, Pin, PinInput,
   Make, MakeKind, AgentConfig, AuditEntry, AuditFilter, AuditVerify,
   WorkDay, WorkSession, WorkStatus,
   Brief,
@@ -392,6 +392,16 @@ export interface DureApi {
     /** 총괄 현황판: 그 기간(YYYY-MM-DD, 양 끝 포함. 비우면 이번 주)에 한 일과 지금의 상태, 주간 보고의 초안 */
     board(range?: { from?: string; to?: string }): Promise<StewardBoard>;
   };
+  /** 메뉴 막대의 작은 창 */
+  tray: {
+    state(): Promise<TrayState>;
+    /** 두레의 큰 창을 앞으로 가져와 그곳을 열고, 작은 창은 닫는다 */
+    open(target: TrayTarget): Promise<void>;
+    /** 비서에게 글을 보낸다 (꺼져 있으면 켠다). 큰 창의 비서 화면을 연다 */
+    ask(text: string): Promise<void>;
+    /** 큰 창이 듣는다: 작은 창에서 고른 곳으로 간다 */
+    onNavigate(cb: (target: TrayTarget) => void): () => void;
+  };
   /** 핀: 대화의 글에 꽂아 두고 다시 본다 (워크스페이스마다) */
   pins: {
     /** 새로 꽂은 것부터 */
@@ -521,7 +531,7 @@ export const IPC_CHANNELS = [
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',
   'attention.list',
-  'steward.get', 'steward.history', 'steward.board', 'slackWatch.status', 'slackWatch.calls', 'slackWatch.seen', 'slackWatch.checkNow', 'slackWatch.open',
+  'steward.get', 'steward.history', 'steward.board', 'tray.state', 'tray.open', 'tray.ask', 'slackWatch.status', 'slackWatch.calls', 'slackWatch.seen', 'slackWatch.checkNow', 'slackWatch.open',
   'pins.list', 'pins.add', 'pins.remove',
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',
@@ -561,6 +571,8 @@ export const IPC_EVENTS = {
   attentionOpen: 'dure:attention-open',
   /** 사용자가 슬랙 알림을 눌렀다: 화면이 비서 화면을 연다 */
   slackWatchOpen: 'dure:slack-watch-open',
+  /** 메뉴 막대의 작은 창에서 무엇을 눌렀다: 큰 창이 그곳을 연다 (TrayTarget 가운데 steward, workspace) */
+  navigate: 'dure:navigate',
 } as const;
 
 export const ipcName = (channel: IpcChannel): string => `dure:${channel}`;

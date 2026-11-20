@@ -53,6 +53,24 @@ export interface StewardBoardProject {
   /** 지금 사용자를 기다리는 것 */
   waiting: string[];
 }
+/**
+ * 메뉴 막대의 작은 창이 보이는 것: 창을 열지 않고도 지금 나를 기다리는 것과 에이전트가 하는 일을 본다.
+ * mood: wait 내 확인을 기다린다, work 에이전트가 일한다, rest 다 쉰다.
+ */
+export interface TrayState {
+  stewardName: string;
+  mood: 'rest' | 'work' | 'wait';
+  /** 내 확인을 기다리는 것 (앞의 몇 건과 전체 수) */
+  waiting: AttentionItem[]; waitingCount: number;
+  /** 일하는 중이거나 내 답을 기다리는 워크스페이스 */
+  agents: { workspaceId: string; projectId: string; project: string; name: string; status: WorkspaceStatus; doing: string }[];
+  /** 오늘: 근무시간(ms), 끝낸 일, 커밋, 기준 브랜치 반영 */
+  today: { workMs: number; done: number; commits: number; mains: number };
+  /** 최근 12주의 잔디 (오래된 것부터) */
+  grass: PaddyDay[];
+}
+/** 메뉴 막대의 작은 창에서 두레의 창으로 갈 곳 */
+export type TrayTarget = { type: 'main' } | { type: 'steward' } | { type: 'attention'; item: AttentionItem } | { type: 'attentionList' } | { type: 'workspace'; id: string; projectId: string };
 /** 슬랙에서 나를 부른 글. mention: 나를 직접 언급, here: 내가 든 채널의 @here·@channel·@everyone, dm: 나에게 온 개인 메시지 */
 export type SlackCallKind = 'mention' | 'here' | 'dm';
 export interface SlackCall { id: string; kind: SlackCallKind; channelId: string; channelName: string; userName: string; text: string; ts: string; permalink: string; seen: boolean; createdAt: number }
@@ -740,6 +758,8 @@ export interface Settings {
   notesWriteForAgents: boolean;
   /** 에이전트나 다른 사람이 나를 기다릴 때 macOS 알림을 띄운다 */
   notifications: boolean;
+  /** 메뉴 막대에 두레의 아이콘을 둔다 (누르면 확인할 것과 일하는 에이전트가 든 작은 창이 뜬다) */
+  menuBar: boolean;
   /** 근무시간을 잰다 */
   workTimeEnabled: boolean;
   /** 근무지의 와이파이 이름. 이 이름의 와이파이에 붙어 있는 동안을 근무시간으로 센다 */

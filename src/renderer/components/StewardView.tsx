@@ -3,6 +3,8 @@ import type { StewardLogEntry, StewardState } from '@shared/types';
 import { clock } from '../conversationView';
 import { ChatPane } from './ChatPane';
 import type { ConversationData } from './ConversationPanel';
+import stewardArt from '../assets/steward.png';
+import stewardFace from '../assets/steward-face.png';
 
 const EMPTY_TALK: ConversationData = { threads: [], messages: {}, artifacts: [], flow: { paused: false, capped: false, agentStreak: 0 }, delivery: {} };
 const clean = (e: Error): string => e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
@@ -44,6 +46,7 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
   return (
     <div className="coord steward">
       <div className="steward-head">
+        <img className="steward-face" src={stewardFace} alt="" width={40} height={40} />
         <div className="steward-title">{state.name}<span className="plan-hint">모든 프로젝트를 봅니다: 브리핑, TODO 정리, 확인할 것 처리</span></div>
         <span className="spacer" />
         <button className={`tag steward-scope ${state.approval}`} onClick={onOpenSettings} title={`${scope.help} 누르면 설정에서 바꿉니다.`}>승인: {scope.label}</button>
@@ -63,6 +66,7 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
         <ChatPane
           workspace={ws} workspaces={[ws]} conversation={EMPTY_TALK} hasAgent={hasAgent}
           onStartAgent={start}
+          blankArt={<img className="steward-art" src={stewardArt} alt={`${state.name}의 모습`} width={168} height={168} />}
           blank={`"지금 다 어떻게 돼 가?", "밀린 승인 처리해 줘", "쇼핑몰 프로젝트에 할 일 추가해 줘" 처럼 말을 거세요. ${scope.help}`}
         />
         {showLog && (

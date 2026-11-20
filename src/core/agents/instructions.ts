@@ -9,6 +9,12 @@ import type { Project, Workspace } from '@shared/types';
  * 사용자에게 고르게 할 때의 규칙 (모든 에이전트). 두레는 AskUserQuestion 을 선택지 버튼의 카드로 보여 준다:
  * 글로 "1안으로 갈까?" 라고 물으면 사용자가 글을 읽고 다시 쳐야 한다.
  */
+/**
+ * 명령의 설명 (모든 에이전트). 두레는 승인 창에서 명령 위에 이 설명을 보여 준다:
+ * 사용자가 명령의 글자만 보고는 무슨 일인지 알기 어렵다.
+ */
+export const DESCRIBE_RULE = 'Bash 도구로 명령을 실행할 때는 description 에 그 명령이 무엇을 하는지 한국어 한 문장으로 적어라 (예: "시험을 돌려 통과하는지 확인", "빌드 결과 폴더를 지움"). 사용자가 승인 창에서 이 설명을 읽고 허용할지 정한다: 명령이 하는 일을 있는 그대로, 특히 지우거나 밖으로 보내는 것은 빠뜨리지 말고 적어라.';
+
 /** 프로젝트의 약속 (모든 에이전트) */
 const AGREEMENT_RULE = [
   '이 프로젝트의 약속(API 형식, 이름 규칙, 사용자와 정한 것)은 `agreements_list` 로 읽는다. 일을 시작할 때 한 번 읽고, 다른 워크스페이스와 맞물리는 일(API, 공용 타입과 이름)을 하기 전에 다시 읽어라. 약속과 다르게 만들지 마라.',
@@ -76,6 +82,7 @@ export function baseInstructions(ws: Workspace, project: Project): string {
     ].join('\n'),
     AGREEMENT_RULE,
     ASK_RULE,
+    DESCRIBE_RULE,
   ].join('\n');
 }
 
@@ -124,5 +131,6 @@ export function coordinatorInstructions(project: Project): string {
     ].join('\n'),
     AGREEMENT_RULE,
     ASK_RULE,
+    DESCRIBE_RULE,
   ].join('\n');
 }

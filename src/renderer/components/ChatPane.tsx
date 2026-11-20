@@ -506,6 +506,12 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
         {permission && (
           <>
             {permission.reason && <div className="permit-reason">{permission.reason}</div>}
+            {permission.explain && (
+              <div className="permit-explain" title={permission.explain.by === 'agent' ? '에이전트가 이 명령에 붙인 설명입니다. 실제로 실행되는 것은 아래의 명령입니다' : undefined}>
+                {permission.explain.by === 'agent' && <span className="permit-by">에이전트의 설명</span>}
+                <span>{permission.explain.text}</span>
+              </div>
+            )}
             <div className="permit-what">{permission.summary}</div>
             {permission.input && permission.input !== permission.summary && <pre className="raw">{cut(permission.input)}</pre>}
           </>

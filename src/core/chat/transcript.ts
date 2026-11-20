@@ -206,6 +206,38 @@ export function stepSummary(tool: string, input: unknown): string {
   }
 }
 
+/**
+ * 승인 창에 보일 한 줄 설명: 이 도구 호출이 무슨 일인지.
+ * 명령(Bash)은 에이전트가 붙인 설명(description)을 보인다. 에이전트가 쓴 말이므로 누가 썼는지(by)를 함께 준다:
+ * 화면은 그것을 "에이전트의 설명" 으로 표시하고, 실제 명령을 그 아래에 그대로 둔다 (설명이 명령과 다를 수 있다).
+ * 그 밖의 도구는 두레가 풀어 적는다. 적을 말이 없으면 null.
+ */
+export function stepExplain(tool: string, input: unknown): { text: string; by: 'agent' | 'dure' } | null {
+  const i = isObj(input) ? input : {};
+  const dure = (text: string): { text: string; by: 'dure' } => ({ text, by: 'dure' });
+  switch (tool) {
+    case 'Bash': {
+      const text = typeof i.description === 'string' ? i.description.replace(/\s+/g, ' ').trim().slice(0, 160) : '';
+      return text ? { text, by: 'agent' } : null;
+    }
+    case 'Write': return dure(`${fileName(i.file_path)} 파일을 새로 씁니다 (이미 있으면 덮어씁니다)`);
+    case 'Edit': case 'MultiEdit': case 'NotebookEdit': return dure(`${fileName(i.file_path ?? i.notebook_path)} 파일을 고칩니다`);
+    case 'Read': return dure(`${fileName(i.file_path)} 파일을 읽습니다`);
+    case 'WebFetch': {
+      let host = '';
+      try { host = new URL(str(i.url)).hostname; } catch { /* 주소가 아니다 */ }
+      return dure(host ? `웹 페이지를 가져와 읽습니다 (${host})` : '웹 페이지를 가져와 읽습니다');
+    }
+    case 'WebSearch': return dure('웹에서 검색합니다');
+    case 'Task': case 'Agent': return dure('하위 에이전트에게 일을 맡깁니다');
+    default: {
+      if (tool.startsWith('mcp__dure__')) return null;
+      const mcp = /^mcp__(.+?)__(.+)$/.exec(tool);
+      return mcp ? dure(`플러그인 "${mcp[1]}" 의 도구 ${mcp[2]} 를 씁니다`) : null;
+    }
+  }
+}
+
 /** 도구 입력을 펼쳐 보일 글로. */
 export function stepInput(tool: string, input: unknown): string {
   const i = isObj(input) ? input : {};

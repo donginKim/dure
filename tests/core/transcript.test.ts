@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { clip, parseLine, stepInput, stepSummary, unwrapPasted, type Piece } from '@core/chat/transcript';
+import { clip, parseLine, stepExplain, stepInput, stepSummary, unwrapPasted, type Piece } from '@core/chat/transcript';
 
 const FIXTURE = readFileSync(join(__dirname, '../fixtures/transcript-basic.jsonl'), 'utf8').split('\n').filter(Boolean);
 const all = (): Piece[] => FIXTURE.flatMap(parseLine);
@@ -128,6 +128,28 @@ test.each([
   ['Mystery', null, 'Mystery'],
 ])('stepSummary(%s) = %s', (tool, input, expected) => {
   expect(stepSummary(tool, input)).toBe(expected);
+});
+
+test('stepExplain: 승인 창에 보일 한 줄 설명. 명령은 에이전트가 붙인 설명, 그 밖의 도구는 두레가 풀어 적는다', () => {
+  // 명령: 에이전트가 붙인 설명을 한 줄로 다듬어 보인다 (누가 쓴 말인지 함께 알린다)
+  expect(stepExplain('Bash', { command: 'npm test', description: '시험을 돌려 통과하는지 확인' })).toEqual({ text: '시험을 돌려 통과하는지 확인', by: 'agent' });
+  expect(stepExplain('Bash', { command: 'x', description: '  첫 줄\n둘째 줄  ' })).toEqual({ text: '첫 줄 둘째 줄', by: 'agent' });
+  expect(stepExplain('Bash', { command: 'x', description: 'ㄱ'.repeat(300) })!.text).toHaveLength(160);
+  // 설명이 없거나 글자가 아니면 없다 (명령만 보인다)
+  expect(stepExplain('Bash', { command: 'npm test' })).toBeNull();
+  expect(stepExplain('Bash', { command: 'npm test', description: 42 })).toBeNull();
+  expect(stepExplain('Bash', null)).toBeNull();
+  // 그 밖의 도구는 두레가 무슨 일인지 적는다
+  expect(stepExplain('Write', { file_path: '/w/src/a.ts', content: 'x' })).toEqual({ text: 'a.ts 파일을 새로 씁니다 (이미 있으면 덮어씁니다)', by: 'dure' });
+  expect(stepExplain('Edit', { file_path: '/w/src/a.ts' })).toEqual({ text: 'a.ts 파일을 고칩니다', by: 'dure' });
+  expect(stepExplain('NotebookEdit', { notebook_path: '/w/n.ipynb' })).toEqual({ text: 'n.ipynb 파일을 고칩니다', by: 'dure' });
+  expect(stepExplain('Read', { file_path: '/etc/hosts' })).toEqual({ text: 'hosts 파일을 읽습니다', by: 'dure' });
+  expect(stepExplain('WebFetch', { url: 'https://example.com/a' })).toEqual({ text: '웹 페이지를 가져와 읽습니다 (example.com)', by: 'dure' });
+  expect(stepExplain('WebFetch', { url: 'not a url' })).toEqual({ text: '웹 페이지를 가져와 읽습니다', by: 'dure' });
+  expect(stepExplain('WebSearch', { query: 'node test' })).toEqual({ text: '웹에서 검색합니다', by: 'dure' });
+  expect(stepExplain('Task', { description: '로그 조사' })).toEqual({ text: '하위 에이전트에게 일을 맡깁니다', by: 'dure' });
+  expect(stepExplain('mcp__github__create_issue', {})).toEqual({ text: '플러그인 "github" 의 도구 create_issue 를 씁니다', by: 'dure' });
+  expect(stepExplain('SomethingNew', {})).toBeNull();
 });
 
 test('stepInput: 명령은 그대로, 수정은 바뀐 줄, 그 밖은 JSON', () => {

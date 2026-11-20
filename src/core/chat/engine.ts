@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 export interface LimitWindowInfo { kind: string; utilization: number; resetsAt: number | null; status: string }
 import type { ChatPermission, ChatQuestion, ModelChoice, SlashCommand } from '@shared/types';
 import { AgentSession, type AgentEvent, type SessionSpawn } from '../agents/session';
-import { stepInput, stepSummary } from './transcript';
+import { stepInput, stepExplain, stepSummary } from './transcript';
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -359,7 +359,7 @@ export class ChatEngine extends EventEmitter {
     return {
       streaming: l.streaming,
       permission: p ? {
-        tool: p.tool, summary: stepSummary(p.tool, p.input), input: stepInput(p.tool, p.input), canAnswer: true,
+        tool: p.tool, summary: stepSummary(p.tool, p.input), input: stepInput(p.tool, p.input), canAnswer: true, explain: stepExplain(p.tool, p.input) ?? undefined,
         canAlways: p.suggestions.length > 0, alwaysRule: p.ruleText, requestId: p.requestId, more: l.pending.length - 1,
       } : null,
       question: null,

@@ -4,7 +4,7 @@ import { resolve, sep } from 'node:path';
 import type { ChatItem, ChatPermission, ChatSnapshot } from '@shared/types';
 import type { WorkspaceStore } from '../stores';
 import { Timeline } from './timeline';
-import { formatChatRelay, parseLine, stepInput, stepSummary, usageOf, type Piece, type UsageLine } from './transcript';
+import { formatChatRelay, parseLine, stepExplain, stepInput, stepSummary, usageOf, type Piece, type UsageLine } from './transcript';
 
 export interface ChatDeps {
   workspaces: WorkspaceStore;
@@ -156,7 +156,7 @@ export class ChatService extends EventEmitter {
           // 그 호출 뒤로 사용자가 터미널을 건드리지 않았을 때뿐이다 (알림은 창이 뜨고 몇 초 뒤에 온다, 실험 15e).
           const sure = s.inFlight === 1 && s.terminalInputAt < s.lastPreToolAt;
           s.pendingPermission = t
-            ? { tool: t.tool, summary: stepSummary(t.tool, t.input), input: stepInput(t.tool, t.input), canAnswer: sure && !NOT_A_YES_NO.has(t.tool) }
+            ? { tool: t.tool, summary: stepSummary(t.tool, t.input), input: stepInput(t.tool, t.input), canAnswer: sure && !NOT_A_YES_NO.has(t.tool), explain: stepExplain(t.tool, t.input) ?? undefined }
             : { tool: '', summary: '승인 요청', input: '', canAnswer: false };
         }
         break;

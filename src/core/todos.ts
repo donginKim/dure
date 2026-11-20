@@ -340,6 +340,9 @@ export class TodoService extends EventEmitter {
     const waiting = settled(current) ? [] : this.dependents(id);
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM todos WHERE id = ?').run(id);
+      // 하나를 골라 지운 것은 끝낸 일의 기록에서도 뺀다 (잘못 완료한 것을 지웠을 때 주간 보고에 남지 않게).
+      // 워크스페이스를 정리할 때 함께 지워지는 것은 이 길로 오지 않아 기록에 남는다.
+      this.db.prepare('DELETE FROM work_done WHERE todo_id = ?').run(id);
       // 프로젝트 항목을 지우면 딸려 있던 항목은 남고, 어디에도 딸리지 않게 된다.
       this.db.prepare('UPDATE todos SET parent_id = NULL WHERE parent_id = ?').run(id);
       this.notePending(current, by.actor, [`삭제됨: "${current.title}"`]);

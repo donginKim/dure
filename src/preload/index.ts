@@ -267,6 +267,7 @@ const api: DureApi = {
   steward: {
     get: () => call('steward.get'),
     history: () => call('steward.history'),
+    board: (range) => call('steward.board', range),
   },
   pins: {
     list: (workspaceId) => call('pins.list', workspaceId),

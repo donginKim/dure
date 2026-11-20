@@ -212,7 +212,7 @@ export function App() {
         {current?.type === 'market' && <MarketView onSelect={setSelection} />}
         {current?.type === 'audit' && <AuditView projects={projects} />}
         {current?.type === 'attention' && <AttentionView workspaces={workspaces} onSelect={setSelection} />}
-        {current?.type === 'steward' && <StewardView onOpenSettings={() => setSelection({ type: 'settings' })} />}
+        {current?.type === 'steward' && <StewardView onOpenSettings={() => setSelection({ type: 'settings' })} onOpenProject={(id) => setSelection({ type: 'project', id })} onOpenWorkspace={(id, projectId) => setSelection({ type: 'workspace', id, projectId })} />}
         {current?.type === 'news' && <NewsView onSelect={setSelection} />}
         {current?.type === 'team' && <TeamView tree={tree.filter((n) => n.project.status !== 'done')} onSelect={setSelection} />}
         {current?.type === 'worktime' && <WorkTimeView onOpenSettings={() => setSelection({ type: 'settings' })} />}

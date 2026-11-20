@@ -16,6 +16,43 @@ export type PermissionMode = 'ask' | 'auto' | 'guard' | 'bypass';
 export type StewardApproval = 'suggest' | 'safe' | 'all';
 /** 비서가 "확인할 것" 하나를 처리한 기록 */
 export interface StewardLogEntry { id: string; at: number; itemId: string; kind: string; projectId: string | null; projectName: string; title: string; decision: 'approve' | 'deny'; reason: string; outcome: string }
+/**
+ * 총괄 현황판: 정한 기간에 모든 프로젝트에서 한 일과 지금의 상태. 이미 있는 기록에서 모은다 (LLM 을 부르지 않는다).
+ * 끝낸 일과 커밋은 워크스페이스를 정리해도 남는 기록(work_done, work_commits)에서 읽는다.
+ */
+export interface StewardBoard {
+  /** 기간 (YYYY-MM-DD, 양 끝 포함) */
+  from: string; to: string;
+  /** 날마다 (기간의 모든 날, 오래된 것부터) */
+  days: { day: string; workMs: number; done: number; commits: number; mains: number; tokens: number }[];
+  totals: { workMs: number; workDays: number; done: number; commits: number; mains: number; tokens: number };
+  /** 기간에 한 일이 있거나 지금 진행 중인 프로젝트 (한 일이 많은 것부터) */
+  projects: StewardBoardProject[];
+  /** 지금 사용자를 기다리는 것 (프로젝트가 없는 것 포함) */
+  waiting: { title: string; projectName: string; projectId: string | null }[];
+  /** 주간 보고의 초안 (마크다운). 그대로 복사해 고쳐 쓴다 */
+  draft: string;
+}
+export interface StewardBoardProject {
+  projectId: string; name: string;
+  /** active: 진행 중, done: 완료 처리됨, gone: 지워짐 (기록만 남았다) */
+  state: 'active' | 'done' | 'gone';
+  /** 기간에 끝낸 일 (오래된 것부터). byUser: 사용자 몫의 일 */
+  done: { title: string; workspace: string; at: number; day: string; byUser: boolean }[];
+  /** 기간에 두레가 만든 커밋 (오래된 것부터). 제목을 읽지 못했으면 빈 글 */
+  commits: { hash: string; subject: string; workspace: string; at: number; day: string }[];
+  /** 기간의 수: 커밋, 기준 브랜치 반영, 토큰 (입력 + 캐시 쓰기 + 출력) */
+  commitCount: number; mains: number; tokens: number;
+  /** 지금 하는 중인 일, 아직 시작하지 않은 일 (앞의 몇 건과 전체 수) */
+  doing: { title: string; workspace: string }[];
+  todo: { title: string; workspace: string; byUser: boolean }[]; todoCount: number;
+  /** 지금까지의 진행 (취소한 것을 뺀 TODO) */
+  progress: { done: number; total: number };
+  /** 지금의 워크스페이스 */
+  workspaces: { id: string; name: string; status: WorkspaceStatus; summary: string }[];
+  /** 지금 사용자를 기다리는 것 */
+  waiting: string[];
+}
 /** 슬랙에서 나를 부른 글. mention: 나를 직접 언급, here: 내가 든 채널의 @here·@channel·@everyone, dm: 나에게 온 개인 메시지 */
 export type SlackCallKind = 'mention' | 'here' | 'dm';
 export interface SlackCall { id: string; kind: SlackCallKind; channelId: string; channelName: string; userName: string; text: string; ts: string; permalink: string; seen: boolean; createdAt: number }

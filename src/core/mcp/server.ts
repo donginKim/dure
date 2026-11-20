@@ -47,6 +47,8 @@ export interface McpDeps {
   coordinator: CoordinatorService;
   /** 비서 (모든 프로젝트를 보는 에이전트). 없으면 그 도구를 싣지 않는다 */
   steward?: StewardService;
+  /** 총괄 현황판 (비서가 주간 보고를 쓸 때 읽는다) */
+  stewardBoard?: import('../stewardBoard').StewardBoardService;
   /** 슬랙에서 나를 부른 글 (비서가 읽는다) */
   slackWatch?: import('../slackWatch').SlackWatch;
   dbs: DbService;

@@ -1,4 +1,4 @@
-import type { StewardLogEntry, StewardState, Pin, PinInput,
+import type { StewardBoard, StewardLogEntry, StewardState, Pin, PinInput,
   Make, MakeKind, AgentConfig, AuditEntry, AuditFilter, AuditVerify,
   WorkDay, WorkSession, WorkStatus,
   Brief,
@@ -389,6 +389,8 @@ export interface DureApi {
     get(): Promise<StewardState>;
     /** 비서가 확인할 것을 대신 처리한 기록 (새 것부터) */
     history(): Promise<StewardLogEntry[]>;
+    /** 총괄 현황판: 그 기간(YYYY-MM-DD, 양 끝 포함. 비우면 이번 주)에 한 일과 지금의 상태, 주간 보고의 초안 */
+    board(range?: { from?: string; to?: string }): Promise<StewardBoard>;
   };
   /** 핀: 대화의 글에 꽂아 두고 다시 본다 (워크스페이스마다) */
   pins: {
@@ -519,7 +521,7 @@ export const IPC_CHANNELS = [
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',
   'attention.list',
-  'steward.get', 'steward.history', 'slackWatch.status', 'slackWatch.calls', 'slackWatch.seen', 'slackWatch.checkNow', 'slackWatch.open',
+  'steward.get', 'steward.history', 'steward.board', 'slackWatch.status', 'slackWatch.calls', 'slackWatch.seen', 'slackWatch.checkNow', 'slackWatch.open',
   'pins.list', 'pins.add', 'pins.remove',
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',

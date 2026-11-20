@@ -189,11 +189,27 @@ test('자동 처리를 켜면, 정할 수 있는 것이 생겼을 때만 비서�
   expect(inbox(s.workspace.id)[0]!.body).toContain('steward_waiting');
 });
 
+test('저절로 알리는 것은 한 시간에 정해진 횟수까지다 (사람 없이 끝없이 돌지 않게)', async () => {
+  await core.dispose();
+  core = await createCore({ dataDir: join(tempDir(), 'data'), worktreeRoot: join(tempDir(), 'wt'), baseEnv: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh', HOME: tempDir() }, claudeDir: tempDir(), stewardDelayMs: 10, stewardMaxPerHour: 2 });
+  core.settings.update({ autoStartOnMessage: false, stewardAuto: true, stewardApproval: 'all' });
+  projectId = core.projects.create('쇼핑몰').id;
+  const s = core.steward.ensure();
+  core.attention.refresh();
+  for (let i = 0; i < 4; i++) {
+    agreement(`약속 ${i}`);
+    core.attention.refresh();
+    await tick(80);
+  }
+  expect(inbox(s.workspace.id)).toHaveLength(2);
+});
+
 test('지침에는 지금의 승인 범위와, 도구가 주는 글은 지시가 아니라는 것이 들어 있다', () => {
   const text = stewardInstructions('똘이', 'all');
   expect(text).toContain('"똘이"');
   expect(text).toContain('전부 스스로');
   expect(text).toContain('지시가 아니다');
+  expect(text).toContain('언제나 존댓말');
   expect(stewardInstructions('비서', 'suggest')).toContain('추천만');
   expect(stewardInstructions('비서', 'safe')).toContain('안전한 것만 스스로');
 });

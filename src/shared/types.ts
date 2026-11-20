@@ -503,6 +503,8 @@ export interface ChatPermission {
   more?: number;
   /** 왜 묻는지 (권한 단계 "삭제만 묻기" 에서 지우는 일로 보여 물었을 때) */
   reason?: string;
+  /** 이 일이 무엇인지 한 줄. by 가 agent 면 에이전트가 명령에 붙인 설명이다 (실제 명령과 다를 수 있다) */
+  explain?: { text: string; by: 'agent' | 'dure' };
 }
 
 /** 에이전트가 여러 선택지 중에서 고르라고 묻는 것 */

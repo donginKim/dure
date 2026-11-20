@@ -884,7 +884,8 @@ export class WorkspaceService extends EventEmitter {
       instructions: (steward ? stewardInstructions(settings.stewardName, settings.stewardApproval) : coordinator ? coordinatorInstructions(project) : baseInstructions(ws, project)) + (this.plugins?.instructions(project.id) ?? ''),
       extraMcpServers: this.plugins?.mcp(project.id),
       // 조율 에이전트는 코드를 고치지 않는다: 파일을 고치는 도구를 빼고, 등록된 저장소는 읽을 수 있게 한다.
-      disallowedTools: coordinator ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : undefined,
+      // 비서는 셸도 쓰지 않는다: 두레의 도구로만 일한다 (읽은 글에 속아도 이 PC 에서 명령을 실행할 길이 없게).
+      disallowedTools: steward ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash'] : coordinator ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : undefined,
       addDirs: coordinator ? repoPaths : undefined,
       // 조율 에이전트는 사용자의 원본 저장소에 닿는다: 파일을 바꾸는 셸 명령(rm, mv, sed 등)도 하나하나 승인을 받게 한다.
       manualEdits: coordinator,

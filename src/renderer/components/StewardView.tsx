@@ -83,6 +83,16 @@ export function StewardView({ onOpenSettings }: { onOpenSettings: () => void }) 
           <button className="btn" onClick={() => { window.dure.projects.allowToday(state.project.id).then(load).catch((e: Error) => setError(clean(e))); }}>오늘만 더 쓰기</button>
         </div>
       )}
+      {state.asks.length > 0 && (
+        <div className="notice steward-asks" style={{ margin: '8px 16px 0' }} title="비서가 조율 에이전트에게 전한 글입니다. 그 에이전트의 차례가 끝나면 두레가 답을 비서에게 넘기고, 비서가 여기 대화에서 알려 줍니다.">
+          {state.asks.map((a) => (
+            <div key={a.id}>
+              <span className={`tag ${a.answeredAt !== null ? 'ok' : a.late ? 'warn' : ''}`} title={a.answeredAt !== null ? '답은 왔는데 비서에게 아직 넘기지 못했습니다 (저절로 알리는 횟수의 상한이나 예산). 비서에게 "답 왔어?" 라고 물으면 바로 봅니다.' : undefined}>{a.answeredAt !== null ? '답이 옴' : a.late ? '답이 늦음' : '답 기다리는 중'}</span>{' '}
+              {a.projectName}의 조율 에이전트 · {day(a.askedAt)}에 전함 · <span className="muted">{a.text.length > 60 ? `${a.text.slice(0, 60)}…` : a.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="coord-main">
         <ChatPane
           workspace={ws} workspaces={[ws]} conversation={EMPTY_TALK} hasAgent={hasAgent}

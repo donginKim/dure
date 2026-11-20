@@ -597,6 +597,27 @@ const MIGRATIONS: string[] = [
   );
   CREATE TABLE slack_watch_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  // 비서가 조율 에이전트에게 전한 글과 그 답. steward_tell 은 한쪽으로만 가서, 답이 와도 비서가 알 길이 없었다.
+  // answered_at: 조율 에이전트의 차례가 끝나 답을 적어 둔 시각. told_at: 비서가 그 답을 받은(알림이나 도구로) 시각.
+  // late_at: 오래 답이 없다고 비서에게 알린 시각. problem: 답을 받을 수 없게 돼 닫았으면 그 까닭.
+  `
+  CREATE TABLE steward_asks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    asked_at INTEGER NOT NULL,
+    answered_at INTEGER,
+    reply TEXT NOT NULL DEFAULT '',
+    problem TEXT NOT NULL DEFAULT '',
+    told_at INTEGER,
+    late_at INTEGER
+  );
+  CREATE INDEX steward_asks_at ON steward_asks (asked_at DESC);
+  CREATE INDEX steward_asks_open ON steward_asks (workspace_id, answered_at);
+  `,
 ];
 
 /** SQLite 파일을 열고 스키마를 최신으로 올린다. ':memory:' 도 된다. */

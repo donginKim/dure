@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StewardBoard, StewardBoardProject } from '@shared/types';
+import { StewardGrass } from './StewardGrass';
 
 type Kind = 'day' | 'week' | 'month';
 type Measure = 'work' | 'done';
@@ -113,6 +114,12 @@ export function StewardBoardView({ name, onOpenProject, onOpenWorkspace, onAsk }
             <div className="sb-tile"><div className="sb-tile-n">{t.mains}</div><div className="sb-tile-l">기준 브랜치 반영</div></div>
             <div className="sb-tile"><div className="sb-tile-n">{tokens(t.tokens)}</div><div className="sb-tile-l">쓴 토큰</div></div>
           </div>
+
+          <StewardGrass from={board.from} to={board.to} onPickDay={(day) => {
+            // 잔디의 칸을 누르면 그날 하루를 본다.
+            const now = new Date(); const t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            setKind('day'); setOffset(Math.min(0, Math.round((parse(day).getTime() - t0) / 86_400_000)));
+          }} />
 
           {board.days.length > 1 && (
             <div className="sb-card">

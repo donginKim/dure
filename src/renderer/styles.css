@@ -1554,6 +1554,32 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .sb-tip { position: absolute; bottom: calc(100% - 14px); left: 50%; transform: translateX(-20%); z-index: 5; background: var(--sunken); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 5px 9px; font-size: 11.5px; white-space: nowrap; pointer-events: none; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
 .sb-tip.left { transform: translateX(-80%); }
 @media (prefers-reduced-motion: reduce) { .sb-col-bar { transition: none; } }
+/* 잔디: 최근 1년, 하루 한 칸. 한 가지 빛깔로 옅은 데서 짙은 데로 (많이 한 날일수록 눈에 띄게) */
+:root { --grass-0: #262a33; --grass-1: #1f4a2e; --grass-2: #2c7a43; --grass-3: #43a85a; --grass-4: #6fdc82; }
+:root[data-theme='light'] { --grass-0: #e9ecf1; --grass-1: #bfe6c4; --grass-2: #7ccb88; --grass-3: #3fa552; --grass-4: #1f7a36; }
+.grass-stats { font-size: 12px; font-weight: 400; color: var(--muted); }
+.grass-stats b { color: var(--text); font-variant-numeric: tabular-nums; }
+.grass-scroll { position: relative; padding: 2px 12px 6px; }
+.grass-scroll svg { display: block; overflow: visible; }
+.grass-label { fill: var(--muted); font-size: 9.5px; }
+.grass-cell { fill: var(--grass-0); cursor: pointer; transform-box: fill-box; transform-origin: 50% 100%; transition: transform 0.12s ease; outline: none; }
+.grass-cell.l1 { fill: var(--grass-1); } .grass-cell.l2 { fill: var(--grass-2); } .grass-cell.l3 { fill: var(--grass-3); } .grass-cell.l4 { fill: var(--grass-4); }
+.grass-cell:hover, .grass-cell:focus-visible { transform: scale(1.35); stroke: var(--text); stroke-width: 1; }
+.grass-cell.picked { stroke: var(--accent); stroke-width: 1.5; }
+.grass-cell.today { stroke: var(--text); stroke-width: 1.2; }
+.grass-cell.still { cursor: default; transform: none; stroke: none; }
+/* 열 때 왼쪽부터 차례로 돋아난다: 땅에서 솟듯 아래를 축으로 자란다 */
+.sprout .grass-cell { animation: grass-sprout 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes grass-sprout { 0% { transform: scaleY(0) scaleX(0.4); opacity: 0; } 60% { opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+/* 에이전트가 일하는 중이면 오늘 칸이 숨 쉰다 */
+.grass-cell.live { animation: grass-breathe 1.8s ease-in-out infinite; }
+.sprout .grass-cell.live { animation: grass-sprout 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both, grass-breathe 1.8s ease-in-out 1.6s infinite; }
+@keyframes grass-breathe { 0%, 100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.28); filter: brightness(1.35); } }
+@media (prefers-reduced-motion: reduce) { .sprout .grass-cell, .grass-cell.live, .sprout .grass-cell.live { animation: none; } .grass-cell { transition: none; } }
+.sb-tip.grass-tip { bottom: auto; transform: translate(-50%, 0); }
+.sb-tip.grass-tip.left { transform: translate(-90%, 0); }
+.grass-legend { display: flex; align-items: center; gap: 4px; padding: 0 12px 10px; font-size: 11.5px; color: var(--muted); }
+.grass-legend .plan-hint { font-size: 11.5px; }
 .sb-project.quiet { opacity: 0.85; }
 .sb-project-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; flex-wrap: wrap; }
 .sb-project-toggle { display: inline-flex; align-items: center; gap: 7px; background: transparent; border: 0; padding: 2px 0; cursor: pointer; color: var(--text); font: inherit; font-size: 14px; font-weight: 600; }

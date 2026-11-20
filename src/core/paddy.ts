@@ -28,7 +28,8 @@ export class PaddyService {
     for (let i = 0; i < days; i++) { const date = dayOf(start + i * 86_400_000 + 3_600_000); map.set(date, { date, todos: 0, commits: 0, mains: 0, score: 0 }); }
     const where = projectId ? 'AND project_id = ?' : '';
     const args = projectId ? [start, projectId] : [start];
-    for (const r of this.db.prepare(`SELECT updated_at AS at FROM todos WHERE status = 'done' AND updated_at >= ? ${where}`).all(...args) as { at: number }[]) {
+    // 끝낸 일은 따로 적어 둔 기록에서 센다: todos 는 워크스페이스를 정리하면 함께 지워져 지난 칸이 비게 된다.
+    for (const r of this.db.prepare(`SELECT at FROM work_done WHERE at >= ? ${where}`).all(...args) as { at: number }[]) {
       const d = map.get(dayOf(r.at)); if (d) d.todos++;
     }
     for (const r of this.db.prepare(`SELECT kind, at FROM work_events WHERE at >= ? ${where}`).all(...args) as { kind: string; at: number }[]) {

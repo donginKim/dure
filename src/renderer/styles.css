@@ -1498,3 +1498,11 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .steward-row-meta, .steward-row-reason { color: var(--muted); font-size: 11.5px; }
 .steward-row-outcome { margin-top: 2px; word-break: break-word; }
 .tag.ok { color: var(--ok); border-color: var(--ok-line, var(--ok)); }
+
+/* 비서의 캐릭터 (도트 그림: 흐려지지 않게 그린다) */
+.steward-face, .steward-art { image-rendering: pixelated; flex: none; }
+.side-steward-name { display: flex; align-items: center; gap: 8px; }
+.side-steward { padding-top: 5px; padding-bottom: 5px; }
+.steward-art { display: block; margin: 0 auto 10px; animation: steward-bob 2.4s ease-in-out infinite; }
+@keyframes steward-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@media (prefers-reduced-motion: reduce) { .steward-art { animation: none; } }

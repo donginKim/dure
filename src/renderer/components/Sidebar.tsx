@@ -1,5 +1,6 @@
 import { UpdateNotice } from './UpdateNotice';
 import { throttled } from '../throttle';
+import stewardFace from '../assets/steward-face.png';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Project, Repo, Todo, Workspace } from '@shared/types';
 import { deliveryNote } from '../conversationView';
@@ -148,7 +149,7 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
         <span className="count">{attention}</span>
       </button>
       <button className={`side-attention side-steward${selection?.type === 'steward' ? ' selected' : ''}`} title="모든 프로젝트를 보는 비서: 브리핑, TODO 정리, 확인할 것 처리" onClick={() => onSelect({ type: 'steward' })}>
-        <span>{stewardName}</span>
+        <span className="side-steward-name"><img className="steward-face" src={stewardFace} alt="" width={26} height={26} />{stewardName}</span>
         <span className="muted" style={{ fontSize: 11 }}>전체 관리</span>
       </button>
       <div className="side-section">

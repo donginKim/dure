@@ -199,12 +199,14 @@ const EMPTY: ChatView = { available: true, reason: null, items: [], hidden: 0, w
  * 채팅 보기. 에이전트는 터미널에서 돌고, 이 화면은 그 대화 기록을 읽어 보여준다.
  * 입력창의 글과 승인 답은 에이전트의 터미널에 써 넣는다.
  */
-export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentTerminalId, readOnly = false, blank, banner, attach, onShowTerminal, onStartAgent }: {
+export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentTerminalId, readOnly = false, blank, blankArt, banner, attach, onShowTerminal, onStartAgent }: {
   workspace: Workspace; workspaces: Workspace[]; conversation: ConversationData; hasAgent: boolean;
   /** 완료된 프로젝트다: 지난 대화만 보고 에이전트를 시작하지 않는다 */
   readOnly?: boolean;
   /** 대화가 비어 있을 때 보일 안내 (없으면 기본 안내) */
   blank?: string;
+  /** 대화가 비어 있을 때 안내 위에 보일 그림 (비서의 캐릭터) */
+  blankArt?: ReactNode;
   /** 입력창 위에 끼워 보일 것 (조율 에이전트의 계획안 알림) */
   banner?: ReactNode;
   /** 파일을 골라 입력창에 넣을 글을 돌려준다 (조율 에이전트의 "기획서 파일"). 없으면 버튼을 보이지 않는다 */
@@ -612,6 +614,7 @@ export function ChatPane({ workspace, workspaces, conversation, hasAgent, agentT
           {loaded && !view.available && <div className="chat-notice"><span>{view.reason}</span></div>}
           {loaded && view.available && entries.length === 0 && view.queued.length === 0 && !view.streaming && (
             <div className="chat-blank">
+              {blankArt}
               <div className="chat-blank-title">아직 대화가 없습니다</div>
               {blank ? <div>{blank}</div> : (
                 <>

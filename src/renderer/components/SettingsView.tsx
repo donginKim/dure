@@ -357,6 +357,9 @@ export function SettingsView({ onOpenMarket, onOpenAudit }: { onOpenMarket?: () 
           <Row label="macOS 알림" help='에이전트가 권한을 묻거나, 계획안이 승인을 기다리거나, 다른 사람이 메시지를 보냈을 때 macOS 알림으로 알려 줍니다. 두레를 보고 있을 때는 띄우지 않습니다. 꺼도 왼쪽 위의 "확인할 것" 과 Dock 아이콘의 숫자는 그대로 보입니다. 처음에는 macOS 가 알림을 허용할지 묻습니다.' {...row('notifications')}>
             <Toggle on={s.notifications} onChange={(v) => save('notifications', v)} label="macOS 알림" />
           </Row>
+          <Row label="메뉴 막대 아이콘" help="화면 맨 위 메뉴 막대에 비서의 얼굴을 둡니다. 내 확인을 기다리는 것이 있으면 얼굴이 바뀌고 수가 옆에 뜹니다. 누르면 확인할 것, 일하는 에이전트, 오늘 한 일, 잔디가 든 작은 창이 뜨고, 비서에게 한 줄을 보낼 수 있습니다. 두레의 창을 내려 두어도 보입니다." {...row('menuBar')}>
+            <Toggle on={s.menuBar} onChange={(v) => save('menuBar', v)} label="메뉴 막대 아이콘" />
+          </Row>
         </div>
       </div>
 

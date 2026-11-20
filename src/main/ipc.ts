@@ -8,10 +8,11 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { openMake } from './makeViewer';
 import { isAppUrl } from './appUrl';
+import { closeTrayPanels, mainWindow, readTray, showMain } from './tray';
 import { auditOf } from './auditIpc';
 import { hostname, userInfo } from 'node:os';
 import { safeHtml } from '@core/makes';
-import type { SlackCall, PinInput, ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem, AuditFilter } from '@shared/types';
+import type { SlackCall, PinInput, ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem, AuditFilter, TrayTarget } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -208,6 +209,35 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     'attention.list': () => core.attention.list(),
     'steward.get': () => core.steward.state(),
     'steward.history': () => core.steward.history(),
+    'tray.state': () => readTray(core),
+    'tray.open': (target: TrayTarget) => {
+      const w = showMain();
+      closeTrayPanels();
+      if (!w || !target || typeof target !== 'object') return;
+      if (target.type === 'attention' && target.item) w.webContents.send(IPC_EVENTS.attentionOpen, target.item);
+      else if (target.type === 'attentionList') w.webContents.send(IPC_EVENTS.attentionOpen, { id: '', kind: 'list', projectId: null, projectName: '', workspaceId: null, title: '', detail: '' });
+      else if (target.type === 'steward') w.webContents.send(IPC_EVENTS.navigate, { type: 'steward' });
+      else if (target.type === 'workspace') w.webContents.send(IPC_EVENTS.navigate, { type: 'workspace', id: String(target.id), projectId: String(target.projectId) });
+    },
+    'tray.ask': async (text: string) => {
+      const body = String(text ?? '').trim();
+      if (!body) throw new Error('보낼 글이 없습니다.');
+      if (body.length > 4000) throw new Error('글이 너무 깁니다 (4000자까지).');
+      const { workspace } = core.steward.ensure();
+      // 큰 창의 비서 화면을 먼저 연다: 답은 거기에 온다.
+      const w = showMain();
+      closeTrayPanels();
+      w?.webContents.send(IPC_EVENTS.navigate, { type: 'steward' });
+      if (core.workspaces.get(workspace.id)?.status === 'stopped') await core.service.startAgent(workspace.id, { cols: 120, rows: 40 });
+      let ready = false;
+      for (let i = 0; i < 40 && !ready; i++) {
+        const st = core.workspaces.get(workspace.id)?.status;
+        ready = st === 'idle' || st === 'working';
+        if (!ready) await new Promise((r) => setTimeout(r, 500));
+      }
+      if (!ready) throw new Error('비서가 아직 글을 받을 수 없습니다 (켜지는 중이거나 확인을 기다립니다).');
+      await core.service.sendUserInput(workspace.id, body);
+    },
     'steward.board': (range?: { from?: string; to?: string }) => core.stewardBoard.board({ from: range?.from ? String(range.from) : undefined, to: range?.to ? String(range.to) : undefined }),
     'pins.list': (workspaceId: string) => core.pins.list(String(workspaceId)),
     'pins.add': (input: PinInput) => core.pins.add(input),
@@ -489,10 +519,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       body: calls.length > 1 ? [...calls.slice(0, 3).map((c) => `· ${line(c)}`), ...(calls.length > 3 ? [`외 ${calls.length - 3}건`] : [])].join('\n') : `${first.userName}: ${first.text.replace(/\s+/g, ' ').slice(0, 200)}`,
     });
     note.on('click', () => {
-      const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed());
+      const w = showMain();
       if (!w) return;
-      if (w.isMinimized()) w.restore();
-      w.show(); w.focus();
       w.webContents.send(IPC_EVENTS.slackWatchOpen);
     });
     try { lastCallNote?.close(); } catch { /* 이미 닫혔다 */ }
@@ -519,7 +547,7 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     noteTimer = undefined;
     const items = pendingNotes; pendingNotes = [];
     if (items.length === 0 || !core.settings.get().notifications || !Notification.isSupported()) return;
-    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+    const win = mainWindow();
     if (win?.isFocused()) return;
     const first = items[0]!;
     const projects = [...new Set(items.map((i) => i.projectName).filter(Boolean))];
@@ -531,10 +559,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
         : `${first.title}${first.detail ? `\n${first.detail}` : ''}`,
     });
     note.on('click', () => {
-      const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed());
+      const w = showMain();
       if (!w) return;
-      if (w.isMinimized()) w.restore();
-      w.show(); w.focus();
       // 하나면 그것을, 여럿이면 확인할 것 목록을 연다.
       w.webContents.send(IPC_EVENTS.attentionOpen, items.length === 1 ? first : { ...first, kind: 'list' });
     });

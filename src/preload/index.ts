@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_EVENTS, ipcName, type ChangeTopic, type DureApi, type IpcChannel } from '@shared/ipc';
-import type { AttentionItem } from '@shared/types';
+import type { AttentionItem, TrayTarget } from '@shared/types';
 
 // Electron 이 오류 메시지 앞에 붙이는 문구를 떼어 코어의 메시지만 남긴다.
 async function call<T>(channel: IpcChannel, ...args: unknown[]): Promise<T> {
@@ -268,6 +268,12 @@ const api: DureApi = {
     get: () => call('steward.get'),
     history: () => call('steward.history'),
     board: (range) => call('steward.board', range),
+  },
+  tray: {
+    state: () => call('tray.state'),
+    open: (target) => call('tray.open', target),
+    ask: (text) => call('tray.ask', text),
+    onNavigate: (cb) => subscribe<[TrayTarget]>(IPC_EVENTS.navigate, cb),
   },
   pins: {
     list: (workspaceId) => call('pins.list', workspaceId),

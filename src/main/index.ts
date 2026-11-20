@@ -8,6 +8,7 @@ import { isAppUrl } from './appUrl';
 import { createCore, type Core } from '@core/index';
 import { resolveShellEnv } from '@core/shellEnv';
 import { registerIpc } from './ipc';
+import { startTray } from './tray';
 
 app.setName('dure');
 // 개발·검증용: 다른 데이터 폴더를 쓰면 브라우저 프로필도 그쪽으로 옮겨, 띄워 둔 앱과 섞이지 않게 한다.
@@ -15,6 +16,7 @@ if (process.env.DURE_DATA_DIR) app.setPath('userData', process.env.DURE_DATA_DIR
 
 let core: Core | undefined;
 let unregisterIpc: (() => void) | undefined;
+let stopTray: (() => void) | undefined;
 let quitting = false;
 
 /**
@@ -150,6 +152,8 @@ async function start(): Promise<void> {
   }
   unregisterIpc = registerIpc(core, browserHost);
   createWindow();
+  // 메뉴 막대의 아이콘: 창을 열지 않고도 지금 나를 기다리는 것이 보인다 (설정에서 끈다).
+  try { stopTray = startTray(core, lockDown); } catch { /* 아이콘을 못 띄워도 두레는 돈다 */ }
   // 빠른 메모: 어느 앱에서든 단축키로 작은 입력 창을 띄운다. 설정이 바뀌면 다시 건다.
   let bound = '';
   const applyCapture = (): void => {
@@ -188,7 +192,7 @@ function openCapture(): void {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => {
-    const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && isAppUrl(x.webContents.getURL()) && !x.webContents.getURL().includes('#capture'));
+    const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && isAppUrl(x.webContents.getURL()) && !/#(capture|tray)$/.test(x.webContents.getURL()));
     if (w) { if (w.isMinimized()) w.restore(); w.show(); w.focus(); }
   });
   void start();
@@ -202,6 +206,7 @@ app.on('before-quit', (event) => {
   if (quitting || !core) return;
   event.preventDefault();
   quitting = true;
+  stopTray?.();
   unregisterIpc?.();
   void core.dispose().finally(() => app.quit());
 });

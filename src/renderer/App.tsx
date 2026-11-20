@@ -126,6 +126,8 @@ export function App() {
   useEffect(() => window.dure.attention.onOpen((item) => setSelection(attentionTarget(item, coordinatorIds))), [coordinatorIds]);
   // 슬랙 알림을 누르면 비서 화면으로 간다 (나를 부른 글의 목록이 거기 있다).
   useEffect(() => window.dure.slackWatch.onOpen(() => setSelection({ type: 'steward' })), []);
+  // 메뉴 막대의 작은 창에서 고른 곳으로 간다.
+  useEffect(() => window.dure.tray.onNavigate((t) => { if (t.type === 'steward') setSelection({ type: 'steward' }); else if (t.type === 'workspace') setSelection({ type: 'workspace', id: t.id, projectId: t.projectId }); }), []);
 
   // 화면 모양: 설정을 따라 <html data-theme> 를 정한다. "시스템" 이면 macOS 의 모양이 바뀔 때 따라간다.
   useEffect(() => {

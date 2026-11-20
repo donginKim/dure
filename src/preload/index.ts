@@ -256,6 +256,14 @@ const api: DureApi = {
     list: () => call('attention.list'),
     onOpen: (cb) => subscribe<[AttentionItem]>(IPC_EVENTS.attentionOpen, cb),
   },
+  slackWatch: {
+    status: () => call('slackWatch.status'),
+    calls: () => call('slackWatch.calls'),
+    seen: (ids) => call('slackWatch.seen', ids),
+    checkNow: () => call('slackWatch.checkNow'),
+    open: (id) => call('slackWatch.open', id),
+    onOpen: (cb) => subscribe<[]>(IPC_EVENTS.slackWatchOpen, cb),
+  },
   steward: {
     get: () => call('steward.get'),
     history: () => call('steward.history'),

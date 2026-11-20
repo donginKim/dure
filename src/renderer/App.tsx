@@ -124,6 +124,8 @@ export function App() {
   }, []);
   const coordinatorIds = useMemo(() => new Set(workspaces.filter((w) => w.role === 'coordinator').map((w) => w.id)), [workspaces]);
   useEffect(() => window.dure.attention.onOpen((item) => setSelection(attentionTarget(item, coordinatorIds))), [coordinatorIds]);
+  // 슬랙 알림을 누르면 비서 화면으로 간다 (나를 부른 글의 목록이 거기 있다).
+  useEffect(() => window.dure.slackWatch.onOpen(() => setSelection({ type: 'steward' })), []);
 
   // 화면 모양: 설정을 따라 <html data-theme> 를 정한다. "시스템" 이면 macOS 의 모양이 바뀔 때 따라간다.
   useEffect(() => {

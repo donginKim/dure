@@ -1510,3 +1510,5 @@ html.capture-window, html.capture-window body, html.capture-window #root { backg
 .steward-art.work { animation: steward-bob 0.9s ease-in-out infinite; }
 .steward-wait { color: var(--warn); }
 .side-steward:has(.steward-wait) { border-color: var(--warn); }
+.steward-watch-bar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; font-size: 11px; }
+.steward-call-text { white-space: pre-wrap; max-height: 7.5em; overflow: hidden; }

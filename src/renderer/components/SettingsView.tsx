@@ -230,6 +230,14 @@ export function SettingsView({ onOpenMarket, onOpenAudit }: { onOpenMarket?: () 
           <Row label="자동 처리" help="켜면 확인할 것이 새로 생겼을 때 두레가 비서에게 저절로 알려, 승인 범위 안의 것을 처리하게 합니다 (여러 건을 20초쯤 모아 한 번에 알립니다). 비서가 정할 수 있는 것이 없으면 깨우지 않습니다. 한 시간에 6번까지만 저절로 알립니다 (사람 없이 끝없이 돌지 않게): 넘은 것은 확인할 것에 남습니다. 알릴 때마다 토큰을 씁니다. 끄면 내가 시킬 때만 처리합니다." {...row('stewardAuto')}>
             <Toggle on={s.stewardAuto} onChange={(v) => save('stewardAuto', v)} label="비서의 자동 처리" />
           </Row>
+          <Row label="슬랙에서 나를 부르면 알리기" help="켜면 두레가 5분마다 슬랙을 읽어, 나를 언급한 글과 내가 든 채널의 @here·@channel 을 찾아 알림으로 띄우고 비서 화면에 모아 둡니다. 에이전트를 쓰지 않아 토큰이 들지 않습니다. 켠 뒤의 글만 알립니다. 슬랙이 연결돼 있어야 하고(아래 슬랙), 토큰에 채널을 읽는 권한(channels:history, groups:history, 개인 메시지는 im:history, mpim:history)과 search:read 가 있어야 합니다. 채널이 아주 많으면 조용한 채널의 글은 늦게 알 수 있고, 검색이 안 되는 토큰이면 스레드 안의 언급은 찾지 못합니다. 글은 이 PC 에만 적어 둡니다." {...row('slackWatch')}>
+            <Toggle on={s.slackWatch} onChange={(v) => save('slackWatch', v)} label="슬랙에서 나를 부르면 알리기" />
+          </Row>
+          {s.slackWatch && (
+            <Row label="개인 메시지도" help="나에게 온 개인 메시지(여럿이 하는 것 포함)도 알립니다. 끄면 언급과 @here 만 알립니다." {...row('slackWatchDm')}>
+              <Toggle on={s.slackWatchDm} onChange={(v) => save('slackWatchDm', v)} label="슬랙의 개인 메시지 알리기" />
+            </Row>
+          )}
           <Row label="모델" help="비서만 이 모델로 돕니다. 비우면 조율 에이전트의 모델을 씁니다. 다음에 시작할 때부터 적용됩니다." {...row('stewardModel')}>
             <select className="set-select" value={s.stewardModel} onChange={(e) => save('stewardModel', e.target.value)}>
               <option value="">조율 에이전트와 같게</option>

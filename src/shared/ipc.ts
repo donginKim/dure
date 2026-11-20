@@ -8,14 +8,14 @@ import type { StewardLogEntry, StewardState, Pin, PinInput,
   AttentionItem,
   Note, NoteSummary,
   UpdateStatus,
-  SlackAccess, SlackRequest, SlackStatus,
+  SlackAccess, SlackRequest, SlackStatus, SlackCall, SlackWatchStatus,
   ChatImage,
   AgentEngine, Artifact, PermissionMode, ProjectDashboard, PaddyDay, UsageBar, DailyDigest, Schedule, ScheduleInput, Capture, MemoryItem, MemoryKind, AwayChoice, Plugin, PluginScheduleTemplate, NewsPanel, MarketSource, ChatView, CleanupItem, CommitResult, CompletionChoice, CompletionPlan, CoordinatorInfo, ModelChoice, PlanDecision, PlanResult, Settings, SpecFile, CommitState, MergePlan, ReviewState, Agreement, AgreementKind, Figure, AutoShipMode, ShipEvent, BudgetStatus, ActivityItem, CreateWorkspaceInput, DeliveryState, Message, Project, ProjectFlow, Repo, RepoStatus, VerifyState, TerminalInfo, Thread, Todo,
   SlashCommand, TodoAssignee, TodoPatch, Workspace, DbColumn, DbConnection, DbConnectionInput, DbRequest, DbResult, DbTable, FileDiff, BrowserRequest, FoundPeer, HeldMessage, Peer, PeerMode, PeerRequest, PeerStatus, RemoteWorkspace, Share, ShareInvite, SharingAudience, WorkspaceSharing, AssignChoice, AssignmentIn, AssignmentOut, Board,
 } from './types';
 import type { ProjectViewPref, RoleId } from './roles';
 
-export type ChangeTopic = 'steward' | 'pins' | 'audit' | 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
+export type ChangeTopic = 'steward' | 'slackWatch' | 'pins' | 'audit' | 'makes' | 'plugins' | 'memory' | 'captures' | 'schedules' | 'figures' | 'projects' | 'repos' | 'workspaces' | 'terminals' | 'todos' | 'messages' | 'commit' | 'chat' | 'settings' | 'cleanup' | 'coordinator' | 'db' | 'browser' | 'peers' | 'slack' | 'update' | 'notes' | 'attention' | 'checkpoints' | 'worktime';
 
 /** 워크스페이스에 전달을 기다리는 것이 어떤 상태인지 */
 export interface DeliveryInfo {
@@ -415,6 +415,19 @@ export interface DureApi {
     apply(): Promise<void>;
     dismiss(): Promise<void>;
   };
+  /** 슬랙에서 나를 부른 글: 두레가 주기적으로 찾아 적어 둔다 (직접 언급, 내가 든 채널의 @here, 개인 메시지) */
+  slackWatch: {
+    status(): Promise<SlackWatchStatus>;
+    calls(): Promise<SlackCall[]>;
+    /** 봤다고 적는다. ids 를 주지 않으면 전부 */
+    seen(ids?: string[]): Promise<void>;
+    /** 지금 한 번 확인한다 */
+    checkNow(): Promise<SlackWatchStatus>;
+    /** 그 글을 슬랙에서 연다 (바깥 브라우저나 슬랙 앱) */
+    open(id: string): Promise<void>;
+    /** 알림을 눌렀을 때: 비서 화면을 열라고 알린다 */
+    onOpen(cb: () => void): () => void;
+  };
   /** 슬랙 읽기: 사용자의 토큰으로 에이전트가 슬랙을 읽는다 (읽기 전용) */
   slack: {
     status(): Promise<SlackStatus>;
@@ -506,7 +519,7 @@ export const IPC_CHANNELS = [
   'checkpoints.list', 'checkpoints.create', 'checkpoints.preview', 'checkpoints.restore',
   'usage.summary',
   'attention.list',
-  'steward.get', 'steward.history',
+  'steward.get', 'steward.history', 'slackWatch.status', 'slackWatch.calls', 'slackWatch.seen', 'slackWatch.checkNow', 'slackWatch.open',
   'pins.list', 'pins.add', 'pins.remove',
   'notes.list', 'notes.get', 'notes.create', 'notes.update', 'notes.remove',
   'update.status', 'update.check', 'update.apply', 'update.dismiss',
@@ -544,6 +557,8 @@ export const IPC_EVENTS = {
   browserOpen: 'dure:browser-open',
   /** 사용자가 알림을 눌렀다: 화면이 그 항목이 있는 곳을 연다 (AttentionItem) */
   attentionOpen: 'dure:attention-open',
+  /** 사용자가 슬랙 알림을 눌렀다: 화면이 비서 화면을 연다 */
+  slackWatchOpen: 'dure:slack-watch-open',
 } as const;
 
 export const ipcName = (channel: IpcChannel): string => `dure:${channel}`;

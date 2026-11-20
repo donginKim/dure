@@ -11,7 +11,7 @@ import { isAppUrl } from './appUrl';
 import { auditOf } from './auditIpc';
 import { hostname, userInfo } from 'node:os';
 import { safeHtml } from '@core/makes';
-import type { PinInput, ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem, AuditFilter } from '@shared/types';
+import type { SlackCall, PinInput, ScheduleInput, CompletionChoice, CreateWorkspaceInput, PlanDecision, Settings, TodoAssignee, TodoPatch, DbConnectionInput, PeerMode, SharingAudience, AssignChoice, SlackAccess, AttentionItem, AuditFilter } from '@shared/types';
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -224,6 +224,17 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
       setTimeout(() => app.quit(), 300);
     },
     'update.dismiss': () => core.updates.dismissLast(),
+    'slackWatch.status': () => core.slackWatch.status(),
+    'slackWatch.calls': () => core.slackWatch.calls(),
+    'slackWatch.seen': (ids?: string[]) => core.slackWatch.seen(Array.isArray(ids) ? ids.map(String) : undefined),
+    'slackWatch.checkNow': async () => { await core.slackWatch.check(); return core.slackWatch.status(); },
+    'slackWatch.open': async (id: string) => {
+      // 여는 주소는 두레가 적어 둔 그 글의 슬랙 주소뿐이다 (화면이 아무 주소나 열게 하지 않는다).
+      const call = core.slackWatch.calls(500).find((c) => c.id === String(id));
+      if (!call || !/^https:\/\/[a-z0-9-]+(\.enterprise)?\.slack\.com\/archives\//.test(call.permalink)) throw new Error('이 글의 슬랙 주소를 알 수 없습니다.');
+      await shell.openExternal(call.permalink);
+      core.slackWatch.seen([call.id]);
+    },
     'slack.status': () => core.slack.status(),
     'slack.connect': (token: string) => core.slack.connect(String(token ?? '')),
     'slack.disconnect': () => core.slack.disconnect(),
@@ -464,6 +475,29 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   const onCleanupChanged = (): void => changed('cleanup');
   const onDbChanged = (): void => changed('db');
   const onSlackChanged = (): void => changed('slack');
+  const onSlackWatchChanged = (): void => changed('slackWatch');
+  // 슬랙에서 나를 부른 글을 찾았다: 창을 보고 있어도 알린다 (두레 안의 일이 아니라 바깥에서 온 것이다).
+  const KIND_LABEL: Record<SlackCall['kind'], string> = { mention: '나를 언급', here: '@here', dm: '개인 메시지' };
+  let lastCallNote: Notification | undefined;
+  const onSlackCalls = (calls: SlackCall[]): void => {
+    if (calls.length === 0 || !core.settings.get().notifications || !Notification.isSupported()) return;
+    const first = calls[0]!;
+    const line = (c: SlackCall): string => `${c.userName} (${c.channelName}): ${c.text.replace(/\s+/g, ' ').slice(0, 120)}`;
+    const note = new Notification({
+      title: calls.length > 1 ? `슬랙 · 나를 부른 글 ${calls.length}건` : `슬랙 · ${KIND_LABEL[first.kind]} · ${first.channelName}`,
+      body: calls.length > 1 ? [...calls.slice(0, 3).map((c) => `· ${line(c)}`), ...(calls.length > 3 ? [`외 ${calls.length - 3}건`] : [])].join('\n') : `${first.userName}: ${first.text.replace(/\s+/g, ' ').slice(0, 200)}`,
+    });
+    note.on('click', () => {
+      const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed());
+      if (!w) return;
+      if (w.isMinimized()) w.restore();
+      w.show(); w.focus();
+      w.webContents.send(IPC_EVENTS.slackWatchOpen);
+    });
+    try { lastCallNote?.close(); } catch { /* 이미 닫혔다 */ }
+    lastCallNote = note;
+    note.show();
+  };
   const onUpdateChanged = (): void => changed('update');
   const onNotesChanged = (): void => changed('notes');
   const onPinsChanged = (): void => changed('pins');
@@ -533,6 +567,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
   core.cleanup.on('changed', onCleanupChanged);
   core.dbs.on('changed', onDbChanged);
   core.slack.on('changed', onSlackChanged);
+  core.slackWatch.on('changed', onSlackWatchChanged);
+  core.slackWatch.on('added', onSlackCalls);
   core.updates.on('changed', onUpdateChanged);
   core.notes.on('changed', onNotesChanged);
   core.pins.on('changed', onPinsChanged);
@@ -583,6 +619,8 @@ export function registerIpc(core: Core, browser: { register(workspaceId: string,
     core.cleanup.off('changed', onCleanupChanged);
     core.dbs.off('changed', onDbChanged);
     core.slack.off('changed', onSlackChanged);
+    core.slackWatch.off('changed', onSlackWatchChanged);
+    core.slackWatch.off('added', onSlackCalls);
     core.updates.off('changed', onUpdateChanged);
     core.notes.off('changed', onNotesChanged);
     core.pins.off('changed', onPinsChanged);

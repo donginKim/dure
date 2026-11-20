@@ -29,13 +29,15 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
   const [stewardName, setStewardName] = useState('비서');
   // 비서의 모습: 비서의 에이전트가 지금 무엇을 하는지 (일하는 중, 내 답을 기다림, 쉬는 중)
   const [stewardNow, setStewardNow] = useState<StewardMood>('rest');
+  const [slackUnseen, setSlackUnseen] = useState(0);
   useEffect(() => {
     const load = (): void => {
       window.dure.settings.get().then((st) => setStewardName(st.stewardName || '비서')).catch(() => undefined);
       window.dure.steward.get().then((st) => setStewardNow(stewardMood(st.workspace.status))).catch(() => undefined);
+      window.dure.slackWatch.status().then((st) => setSlackUnseen(st.enabled ? st.unseen : 0)).catch(() => undefined);
     };
     load();
-    return window.dure.onChanged((topic) => { if (topic === 'settings' || topic === 'workspaces' || topic === 'steward') load(); });
+    return window.dure.onChanged((topic) => { if (topic === 'settings' || topic === 'workspaces' || topic === 'steward' || topic === 'slackWatch') load(); });
   }, []);
   useEffect(() => { if (newProjectTick > 0) setAdding(true); }, [newProjectTick]);
   // 일하는 에이전트가 지금 하는 일 (마지막 도구 사용). 한 줄로 보인다.
@@ -155,7 +157,9 @@ export function Sidebar({ tree, repos, todos, talk, selection, onSelect, onCreat
       </button>
       <button className={`side-attention side-steward${selection?.type === 'steward' ? ' selected' : ''}`} title="모든 프로젝트를 보는 비서: 브리핑, TODO 정리, 확인할 것 처리" onClick={() => onSelect({ type: 'steward' })}>
         <span className="side-steward-name"><img className="steward-face" src={STEWARD_FACE[stewardNow]} alt="" width={26} height={26} />{stewardName}</span>
-        <span className={stewardNow === 'wait' ? 'steward-wait' : 'muted'} style={{ fontSize: 11 }}>{stewardNow === 'rest' ? '전체 관리' : STEWARD_MOOD_LABEL[stewardNow]}</span>
+        {slackUnseen > 0 && stewardNow !== 'wait'
+          ? <span className="steward-wait" style={{ fontSize: 11 }} title="슬랙에서 나를 부른 글 중 아직 보지 않은 것">슬랙 {slackUnseen}</span>
+          : <span className={stewardNow === 'wait' ? 'steward-wait' : 'muted'} style={{ fontSize: 11 }}>{stewardNow === 'rest' ? '전체 관리' : STEWARD_MOOD_LABEL[stewardNow]}</span>}
       </button>
       <div className="side-section">
         <button className={`side-title${selection === null ? ' selected' : ''}`} title="프로젝트 전체 보기" onClick={() => onSelect(null)}>
